@@ -1,0 +1,10 @@
+site_name: 'PerfPod docs'
+site_url: https://perfpod.github.io/memory-collector/
+theme: 'material'
+markdown_extensions:
+  - footnotes
+  - attr_list
+
+plugins:
+  - search
+  - awesome-pages
