@@ -53,7 +53,7 @@ func main() {
 
 	sum := float64(0)
 	gc, err := p.MeasureGroup(func() {
-		heavy_workload(&sum)
+		heavyWorkload(&sum)
 	})
 
 	if err != nil {
@@ -63,7 +63,7 @@ func main() {
 	cycles, instrs := gc.Values[1].Value, gc.Values[0].Value
 	log.Printf("Sum is %f\n", sum)
 	log.Printf("Ran for %dms\n", gc.Running.Milliseconds())
-	log.Printf("Cycles: %d, Instrs: %d, CPI: %f\n", cycles, instrs, float64(cycles)/float64(instrs))
+	log.Printf("GoPerf Cycles: %d, GoPerf Instrs: %d, GoPerf CPI: %f\n", cycles, instrs, float64(cycles)/float64(instrs))
 
 	if err := perfCmd.Process.Signal(os.Interrupt); err != nil {
 		log.Fatalf("Failed to send SIGINT to perf: %v\n", err)
@@ -79,7 +79,7 @@ func main() {
 	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfCmdCycles), int64(perfCmdInstrs), perfCmdCycles/perfCmdInstrs)
 }
 
-func heavy_workload(sum *float64) {
+func heavyWorkload(sum *float64) {
 	for i := 0; i < 10000000; i++ {
 		*sum += float64(i)
 	}
