@@ -23,11 +23,9 @@ func main() {
 		p.Close()
 	}()
 
-	sum := 0
+	sum := float64(0)
 	gc, err := p.MeasureGroup(func() {
-		for i := 0; i < 10000; i++ {
-			sum += i
-		}
+		heavy_workload(&sum)
 	})
 
 	if err != nil {
@@ -35,6 +33,13 @@ func main() {
 	}
 
 	cycles, instrs := gc.Values[1].Value, gc.Values[0].Value
-	log.Printf("Ran for %vms\n", gc.Running.Milliseconds())
+	log.Printf("Sum is %f\n", sum)
+	log.Printf("Ran for %vns\n", gc.Running.Nanoseconds())
 	log.Printf("Cycles: %d, Instrs: %d, CPI: %f\n", cycles, instrs, float64(cycles)/float64(instrs))
+}
+
+func heavy_workload(sum *float64) {
+	for i := 0; i < 1000000; i++ {
+		*sum += float64(i)
+	}
 }
