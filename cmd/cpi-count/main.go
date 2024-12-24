@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/json"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -75,50 +72,12 @@ func main() {
 		}
 	}
 
-	perfCmdCycles, perfCmdInstrs := parsePerfCmdOutput(&perfOutputBuf)
-	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfCmdCycles), int64(perfCmdInstrs), perfCmdCycles/perfCmdInstrs)
+	perfOutput := parsePerfCmdOutput(&perfOutputBuf)
+	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfOutput.Cycles), int64(perfOutput.Instrs), perfOutput.Cycles/perfOutput.Instrs)
 }
 
 func heavyWorkload(sum *float64) {
 	for i := 0; i < 10000000; i++ {
 		*sum += float64(i)
 	}
-}
-
-func parsePerfCmdOutput(output io.Reader) (float64, float64) {
-	type PerfCounterOutput struct {
-		Event string `json:"event"`
-		Count string `json:"counter-value"`
-	}
-
-	scanner := bufio.NewScanner(output)
-	var instrs, cycles float64
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		var data PerfCounterOutput
-		err := json.Unmarshal([]byte(line), &data)
-		if err != nil {
-			log.Fatalf("Failed to parse perf cmd output: %s\n", line)
-		}
-
-		count, err := strconv.ParseFloat(data.Count, 64)
-
-		if err != nil {
-			log.Fatalf("Failed to parse perf cmd counter value: %s\n", data.Count)
-		}
-
-		switch data.Event {
-		case "instructions":
-			instrs = count
-		case "cycles":
-			cycles = count
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatalf("Failed to scan perf cmd output\n")
-	}
-
-	return cycles, instrs
 }
