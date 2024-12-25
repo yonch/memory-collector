@@ -57,11 +57,11 @@ func main() {
 	log.Printf("Ran for %dms\n", gc.Running.Milliseconds())
 	log.Printf("GoPerf Cycles: %d, GoPerf Instrs: %d, GoPerf CPI: %f\n", cycles, instrs, float64(cycles)/float64(instrs))
 
-	if err := perfCmd.End(); err != nil {
+	perfOutput, err := perfCmd.End()
+	if err != nil {
 		log.Fatalf("Failed to end perf cmd: %v\n", err)
 	}
 
-	perfOutput := perfCmd.Output()
 	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfOutput.Cycles), int64(perfOutput.Instrs), perfOutput.Cycles/perfOutput.Instrs)
 }
 

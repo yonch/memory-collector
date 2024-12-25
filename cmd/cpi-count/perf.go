@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strconv"
@@ -33,24 +32,25 @@ func (p *PerfCmd) Start() error {
 	return p.cmd.Start()
 }
 
-func (p *PerfCmd) End() error {
+func (p *PerfCmd) End() (*PerfOutputCollated, error) {
 	// Send Ctrl-C to the perf process...
 	if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
-		return err
+		return nil, err
 	}
 
 	// ... and wait for it to finish writing to stdout/stderr buffers and exit.
 	if err := p.cmd.Wait(); err != nil {
 		if _, ok := err.(*exec.ExitError); !ok {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
-}
+	output, err := parsePerfCmdOutput(p.output)
+	if err != nil {
+		return nil, err
+	}
 
-func (p *PerfCmd) Output() PerfOutputCollated {
-	return parsePerfCmdOutput(p.output)
+	return output, nil
 }
 
 type perfOutput struct {
@@ -63,7 +63,7 @@ type PerfOutputCollated struct {
 	Cycles float64
 }
 
-func parsePerfCmdOutput(output io.Reader) PerfOutputCollated {
+func parsePerfCmdOutput(output io.Reader) (*PerfOutputCollated, error) {
 	scanner := bufio.NewScanner(output)
 	var out PerfOutputCollated
 
@@ -72,13 +72,13 @@ func parsePerfCmdOutput(output io.Reader) PerfOutputCollated {
 		var data perfOutput
 		err := json.Unmarshal([]byte(line), &data)
 		if err != nil {
-			log.Fatalf("Failed to parse perf cmd output: %s\n", line)
+			return nil, err
 		}
 
 		count, err := strconv.ParseFloat(data.Count, 64)
 
 		if err != nil {
-			log.Fatalf("Failed to parse perf cmd counter value: %s\n", data.Count)
+			return nil, err
 		}
 
 		switch data.Event {
@@ -90,8 +90,8 @@ func parsePerfCmdOutput(output io.Reader) PerfOutputCollated {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Fatalf("Failed to scan perf cmd output\n")
+		return nil, err
 	}
 
-	return out
+	return &out, nil
 }
