@@ -13,7 +13,7 @@ import (
 
 type PerfCmd struct {
 	cmd    *exec.Cmd
-	output bytes.Buffer
+	output *bytes.Buffer
 }
 
 func NewPerfCmd(pid int) *PerfCmd {
@@ -25,7 +25,7 @@ func NewPerfCmd(pid int) *PerfCmd {
 
 	return &PerfCmd{
 		cmd:    cmd,
-		output: buf,
+		output: &buf,
 	}
 }
 
@@ -50,7 +50,7 @@ func (p *PerfCmd) End() error {
 }
 
 func (p *PerfCmd) Output() PerfOutputCollated {
-	return parsePerfCmdOutput(&p.output)
+	return parsePerfCmdOutput(p.output)
 }
 
 type perfOutput struct {
