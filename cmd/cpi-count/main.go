@@ -24,6 +24,12 @@ func main() {
 	pid := os.Getpid()
 	log.Printf("Current PID: %d\n", pid)
 
+	perfCmd := NewPerfCmd(pid)
+	if err := perfCmd.Start(); err != nil {
+		log.Fatalf("Failed to execute perf cmd: %v\n", err)
+	}
+
+	log.Printf("Started perf cmd\n")
 	g := perf.Group{
 		CountFormat: perf.CountFormat{
 			Running: true,
@@ -35,13 +41,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to open perf events: %s\n", err)
 	}
-
-	perfCmd := NewPerfCmd(pid)
-
-	if err := perfCmd.Start(); err != nil {
-		log.Fatalf("Failed to execute perf cmd: %v\n", err)
-	}
-	log.Printf("Started perf cmd\n")
 
 	var workloadOutput string
 	gc, err := p.MeasureGroup(func() {
