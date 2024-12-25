@@ -32,7 +32,7 @@ func (p *PerfCmd) Start() error {
 	return p.cmd.Start()
 }
 
-func (p *PerfCmd) End() (*PerfOutputCollated, error) {
+func (p *PerfCmd) End() (*PerfOutput, error) {
 	// Send Ctrl-C to the perf process...
 	if err := p.cmd.Process.Signal(os.Interrupt); err != nil {
 		return nil, err
@@ -58,14 +58,14 @@ type perfOutput struct {
 	Count string `json:"counter-value"`
 }
 
-type PerfOutputCollated struct {
+type PerfOutput struct {
 	Instrs float64
 	Cycles float64
 }
 
-func parsePerfCmdOutput(output io.Reader) (*PerfOutputCollated, error) {
+func parsePerfCmdOutput(output io.Reader) (*PerfOutput, error) {
 	scanner := bufio.NewScanner(output)
-	var out PerfOutputCollated
+	var out PerfOutput
 
 	for scanner.Scan() {
 		line := scanner.Text()

@@ -28,8 +28,8 @@ func main() {
 	if err := perfCmd.Start(); err != nil {
 		log.Fatalf("Failed to execute perf cmd: %v\n", err)
 	}
-
 	log.Printf("Started perf cmd\n")
+
 	g := perf.Group{
 		CountFormat: perf.CountFormat{
 			Running: true,
