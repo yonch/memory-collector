@@ -10,6 +10,16 @@ import (
 	"github.com/elastic/go-perf"
 )
 
+func init() {
+	// Pinning to a specific OS thread ensures that the measurements
+	// using both the `go-perf` library and Linux `perf` produce
+	// similar measurements.
+	// Interestingly, although undesired, if this step is omitted:
+	// - Linux perf reports ~4x the number of cycles AND instructions
+	// - The CPI remains relatively similar because both cycles and instructions increase proportionally
+	runtime.LockOSThread()
+}
+
 func main() {
 	pid := os.Getpid()
 	log.Printf("Current PID: %d\n", pid)
@@ -20,9 +30,6 @@ func main() {
 		},
 	}
 	g.Add(perf.Instructions, perf.CPUCycles)
-
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
 
 	p, err := g.Open(perf.CallingThread, perf.AnyCPU)
 	if err != nil {
