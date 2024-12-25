@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/elastic/go-perf"
 )
@@ -40,8 +39,6 @@ func main() {
 		log.Fatalf("Failed to execute perf cmd: %v\n", err)
 	}
 	log.Printf("Started perf cmd\n")
-
-	time.Sleep(100 * time.Millisecond)
 
 	var workloadOutput string
 	gc, err := p.MeasureGroup(func() {
