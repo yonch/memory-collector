@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"log"
 	"os"
 	"os/exec"
@@ -48,9 +50,9 @@ func main() {
 
 	time.Sleep(100 * time.Millisecond)
 
-	sum := float64(0)
+	var workloadOutput string
 	gc, err := p.MeasureGroup(func() {
-		heavyWorkload(&sum)
+		workloadOutput = heavyWorkload()
 	})
 
 	if err != nil {
@@ -58,7 +60,7 @@ func main() {
 	}
 
 	cycles, instrs := gc.Values[1].Value, gc.Values[0].Value
-	log.Printf("Sum is %f\n", sum)
+	log.Printf("Output is %s\n", workloadOutput)
 	log.Printf("Ran for %dms\n", gc.Running.Milliseconds())
 	log.Printf("GoPerf Cycles: %d, GoPerf Instrs: %d, GoPerf CPI: %f\n", cycles, instrs, float64(cycles)/float64(instrs))
 
@@ -76,8 +78,16 @@ func main() {
 	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfOutput.Cycles), int64(perfOutput.Instrs), perfOutput.Cycles/perfOutput.Instrs)
 }
 
-func heavyWorkload(sum *float64) {
-	for i := 0; i < 10000000; i++ {
-		*sum += float64(i)
+func heavyWorkload() string {
+	seedStr := "1sAMsDJGtS3zNrK6MfeysFvUYOzlHqtj"
+
+	var hash string
+	hashBytes := sha256.Sum256([]byte(seedStr))
+
+	for i := 0; i < 999999; i++ {
+		hash = base64.StdEncoding.EncodeToString(hashBytes[:])
+		hashBytes = sha256.Sum256([]byte(hash))
 	}
+
+	return hash
 }
