@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+
 	"github.com/elastic/go-perf"
 )
 
@@ -58,4 +61,18 @@ func (p *GoPerf) End() (*PerfOutput, error) {
 		Instrs: float64(p.groupCount.Values[0].Value),
 		Cycles: float64(p.groupCount.Values[1].Value),
 	}, nil
+}
+
+func heavyWorkload() string {
+	seedStr := "1sAMsDJGtS3zNrK6MfeysFvUYOzlHqtj"
+
+	var hash string
+	hashBytes := sha256.Sum256([]byte(seedStr))
+
+	for i := 0; i < 999999; i++ {
+		hash = base64.StdEncoding.EncodeToString(hashBytes[:])
+		hashBytes = sha256.Sum256([]byte(hash))
+	}
+
+	return hash
 }
