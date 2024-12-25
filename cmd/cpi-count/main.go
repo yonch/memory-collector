@@ -36,6 +36,6 @@ func main() {
 		log.Fatalf("Failed to end perf cmd: %v\n", err)
 	}
 
-	log.Printf("GoPerf Cycles: %d, GoPerf Instrs: %d, GoPerf CPI: %f\n", int64(goperfOutput.Cycles), int64(goperfOutput.Instrs), goperfOutput.Cycles/goperfOutput.Instrs)
-	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfOutput.Cycles), int64(perfOutput.Instrs), perfOutput.Cycles/perfOutput.Instrs)
+	log.Printf("GoPerf Cycles: %d, GoPerf Instrs: %d, GoPerf CPI: %f\n", int64(goperfOutput.Cycles), int64(goperfOutput.Instrs), goperfOutput.CPI())
+	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfOutput.Cycles), int64(perfOutput.Instrs), perfOutput.CPI())
 }

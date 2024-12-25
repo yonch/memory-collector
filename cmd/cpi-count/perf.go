@@ -63,6 +63,10 @@ type PerfOutput struct {
 	Cycles float64
 }
 
+func (p *PerfOutput) CPI() float64 {
+	return p.Cycles / p.Instrs
+}
+
 func parsePerfCmdOutput(output io.Reader) (*PerfOutput, error) {
 	scanner := bufio.NewScanner(output)
 	var out PerfOutput
