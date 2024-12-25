@@ -28,10 +28,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to open perf events: %s\n", err)
 	}
-	defer func() {
-		log.Printf("Finished running, closing event group.\n")
-		p.Close()
-	}()
 
 	perfCmd := NewPerfCmd(pid)
 
@@ -49,6 +45,7 @@ func main() {
 		log.Fatalf("Failed to measure perf group: %s\n", err)
 	}
 
+	p.Close()
 	perfOutput, err := perfCmd.End()
 	if err != nil {
 		log.Fatalf("Failed to end perf cmd: %v\n", err)
