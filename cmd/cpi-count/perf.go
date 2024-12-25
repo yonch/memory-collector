@@ -15,10 +15,10 @@ type PerfCmd struct {
 	output *bytes.Buffer
 }
 
-func NewPerfCmd(pid int) *PerfCmd {
+func NewPerfCmd() *PerfCmd {
 	var buf bytes.Buffer
 
-	cmd := exec.Command("perf", "stat", "-j", "-e", "instructions,cycles", "-p", strconv.Itoa(pid))
+	cmd := exec.Command("perf", "stat", "-j", "-e", "instructions,cycles", "-p", strconv.Itoa(os.Getpid()))
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 

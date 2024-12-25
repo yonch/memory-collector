@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"os"
 	"runtime"
 )
 
@@ -17,7 +16,7 @@ func init() {
 }
 
 func main() {
-	perfCmd := NewPerfCmd(os.Getpid())
+	perfCmd := NewPerfCmd()
 	if err := perfCmd.Start(); err != nil {
 		log.Fatalf("Failed to execute perf cmd: %v\n", err)
 	}
