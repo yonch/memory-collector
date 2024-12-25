@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"log"
 	"os"
-	"os/exec"
 	"runtime"
-	"strconv"
 	"time"
 
 	"github.com/elastic/go-perf"
@@ -37,14 +34,10 @@ func main() {
 		p.Close()
 	}()
 
-	var perfOutputBuf bytes.Buffer
-
-	perfCmd := exec.Command("perf", "stat", "-j", "-e", "instructions,cycles", "-p", strconv.Itoa(pid))
-	perfCmd.Stdout = &perfOutputBuf
-	perfCmd.Stderr = &perfOutputBuf
+	perfCmd := NewPerfCmd(pid)
 
 	if err := perfCmd.Start(); err != nil {
-		log.Fatalf("Failed to execute perf cmd\n")
+		log.Fatalf("Failed to execute perf cmd: %v\n", err)
 	}
 	log.Printf("Started perf cmd\n")
 
@@ -64,17 +57,11 @@ func main() {
 	log.Printf("Ran for %dms\n", gc.Running.Milliseconds())
 	log.Printf("GoPerf Cycles: %d, GoPerf Instrs: %d, GoPerf CPI: %f\n", cycles, instrs, float64(cycles)/float64(instrs))
 
-	if err := perfCmd.Process.Signal(os.Interrupt); err != nil {
-		log.Fatalf("Failed to send SIGINT to perf: %v\n", err)
+	if err := perfCmd.End(); err != nil {
+		log.Fatalf("Failed to end perf cmd: %v\n", err)
 	}
 
-	if err := perfCmd.Wait(); err != nil {
-		if _, ok := err.(*exec.ExitError); !ok {
-			log.Fatalf("Error waiting for perf cmd: %v\n", err)
-		}
-	}
-
-	perfOutput := parsePerfCmdOutput(&perfOutputBuf)
+	perfOutput := perfCmd.Output()
 	log.Printf("PerfCmd Cycles: %d, PerfCmd Instrs: %d, PerfCmd CPI: %f\n", int64(perfOutput.Cycles), int64(perfOutput.Instrs), perfOutput.Cycles/perfOutput.Instrs)
 }
 
