@@ -15,7 +15,7 @@ func TestMetricsUp(t *testing.T) {
 
 	// Initialize module/server for standalone integration test
 	go main()
-	time.Sleep(1 * time.Second)
+	// time.Sleep(1 * time.Second)
 
 	// Set values for standalone integration test
 	serverURL := "http://localhost:2112"
