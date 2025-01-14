@@ -17,7 +17,9 @@ The collector will monitor and record the following metrics for each process at 
 - Instructions
 - Last level cache misses
 
-**Collecting this data at high frequency across all processes will provide a detailed view of resource usage and contention over time.**
+Modern cloud environments routinely run dozens or even hundreds of applications on a single server, each with its own dynamic memory usage patterns. In an extreme case, with 100 applications changing phase every second on average, there would be a phase change every 10 milliseconds in aggregate.
+
+**The 1 millisecond telemetry granularity enables us to detect this behavior and characterize interference at a meaningful timescale.**
 
 In addition to these per-process metrics, we will also collect cache occupancy measurements using Intel RDT's Cache Monitoring Technology (CMT) or an equivalent mechanism. This data will be collected per process at the same 1 millisecond granularity.
 
@@ -59,7 +61,7 @@ Our telemetry strategy prioritizes high-resolution, low-level data collection to
 
 **The key aspects of our approach are:**
 
-- Collect per-process, per-core metrics at 1 millisecond granularity
+- Collect per-process, per-core metrics at 1 millisecond granularity to capture interference at a meaningful timescale
 - Collect per-process cache occupancy metrics at 1 millisecond granularity
 - Generate synchronized datasets for joint analysis
 - Implement in stages to manage complexity
