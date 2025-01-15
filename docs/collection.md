@@ -2,9 +2,16 @@
 
 ## Overview
 
-The Memory Collector project aims to provide deep visibility into memory subsystem interference patterns in Kubernetes environments. To achieve this, we plan to build an initial collector that captures high-resolution telemetry data from individual machines. 
+Our telemetry strategy prioritizes high-resolution, low-level data collection to build a foundation for understanding memory subsystem interference. By focusing on simplicity and data quality in the initial collector, we can enable rapid iteration and validation of detection algorithms.
 
-**This "firehose" telemetry will enable us to build a big data dataset for offline analysis, allowing us to identify patterns and develop algorithms for real-time interference detection.**
+**The key aspects of our approach are:**
+
+- Collect per-process, per-core metrics at 1 millisecond granularity to capture interference at a meaningful timescale
+- Collect per-process cache occupancy metrics at 1 millisecond granularity
+- Generate synchronized datasets for joint analysis
+- Implement in stages to manage complexity
+
+**This "firehose" telemetry will enable us to build a dataset for offline analysis, allowing us to identify patterns and develop algorithms for real-time interference detection.**
 
 ## Telemetry Collection
 
@@ -55,15 +62,3 @@ By collecting high-resolution telemetry from multiple clusters, both real-world 
 
 These insights will inform the development of algorithms for real-time interference detection in future collector versions. Starting with a thorough understanding of low-level behavior is key to building effective higher-level detection and mitigation strategies.
 
-## Summary
-
-Our telemetry strategy prioritizes high-resolution, low-level data collection to build a foundation for understanding memory subsystem interference. By focusing on simplicity and data quality in the initial collector, we can enable rapid iteration and validation of detection algorithms.
-
-**The key aspects of our approach are:**
-
-- Collect per-process, per-core metrics at 1 millisecond granularity to capture interference at a meaningful timescale
-- Collect per-process cache occupancy metrics at 1 millisecond granularity
-- Generate synchronized datasets for joint analysis
-- Implement in stages to manage complexity
-
-**This approach aligns with our overall goal of providing meaningful visibility into a critical yet often overlooked performance factor in Kubernetes environments.**
