@@ -1,0 +1,70 @@
+name: Test EC2 Runner
+on: workflow_dispatch  # Manual trigger for testing
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ec2-image-id: ami-0735c191cf914754d  # Amazon Linux 2 in us-west-2
+          ec2-instance-type: t3.micro
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "github-runner"},
+              {"Key": "Repository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+              {"Key": "RunId", "Value": "${{ github.run_id }}"},
+              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+              {"Key": "SHA", "Value": "${{ github.sha }}"},
+              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+              {"Key": "Actor", "Value": "${{ github.actor }}"}
+            ]
+
+  do-job:
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: Test runner
+        run: |
+          echo "Hello from EC2 runner!"
+          uname -a
+          pwd
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, do-job]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if previous jobs fail
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
