@@ -27,7 +27,7 @@ jobs:
         uses: machulav/ec2-github-runner@v2
         with:
           mode: start
-          github-token: ${{ secrets.TOKEN_FOR_MANAGING_SELF_RUNNERS }}
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           ec2-image-id: ami-08970251d20e940b0  # Amazon Linux 2023 in us-west-2
           ec2-instance-type: t3.micro
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
@@ -71,6 +71,6 @@ jobs:
         uses: machulav/ec2-github-runner@v2
         with:
           mode: stop
-          github-token: ${{ secrets.TOKEN_FOR_MANAGING_SELF_RUNNERS }}
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           label: ${{ needs.start-runner.outputs.label }}
           ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}

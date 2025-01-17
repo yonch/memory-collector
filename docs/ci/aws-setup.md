@@ -116,7 +116,7 @@ Configure the repository with the following secrets that can be used in Actions:
 - `AWS_REGION`: the region where we'll run runners
 - `AWS_SUBNET_ID`: the subnet ID, needs to be in `AWS_REGION`
 - `AWS_SECURITY_GROUP_ID`: the name of the security group that allows runners to pull jobs
-- `GITHUB_ACTIONS_SELF_HOSTED_RUNNERS_TOKEN`: see below
+- `REPO_ADMIN_TOKEN`: see below
 
 ### Getting a token for ec2-github-runner
 
@@ -125,7 +125,8 @@ To register runners with GitHub, the `machulav/ec2-github-runner` action needs a
 1. Configure your organization to allow fine-grained tokens. In Organization Settings -> Third-party Access -> Personal access tokens -> Settings, allow access via fine-grained personal access tokens
 2. Create a fine-grained personal access token here: https://github.com/settings/personal-access-tokens/new
 3. Set the resource owner to be the organization
-4. In Organization Permissions, give access to "Self-hosted runners" (read and write)
+4. Set the permission scope to "Only select repositories", and select the repo with the GitHub Action
+4. In Repository permissions, add "Administration" (read and write)
 
 ## GitHub Workflow Configuration
 
