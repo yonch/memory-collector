@@ -116,81 +116,17 @@ Configure the repository with the following secrets that can be used in Actions:
 - `AWS_REGION`: the region where we'll run runners
 - `AWS_SUBNET_ID`: the subnet ID, needs to be in `AWS_REGION`
 - `AWS_SECURITY_GROUP_ID`: the name of the security group that allows runners to pull jobs
+- `GITHUB_ACTIONS_SELF_HOSTED_RUNNERS_TOKEN`: see below
 
+### Getting a token for ec2-github-runner
+
+To register runners with GitHub, the `machulav/ec2-github-runner` action needs a GitHub token that has permissions to modify the set of organization self hosted runners. This might be transferable to user accounts but I haven't checked.
+
+1. Configure your organization to allow fine-grained tokens. In Organization Settings -> Third-party Access -> Personal access tokens -> Settings, allow access via fine-grained personal access tokens
+2. Create a fine-grained personal access token here: https://github.com/settings/personal-access-tokens/new
+3. Set the resource owner to be the organization
+4. In Organization Permissions, give access to "Self-hosted runners" (read and write)
 
 ## GitHub Workflow Configuration
 
-Here is an example workflow, adapted from the [ec2-github-runner README](https://github.com/machulav/ec2-github-runner?tab=readme-ov-file#example) and [configure-aws-credentials README example](https://github.com/aws-actions/configure-aws-credentials?tab=readme-ov-file#assumerolewithwebidentity-recommended).
-
-```yaml
-name: Test EC2 Runner
-on: workflow_dispatch  # Manual trigger for testing
-
-jobs:
-  start-runner:
-    name: Start EC2 runner
-    runs-on: ubuntu-latest
-    outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: start
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          ec2-image-id: ami-0735c191cf914754d  # Amazon Linux 2 in us-west-2
-          ec2-instance-type: t3.micro
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          aws-resource-tags: >
-            [
-              {"Key": "Name", "Value": "github-runner"},
-              {"Key": "Repository", "Value": "${{ github.repository }}"},
-              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
-              {"Key": "RunId", "Value": "${{ github.run_id }}"},
-              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
-              {"Key": "SHA", "Value": "${{ github.sha }}"},
-              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
-              {"Key": "Actor", "Value": "${{ github.actor }}"}
-            ]
-
-  do-job:
-    needs: start-runner
-    runs-on: ${{ needs.start-runner.outputs.label }}
-    steps:
-      - name: Test runner
-        run: |
-          echo "Hello from EC2 runner!"
-          uname -a
-          pwd
-
-  stop-runner:
-    name: Stop EC2 runner
-    needs: [start-runner, do-job]
-    runs-on: ubuntu-latest
-    if: always()  # Run even if previous jobs fail
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: stop
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
-```
+For an example workflow, adapted from the [ec2-github-runner README](https://github.com/machulav/ec2-github-runner?tab=readme-ov-file#example) and [configure-aws-credentials README example](https://github.com/aws-actions/configure-aws-credentials?tab=readme-ov-file#assumerolewithwebidentity-recommended), see `/.github/workflows/aws-runner-template.yaml`.
