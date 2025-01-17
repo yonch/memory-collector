@@ -32,6 +32,12 @@ jobs:
           ec2-instance-type: t3.micro
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          pre-runner-script: |
+            sudo dnf update -y
+            sudo dnf install docker git perl-libicu -y
+            sudo systemctl enable docker
+            sudo systemctl start docker
+            sudo usermod -a -G docker ec2-user
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "github-runner"},
