@@ -1,6 +1,11 @@
 name: Test EC2 Runner
 on: workflow_dispatch  # Manual trigger for testing
 
+# Add permissions needed for OIDC authentication
+permissions:
+  id-token: write # Required for requesting the JWT
+  contents: read  # Required for actions/checkout
+
 jobs:
   start-runner:
     name: Start EC2 runner
