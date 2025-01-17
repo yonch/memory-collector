@@ -1,4 +1,4 @@
-Note: this project will soon move from `perfpod/memory-collector` to `unvariance/collector`. See [issue#34](https://github.com/perfpod/memory-collector/issues/34).
+Note: this project was renamed to `unvariance/collector` (previously `perfpod/memory-collector`). See [issue#34](https://github.com/perfpod/memory-collector/issues/34).
 
 # Memory Collector
 
