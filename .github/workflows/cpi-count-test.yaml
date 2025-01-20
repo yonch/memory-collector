@@ -74,8 +74,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Print environment variables
-        run: echo $HOME
+      - name: Set environment variables
+        run: |
+          echo "HOME=/home/runner" >> $GITHUB_ENV
+          echo $HOME
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
