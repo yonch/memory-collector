@@ -1,0 +1,86 @@
+name: Test CPI Count on AWS EC2
+on: workflow_dispatch
+
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          ec2-image-id: ami-006ec002b74f6c066 # Amazon Linux 2 in us-east-2
+          ec2-instance-type: t3.micro
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          pre-runner-script: |
+            sudo yum update -y && \
+            sudo yum install docker git libicu -y
+            sudo systemctl enable docker
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "github-runner"},
+              {"Key": "Repository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+              {"Key": "RunId", "Value": "${{ github.run_id }}"},
+              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+              {"Key": "SHA", "Value": "${{ github.sha }}"},
+              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+              {"Key": "Actor", "Value": "${{ github.actor }}"}
+            ]
+
+  run-tests:
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    permissions:
+      contents: read
+    steps:
+      - name: Install `just` # Can we install this with `yum` instead?
+        uses: extractions/setup-just@v2
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Run cpi-count binary
+        run: just cpi-bin
+      - name: Run tests
+        run: just cpi-test
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, do-job]
+    runs-on: ubuntu-latest
+    if: always() # Run even if previous jobs fail
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
