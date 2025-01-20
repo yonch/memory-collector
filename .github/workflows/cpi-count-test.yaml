@@ -27,13 +27,13 @@ jobs:
         with:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          ec2-image-id: ami-006ec002b74f6c066 # Amazon Linux 2 in us-east-2
+          ec2-image-id: ami-0884d2865dbe9de4b # Ubuntu 22.04 LTS in us-east-2
           ec2-instance-type: t3.micro
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
-            sudo yum update -y && \
-            sudo yum install docker git libicu just -y
+            sudo apt update -y && \
+            sudo apt install docker git libicu just -y
             sudo systemctl enable docker
           aws-resource-tags: >
             [
