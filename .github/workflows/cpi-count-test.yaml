@@ -59,7 +59,10 @@ jobs:
       - name: Install `go`
         uses: actions/setup-go@v5
         with:
-          go-version: "^1.22.9"
+          go-version: "1.22.9"
+      - name: Setup Go environment
+        run: |
+          echo "GOMODCACHE=$HOME/go/pkg/mod" >> $GITHUB_ENV
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
