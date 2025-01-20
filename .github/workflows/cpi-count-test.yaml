@@ -47,6 +47,24 @@ jobs:
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
 
+  ensure-perf-event-paranoid:
+    name: Ensure `perf_event_paranoid` is set
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: Check current value
+        run: cat /proc/sys/kernel/perf_event_paranoid
+      - name: Ensure value is 0
+        run: echo 0 | sudo tee /proc/sys/kernel/perf_event_paranoid 1>/dev/null
+      - name: Check updated value
+        run: cat /proc/sys/kernel/perf_event_paranoid
+
+  print-available-events:
+    name: Print available events that can be used with `perf -e`
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: Print available events
+        run: perf list
+
   run-tests:
     name: Run tests
     needs: start-runner
