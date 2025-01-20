@@ -77,6 +77,7 @@ jobs:
       - name: Create home directory
         run: |
           mkdir -p /home/runner
+          chmod -R 777 /home/runner
           echo "HOME=/home/runner" >> $GITHUB_ENV
       - name: Print environment variables
         run: |
