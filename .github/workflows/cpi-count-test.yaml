@@ -33,7 +33,7 @@ jobs:
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
             sudo yum update -y && \
-            sudo yum install docker git libicu -y
+            sudo yum install docker git libicu just -y
             sudo systemctl enable docker
           aws-resource-tags: >
             [
@@ -48,13 +48,12 @@ jobs:
             ]
 
   run-tests:
+    name: Run tests
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
     permissions:
       contents: read
     steps:
-      - name: Install `just` # Can we install this with `yum` instead?
-        uses: extractions/setup-just@v2
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
