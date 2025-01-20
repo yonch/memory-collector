@@ -61,7 +61,7 @@ jobs:
 
   print-available-events:
     name: Print available events that can be used with `perf -e`
-    needs: ensure-perf-event-paranoid
+    needs: [start-runner, ensure-perf-event-paranoid]
     runs-on: ${{ needs.start-runner.outputs.label }}
     steps:
       - name: Print available events
@@ -69,7 +69,7 @@ jobs:
 
   run-tests:
     name: Run tests
-    needs: ensure-perf-event-paranoid
+    needs: [start-runner, ensure-perf-event-paranoid, print-available-events]
     runs-on: ${{ needs.start-runner.outputs.label }}
     permissions:
       contents: read
@@ -86,8 +86,6 @@ jobs:
           rm -rf cmd
           ls -al
 
-      - name: Install `just`
-        uses: extractions/setup-just@v2
       - name: Install `go`
         uses: actions/setup-go@v5
         with:
@@ -95,13 +93,13 @@ jobs:
       - name: Print go version
         run: go version
       - name: Run cpi-count binary
-        run: just cpi-bin
+        run: go build . && ./cpi-count
       - name: Run tests
-        run: just cpi-test
+        run: go test -count=1 ./...
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [start-runner, run-tests]
+    needs: [start-runner, ensure-perf-event-paranoid, run-tests]
     runs-on: ubuntu-latest
     if: always() # Run even if previous jobs fail
     steps:
