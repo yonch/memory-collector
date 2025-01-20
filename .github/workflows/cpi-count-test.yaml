@@ -28,6 +28,11 @@ jobs:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           ec2-image-id: ami-0884d2865dbe9de4b # Ubuntu 22.04 LTS in us-east-2
+          # See this Intel VTune documentation that lists the instances that support
+          # hardware events:
+          # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-vtune-amplifier-functionality-on-aws-instances.html
+          # The cheapest instance is probably going to be c5.9xlarge, but it requires
+          # submitting a request to AWS for a vCPU quota increase.
           ec2-instance-type: m5zn.6xlarge
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
