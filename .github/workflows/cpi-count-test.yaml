@@ -33,7 +33,7 @@ jobs:
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
             sudo apt update -y && \
-            sudo apt install docker git libicu just -y
+            sudo apt install docker git libicu -y
             sudo systemctl enable docker
           aws-resource-tags: >
             [
@@ -54,6 +54,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Install `just`
+        uses: extractions/setup-just@v2
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
