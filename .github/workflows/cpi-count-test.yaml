@@ -74,6 +74,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Print environment variables
+        run: echo $HOME
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
