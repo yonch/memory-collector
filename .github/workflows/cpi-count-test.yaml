@@ -47,6 +47,8 @@ jobs:
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
 
+  # We set `perf_event_paranoid=0` so that we can run the cpi-count program and
+  # tests without elevated privileges.
   ensure-perf-event-paranoid:
     name: Ensure `perf_event_paranoid` is set
     needs: start-runner
@@ -74,10 +76,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      # It seems that when using a self-hosted runner with an Ubuntu image,
+      # the $HOME directory is not created/maintained. We manually create it
+      # here because the `go` installation requires a valid $HOME directory
+      # for several `go` environment variables.
       - name: Create home directory
         run: |
           mkdir -p /home/runner
-          chmod -R 777 /home/runner
           echo "HOME=/home/runner" >> $GITHUB_ENV
       - name: Print environment variables
         run: |
@@ -93,7 +98,6 @@ jobs:
           mv cmd/cpi-count/* .
           rm -rf cmd
           ls -al
-
       - name: Install `go`
         uses: actions/setup-go@v5
         with:
