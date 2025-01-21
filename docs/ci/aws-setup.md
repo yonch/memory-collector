@@ -70,7 +70,7 @@ Next, create an IAM role for GitHub Actions:
 
 ### EC2 Permissions
 
-The IAM role needs permissions to manage EC2 instances. Attach a policy with these minimum permissions:
+The IAM role needs permissions to manage EC2 instances and request Spot instances. Attach a policy with these minimum permissions:
 
 ```json
 {
@@ -82,7 +82,11 @@ The IAM role needs permissions to manage EC2 instances. Attach a policy with the
                 "ec2:RunInstances",
                 "ec2:TerminateInstances",
                 "ec2:DescribeInstances",
-                "ec2:DescribeInstanceStatus"
+                "ec2:DescribeInstanceStatus",
+                "ec2:RequestSpotInstances",
+                "ec2:CancelSpotInstanceRequests",
+                "ec2:DescribeSpotInstanceRequests",
+                "ec2:DescribeSpotPriceHistory"
             ],
             "Resource": "*"
         },
@@ -92,7 +96,10 @@ The IAM role needs permissions to manage EC2 instances. Attach a policy with the
             "Resource": "*",
             "Condition": {
                 "StringEquals": {
-                    "ec2:CreateAction": "RunInstances"
+                    "ec2:CreateAction": [
+                        "RunInstances",
+                        "RequestSpotInstances"
+                    ]
                 }
             }
         }
