@@ -1,0 +1,134 @@
+name: Test CPI Count on AWS EC2
+on: workflow_dispatch
+
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          ec2-image-id: ami-0884d2865dbe9de4b # Ubuntu 22.04 LTS in us-east-2
+          # See this Intel VTune documentation that lists the instances that support
+          # hardware events:
+          # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-vtune-amplifier-functionality-on-aws-instances.html
+          ec2-instance-type: c5.9xlarge
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          pre-runner-script: |
+            sudo apt update -y && \
+            sudo apt install docker git libicu -y
+            sudo systemctl enable docker
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "github-runner"},
+              {"Key": "Repository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+              {"Key": "RunId", "Value": "${{ github.run_id }}"},
+              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+              {"Key": "SHA", "Value": "${{ github.sha }}"},
+              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+              {"Key": "Actor", "Value": "${{ github.actor }}"}
+            ]
+
+  # We set `perf_event_paranoid=0` so that we can run the cpi-count program and
+  # tests without elevated privileges.
+  ensure-perf-event-paranoid:
+    name: Ensure `perf_event_paranoid` is set
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: Check current value
+        run: cat /proc/sys/kernel/perf_event_paranoid
+      - name: Ensure value is 0
+        run: echo 0 | sudo tee /proc/sys/kernel/perf_event_paranoid 1>/dev/null
+      - name: Check updated value
+        run: cat /proc/sys/kernel/perf_event_paranoid
+
+  print-available-events:
+    name: Print available events that can be used with `perf -e`
+    needs: [start-runner, ensure-perf-event-paranoid]
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: Print available events
+        run: perf list
+
+  run-tests:
+    name: Run tests
+    needs: [start-runner, ensure-perf-event-paranoid, print-available-events]
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    permissions:
+      contents: read
+    steps:
+      # It seems that when using a self-hosted runner with an Ubuntu image,
+      # the $HOME directory is not created/maintained. We manually create it
+      # here because the `go` installation requires a valid $HOME directory
+      # for several `go` environment variables.
+      - name: Create home directory
+        run: |
+          mkdir -p /home/runner
+          echo "HOME=/home/runner" >> $GITHUB_ENV
+      - name: Print environment variables
+        run: |
+          echo $HOME
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: "cmd/cpi-count"
+          sparse-checkout-cone-mode: false
+      - name: Move cpi-count files to root
+        run: |
+          mv cmd/cpi-count/* .
+          rm -rf cmd
+          ls -al
+      - name: Install `go`
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.9"
+      - name: Print go version
+        run: go version
+      - name: Run cpi-count binary
+        run: go build . && ./cpi-count
+      - name: Run tests
+        run: go test -count=1 ./...
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, ensure-perf-event-paranoid, run-tests]
+    runs-on: ubuntu-latest
+    if: always() # Run even if previous jobs fail
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
