@@ -23,7 +23,7 @@ jobs:
 
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2
+        uses: tverghis/ec2-github-runner@7170053
         with:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
@@ -51,6 +51,7 @@ jobs:
               {"Key": "Branch", "Value": "${{ github.ref_name }}"},
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
+          market-type: spot
 
   # We set `perf_event_paranoid=0` so that we can run the cpi-count program and
   # tests without elevated privileges.
