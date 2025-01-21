@@ -31,9 +31,7 @@ jobs:
           # See this Intel VTune documentation that lists the instances that support
           # hardware events:
           # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-vtune-amplifier-functionality-on-aws-instances.html
-          # The cheapest instance is probably going to be c5.9xlarge, but it requires
-          # submitting a request to AWS for a vCPU quota increase.
-          ec2-instance-type: m5zn.6xlarge
+          ec2-instance-type: c5.9xlarge
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
