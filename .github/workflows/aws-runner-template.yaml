@@ -4,8 +4,6 @@ on: workflow_dispatch  # Manual trigger for testing
 # Add permissions needed for OIDC authentication
 permissions:
   id-token: write # Required for requesting the JWT
-#   contents: read  # Required for actions/checkout
-#   actions: write     # Required for registering runners
 
 jobs:
   start-runner:
