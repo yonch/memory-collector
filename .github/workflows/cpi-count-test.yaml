@@ -21,7 +21,7 @@ jobs:
 
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: tverghis/ec2-github-runner@7170053c36b2928213de1cf2303ac85059dadeee
+        uses: machulav/ec2-github-runner@28fbe1c4d7d9ba74134ca5ebc559d5b0a989a856
         with:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
@@ -125,7 +125,7 @@ jobs:
           role-session-name: github-runner-session
 
       - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2
+        uses: machulav/ec2-github-runner@28fbe1c4d7d9ba74134ca5ebc559d5b0a989a856
         with:
           mode: stop
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
