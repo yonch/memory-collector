@@ -107,6 +107,23 @@ The IAM role needs permissions to manage EC2 instances and request Spot instance
 }
 ```
 
+### Allowing Spot instances
+
+According to [AWS spot instance role docs](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/service-linked-roles-spot-instance-requests.html):
+
+> Under most circumstances, you don't need to manually create a service-linked role. Amazon EC2 creates the AWSServiceRoleForEC2Spot service-linked role the first time you request a Spot Instance using the console.
+
+And later:
+> If you use the AWS CLI or an API to request a Spot Instance, you must first ensure that this role exists.
+
+So to enable Spot instances, we recommend making a request on the account using the console, which creates the role, and then canceling the request.
+
+### Instance quotas
+
+We found default EC2 and Spot quotas to be smaller than most machines that make the PMU available to VMs. We requested an increase to 192 cores.
+
+Quota requests can be made through [this page](https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-quotas.html). Note that there are separate quotas for On-Demand and for Spot.
+
 ## Network Configuration
 
 Create a dedicated VPC for CI testing:
