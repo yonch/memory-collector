@@ -3,8 +3,8 @@ on: workflow_dispatch
 
 permissions:
   id-token: write
-  contents: read
-  actions: write
+  # contents: read
+  # actions: write
 
 jobs:
   start-runner:
