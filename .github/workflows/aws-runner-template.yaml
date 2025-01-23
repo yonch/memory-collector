@@ -4,8 +4,6 @@ on: workflow_dispatch  # Manual trigger for testing
 # Add permissions needed for OIDC authentication
 permissions:
   id-token: write # Required for requesting the JWT
-  contents: read  # Required for actions/checkout
-  actions: write     # Required for registering runners
 
 jobs:
   start-runner:
@@ -24,12 +22,13 @@ jobs:
 
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2
+        uses: machulav/ec2-github-runner@v2.3.8
         with:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           ec2-image-id: ami-006ec002b74f6c066  # Amazon Linux 2 in us-east-2
           ec2-instance-type: t3.micro
+          market-type: spot
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
@@ -72,7 +71,7 @@ jobs:
           role-session-name: github-runner-session
 
       - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2
+        uses: machulav/ec2-github-runner@v2.3.8
         with:
           mode: stop
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
