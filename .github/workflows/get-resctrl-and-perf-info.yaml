@@ -1,0 +1,95 @@
+name: Get Resctrl and Perf info
+on: workflow_dispatch  # Manual trigger for testing
+
+# Add permissions needed for OIDC authentication
+permissions:
+  id-token: write # Required for requesting the JWT
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: start
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          ec2-image-id: ami-0cb91c7de36eed2cb  # Ubuntu Server 24.04 LTS (HVM), SSD Volume Type
+          ec2-instance-type: c7i.metal-24xl
+          market-type: spot
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          pre-runner-script: |
+            sudo yum update -y && \
+            sudo yum install docker git libicu -y
+            sudo systemctl enable docker
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "github-runner"},
+              {"Key": "Repository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+              {"Key": "RunId", "Value": "${{ github.run_id }}"},
+              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+              {"Key": "SHA", "Value": "${{ github.sha }}"},
+              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+              {"Key": "Actor", "Value": "${{ github.actor }}"}
+            ]
+
+  do-job:
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+      - name: List perf counters
+        run: |
+          perf list
+      - name: List perf - detailed
+        run: |
+          perf list --log-desc --details
+      - name: Check perf paranoid
+        run: |
+          ls /proc/sys/kernel/perf_event_paranoid
+          cat /proc/sys/kernel/perf_event_paranoid
+      - name: Check intel_cqm
+        run: |
+          echo "*** Listing /sys/devices/intel_cqm"
+          ls -la /sys/devices/intel_cqm || true
+          echo "*** Traversing  /sys/devices/intel_cqm/events"
+          find /sys/devices/intel_cqm/events || true
+          echo "checking type"
+          cat /sys/devices/intel_cqm/type || true
+          echo "reading llc_occupancy"
+          cat /sys/devices/intel_cqm/events/llc_occupancy || true
+          cat /sys/devices/intel_cqm/events/llc_occupancy.scale || true
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, do-job]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if previous jobs fail
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: stop
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
