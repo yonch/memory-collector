@@ -29,7 +29,7 @@ jobs:
           ec2-image-id: ami-0cb91c7de36eed2cb  # Ubuntu Server 24.04 LTS (HVM), SSD Volume Type
           ec2-instance-type: c7i.metal-24xl
           market-type: spot
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          # subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
             sudo yum update -y && \
