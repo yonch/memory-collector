@@ -56,7 +56,7 @@ jobs:
           perf list
       - name: List perf - detailed
         run: |
-          perf list --log-desc --details
+          perf list --long-desc --details || true
       - name: Check perf paranoid
         run: |
           ls /proc/sys/kernel/perf_event_paranoid
