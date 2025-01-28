@@ -61,6 +61,28 @@ jobs:
         run: |
           ls /proc/sys/kernel/perf_event_paranoid
           cat /proc/sys/kernel/perf_event_paranoid
+      - name: Check RDT Capabilities
+        run: |
+          sudo mkdir -p /sys/fs/resctrl
+          sudo mount -t resctrl resctrl /sys/fs/resctrl || true
+          
+          echo "Mounting resctrl filesystem"
+          mount | grep resctrl || true
+          
+          echo "Checking RDT capabilities"
+          ls /sys/fs/resctrl/info || true
+          
+          echo "Monitoring features:"
+          cat /sys/fs/resctrl/info/L3_MON/mon_features || true
+          
+          echo "Number of CAT classes:"
+          cat /sys/fs/resctrl/info/L3/num_closids || true
+          
+          echo "CPU RDT features:"
+          grep -E "cat_l3|cdp_l3|cqm_occup_llc|cqm_mbm_total|cqm_mbm_local" /proc/cpuinfo || true
+          
+          # we do not unmount, maybe mounting affects the intel_cqm checks below
+          #sudo umount /sys/fs/resctrl || true           
       - name: Check intel_cqm
         run: |
           echo "*** Listing /sys/devices/intel_cqm"
