@@ -94,6 +94,9 @@ jobs:
           echo "reading llc_occupancy"
           cat /sys/devices/intel_cqm/events/llc_occupancy || true
           cat /sys/devices/intel_cqm/events/llc_occupancy.scale || true
+      - name: Power off
+        run: |
+          shutdown --poweroff now
 
   stop-runner:
     name: Stop EC2 runner
