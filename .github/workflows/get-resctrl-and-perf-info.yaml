@@ -75,6 +75,9 @@ jobs:
           echo "Monitoring features:"
           cat /sys/fs/resctrl/info/L3_MON/mon_features || true
           
+          echo "Number of available RMIDs:"
+          cat /sys/fs/resctrl/info/L3_MON/num_rmids || true
+
           echo "Number of CAT classes:"
           cat /sys/fs/resctrl/info/L3/num_closids || true
           
