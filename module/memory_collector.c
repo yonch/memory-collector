@@ -26,7 +26,8 @@ static struct pmu memory_collector_pmu;
 
 // Custom overflow handler
 static void memory_collector_overflow_handler(struct perf_event *event,
-                                           struct perf_sample_data *data)
+                                           struct perf_sample_data *data,
+                                           struct pt_regs *regs)
 {
     struct memory_collector_data sample = {
         .timestamp = ktime_get_ns(),
@@ -65,10 +66,13 @@ static void memory_collector_read(struct perf_event *event)
 {
     // Trigger the overflow handler directly
     struct perf_sample_data data;
+    struct pt_regs *regs = get_irq_regs();
     
     perf_sample_data_init(&data, 0, 1);
     
-    memory_collector_overflow_handler(event, &data);
+    if (regs) {
+        memory_collector_overflow_handler(event, &data, regs);
+    }
 }
 
 // PMU configuration
