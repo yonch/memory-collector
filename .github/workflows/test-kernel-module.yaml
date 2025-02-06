@@ -74,31 +74,37 @@ jobs:
 
       - name: Install build dependencies
         run: |
-            # Get kernel compiler version from the version string
-            KERNEL_GCC_VERSION=$(cat /proc/version | grep -oP 'gcc version \K[0-9]+' || echo "")
-            echo "Detected kernel compiler version: ${KERNEL_GCC_VERSION}"
-            
-            # Install base dependencies
-            sudo apt-get install -y build-essential linux-headers-$(uname -r)
-            
-            # Install specific gcc version if detected
-            if [ ! -z "$KERNEL_GCC_VERSION" ]; then
-              echo "Installing gcc-${KERNEL_GCC_VERSION}"
-              sudo apt-get install -y gcc-${KERNEL_GCC_VERSION}
-              
-              # Configure as default gcc
-              sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${KERNEL_GCC_VERSION} 100
-              sudo update-alternatives --set gcc /usr/bin/gcc-${KERNEL_GCC_VERSION}
-            else
-              echo "Warning: Could not detect kernel compiler version"
-            fi
-            
-            # Verify gcc version
-            gcc --version
+          # Install base dependencies
+          sudo apt-get install -y build-essential linux-headers-$(uname -r)
+          
       - name: Build kernel module
         working-directory: module
         run: |
+          # Try to compile and capture the warning message
+          make 2>&1 | tee compile_output.txt || true
+          
+          # Extract gcc version from the warning message
+          KERNEL_GCC_VERSION=$(grep "The kernel was built by:" compile_output.txt | grep -oP 'gcc-\K\d+' || echo "")
+          echo "Detected kernel compiler version: ${KERNEL_GCC_VERSION}"
+          
+          # Install specific gcc version if detected
+          if [ ! -z "$KERNEL_GCC_VERSION" ]; then
+            echo "Installing gcc-${KERNEL_GCC_VERSION}"
+            sudo apt-get install -y gcc-${KERNEL_GCC_VERSION}
+            
+            # Configure as default gcc
+            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${KERNEL_GCC_VERSION} 100
+            sudo update-alternatives --set gcc /usr/bin/gcc-${KERNEL_GCC_VERSION}
+          else
+            echo "Warning: Could not detect kernel compiler version"
+          fi
+          
+          # Verify gcc version
+          gcc --version
+          
+          # Now try the actual build
           make
+
           ls -l build/memory_collector.ko
 
       - name: Load and test module
