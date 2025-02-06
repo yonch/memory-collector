@@ -30,9 +30,6 @@ jobs:
           market-type: spot
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          pre-runner-script: |
-            sudo apt-get update && \
-            sudo apt-get install -y build-essential linux-headers-$(uname -r)
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "github-runner"},
@@ -52,6 +49,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential linux-headers-$(uname -r)
 
       - name: Build kernel module
         working-directory: module
