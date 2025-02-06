@@ -60,6 +60,17 @@ jobs:
           # Force apt to use IPv4
           echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
 
+      - name: Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configured
+          sudo apt-get update
 
       - name: Install build dependencies
         run: |
