@@ -4,6 +4,7 @@
 #include <linux/perf_event.h>
 #include <linux/sched.h>
 #include <linux/ktime.h>
+#include <linux/irq.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Memory Collector Project");
