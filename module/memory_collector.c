@@ -20,31 +20,32 @@ MODULE_VERSION("1.0");
 #define CREATE_TRACE_POINTS
 #include "memory_collector_trace.h"
 
-// Data structure for PMU samples
-struct memory_collector_data {
-    u64 timestamp;      // Current timestamp
-    u32 core_id;       // CPU core number
-    char comm[16];     // Current task comm (name)
-} __packed;
-
 // PMU type for our custom events
 static struct pmu memory_collector_pmu;
 
-// Custom overflow handler
+
+// New IPI handler function that will run on each CPU
+static void memory_collector_ipi_handler(void *info)
+{
+    u32 cpu = smp_processor_id();
+    
+    // Trace the event for this CPU
+    trace_memory_collector_sample(cpu, ktime_get_ns(), current->comm);
+}
+
+// Modified overflow handler
 static void memory_collector_overflow_handler(struct perf_event *event,
                                            struct perf_sample_data *data,
                                            struct pt_regs *regs)
 {
-    struct memory_collector_data sample = {
-        .timestamp = ktime_get_ns(),
-        .core_id = smp_processor_id()
-    };
+    const struct cpumask *mask = cpu_online_mask;
     
-    strncpy(sample.comm, current->comm, sizeof(sample.comm) - 1);
-    sample.comm[sizeof(sample.comm) - 1] = '\0';
 
-    // Trace the event
-    trace_memory_collector_sample(sample.core_id, sample.timestamp, sample.comm);
+    // Send IPI to all other CPUs
+    smp_call_function_many(mask, memory_collector_ipi_handler, NULL, 1);
+
+    // Run the trace on this CPU
+    memory_collector_ipi_handler(NULL);
 }
 
 // PMU callback functions
