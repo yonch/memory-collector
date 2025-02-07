@@ -5,6 +5,8 @@
 #include <linux/sched.h>
 #include <linux/ktime.h>
 #include <linux/irq.h>
+#include <linux/tracepoint.h>
+#include <trace/events/sched.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Memory Collector Project");
@@ -25,6 +27,30 @@ struct memory_collector_data {
 // PMU type for our custom events
 static struct pmu memory_collector_pmu;
 
+// Define the tracepoint
+TRACE_EVENT(memory_collector_sample,
+    TP_PROTO(u32 core_id, u64 timestamp, const char *comm),
+    
+    TP_ARGS(core_id, timestamp, comm),
+    
+    TP_STRUCT__entry(
+        __field(u32, core_id)
+        __field(u64, timestamp)
+        __array(char, comm, 16)
+    ),
+    
+    TP_fast_assign(
+        __entry->core_id = core_id;
+        __entry->timestamp = timestamp;
+        memcpy(__entry->comm, comm, 16);
+    ),
+    
+    TP_printk("cpu=%u timestamp=%llu comm=%s",
+        __entry->core_id,
+        __entry->timestamp,
+        __entry->comm)
+);
+
 // Custom overflow handler
 static void memory_collector_overflow_handler(struct perf_event *event,
                                            struct perf_sample_data *data,
@@ -38,9 +64,8 @@ static void memory_collector_overflow_handler(struct perf_event *event,
     strncpy(sample.comm, current->comm, sizeof(sample.comm) - 1);
     sample.comm[sizeof(sample.comm) - 1] = '\0';
 
-    // For now, just print the data
-    printk(KERN_DEBUG "Memory sample - CPU: %u, Time: %llu, Task: %s\n",
-           sample.core_id, sample.timestamp, sample.comm);
+    // Replace printk with tracepoint
+    trace_memory_collector_sample(sample.core_id, sample.timestamp, sample.comm);
 }
 
 // PMU callback functions

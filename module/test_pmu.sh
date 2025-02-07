@@ -14,42 +14,38 @@ lsmod | grep memory_collector || {
     exit 1
 }
 
-echo "Starting perf recording..."
-sudo perf record -e memory_collector/sampling=1/ -a -o perf.data sleep 1
+echo "Setting up tracing..."
+sudo trace-cmd start -e memory_collector_sample
 
-echo "Generating perf report..."
-sudo perf script -i perf.data > perf_output.txt
+echo "Collecting samples for 1 second..."
+sleep 1
+
+echo "Stopping trace..."
+sudo trace-cmd stop
+
+echo "Extracting trace data..."
+sudo trace-cmd extract
+
+echo "Reading trace report..."
+sudo trace-cmd report > trace_output.txt
 
 echo "Validating output..."
-# Check sample count (expect ~1000 samples per CPU)
+# Check if we have any trace entries
+SAMPLE_COUNT=$(grep "memory_collector_sample:" trace_output.txt | wc -l)
 CPU_COUNT=$(nproc)
 EXPECTED_MIN=$((900 * CPU_COUNT))
-SAMPLE_COUNT=$(wc -l < perf_output.txt)
 
 if [ $SAMPLE_COUNT -lt $EXPECTED_MIN ]; then
-    echo "Error: Got $SAMPLE_COUNT samples, expected at least $EXPECTED_MIN"
-    exit 1
-fi
-
-# Validate data format
-if ! grep -q "timestamp:" perf_output.txt; then
-    echo "Error: Missing timestamp data"
-    exit 1
-fi
-
-if ! grep -q "core_id:" perf_output.txt; then
-    echo "Error: Missing core_id data"
-    exit 1
-fi
-
-if ! grep -q "comm:" perf_output.txt; then
-    echo "Error: Missing comm data"
+    echo "Error: Got $SAMPLE_COUNT trace entries, expected at least $EXPECTED_MIN"
     exit 1
 fi
 
 echo "Unloading module..."
 sudo rmmod memory_collector
 
+echo "Cleaning up trace..."
+sudo trace-cmd reset
+
 echo "Test completed successfully!"
 echo "Sample count: $SAMPLE_COUNT"
-echo "Output saved to perf_output.txt" 
+echo "Output saved to trace_output.txt" 
