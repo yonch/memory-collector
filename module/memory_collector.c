@@ -148,7 +148,7 @@ static int __init memory_collector_init(void)
 
     // Create a kernel counter that will drive our sampling
     sampling_event = perf_event_create_kernel_counter(&attr, 
-                                                    -1, // any CPU
+                                                    0, // any CPU
                                                     NULL, // all threads
                                                     memory_collector_overflow_handler,
                                                     NULL);
