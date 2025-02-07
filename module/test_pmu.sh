@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Generate random temporary filenames
+RUN_ID=$(openssl rand -hex 8)
+TRACE_DATA="/tmp/trace_data_$RUN_ID"
+TRACE_OUTPUT="/tmp/trace_output_$RUN_ID.txt"
+
 echo "Building kernel module..."
 make clean
 make
@@ -23,15 +28,15 @@ sleep 1
 echo "Stopping trace..."
 sudo trace-cmd stop
 
-echo "Extracting trace data..."
-sudo trace-cmd extract
+echo "Extracting trace data to $TRACE_DATA..."
+sudo trace-cmd extract -o "$TRACE_DATA"
 
 echo "Reading trace report..."
-sudo trace-cmd report > trace_output.txt
+sudo trace-cmd report -i "$TRACE_DATA" > "$TRACE_OUTPUT"
 
 echo "Validating output..."
 # Check if we have any trace entries
-SAMPLE_COUNT=$(grep "memory_collector_sample:" trace_output.txt | wc -l)
+SAMPLE_COUNT=$(grep "memory_collector_sample:" "$TRACE_OUTPUT" | wc -l)
 CPU_COUNT=$(nproc)
 EXPECTED_MIN=$((900 * CPU_COUNT))
 
@@ -48,4 +53,5 @@ sudo trace-cmd reset
 
 echo "Test completed successfully!"
 echo "Sample count: $SAMPLE_COUNT"
-echo "Output saved to trace_output.txt" 
+echo "Trace data: $TRACE_DATA"
+echo "Trace output: $TRACE_OUTPUT" 
