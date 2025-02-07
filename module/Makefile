@@ -1,3 +1,4 @@
+EXTRA_CFLAGS += -I$(src)
 obj-m += memory_collector.o
 
 # Check if KVERSION is provided on command line
@@ -29,5 +30,6 @@ $(BUILD_DIR):
 clean:
 	$(MAKE) -C $(KDIR) M=$(BUILD_DIR) src=$(PWD) clean
 	rm -rf $(BUILD_DIR)
+	rm -f Module.symvers Module.markers modules.order
 
 .PHONY: all clean

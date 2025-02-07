@@ -17,17 +17,13 @@ MODULE_VERSION("1.0");
 #error "This module requires CONFIG_PERF_EVENTS"
 #endif
 
-// Data structure for PMU samples
-struct memory_collector_data {
-    u64 timestamp;      // Current timestamp
-    u32 core_id;       // CPU core number
-    char comm[16];     // Current task comm (name)
-} __packed;
+// First, declare the tracepoint
+DECLARE_TRACEPOINT(memory_collector_sample);
 
-// PMU type for our custom events
-static struct pmu memory_collector_pmu;
+// Define the tracepoint event
+DEFINE_TRACEPOINT_CONDITION(memory_collector_sample);
 
-// Define the tracepoint
+// Define the tracepoint format
 TRACE_EVENT(memory_collector_sample,
     TP_PROTO(u32 core_id, u64 timestamp, const char *comm),
     
@@ -50,6 +46,22 @@ TRACE_EVENT(memory_collector_sample,
         __entry->timestamp,
         __entry->comm)
 );
+
+// Create a header file for the tracepoint
+#undef TRACE_INCLUDE_PATH
+#define TRACE_INCLUDE_PATH .
+#define TRACE_INCLUDE_FILE memory_collector_trace
+#include <trace/define_trace.h>
+
+// Data structure for PMU samples
+struct memory_collector_data {
+    u64 timestamp;      // Current timestamp
+    u32 core_id;       // CPU core number
+    char comm[16];     // Current task comm (name)
+} __packed;
+
+// PMU type for our custom events
+static struct pmu memory_collector_pmu;
 
 // Custom overflow handler
 static void memory_collector_overflow_handler(struct perf_event *event,
