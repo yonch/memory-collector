@@ -6,7 +6,6 @@
 #include <linux/ktime.h>
 #include <linux/irq.h>
 #include <linux/tracepoint.h>
-#include <trace/events/sched.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Memory Collector Project");
@@ -17,41 +16,9 @@ MODULE_VERSION("1.0");
 #error "This module requires CONFIG_PERF_EVENTS"
 #endif
 
-// First, declare the tracepoint
-DECLARE_TRACEPOINT(memory_collector_sample);
-
-// Define the tracepoint event
-DEFINE_TRACEPOINT_CONDITION(memory_collector_sample);
-
-// Define the tracepoint format
-TRACE_EVENT(memory_collector_sample,
-    TP_PROTO(u32 core_id, u64 timestamp, const char *comm),
-    
-    TP_ARGS(core_id, timestamp, comm),
-    
-    TP_STRUCT__entry(
-        __field(u32, core_id)
-        __field(u64, timestamp)
-        __array(char, comm, 16)
-    ),
-    
-    TP_fast_assign(
-        __entry->core_id = core_id;
-        __entry->timestamp = timestamp;
-        memcpy(__entry->comm, comm, 16);
-    ),
-    
-    TP_printk("cpu=%u timestamp=%llu comm=%s",
-        __entry->core_id,
-        __entry->timestamp,
-        __entry->comm)
-);
-
-// Create a header file for the tracepoint
-#undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH .
-#define TRACE_INCLUDE_FILE memory_collector_trace
-#include <trace/define_trace.h>
+// Define the tracepoint
+#define CREATE_TRACE_POINTS
+#include "memory_collector_trace.h"
 
 // Data structure for PMU samples
 struct memory_collector_data {
@@ -76,7 +43,7 @@ static void memory_collector_overflow_handler(struct perf_event *event,
     strncpy(sample.comm, current->comm, sizeof(sample.comm) - 1);
     sample.comm[sizeof(sample.comm) - 1] = '\0';
 
-    // Replace printk with tracepoint
+    // Trace the event
     trace_memory_collector_sample(sample.core_id, sample.timestamp, sample.comm);
 }
 
