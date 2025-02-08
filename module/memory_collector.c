@@ -43,7 +43,7 @@ static void memory_collector_ipi_handler(void *info)
         llc_misses = 0;
     }
 
-    trace_memory_collector_sample(timestamp, cpu, current->comm, llc_misses);
+    trace_memory_collector_sample(cpu, timestamp, current->comm, llc_misses);
 }
 
 // Overflow handler for the time sampling event
