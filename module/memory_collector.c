@@ -36,7 +36,7 @@ static int init_cpu(int cpu);
 static void cleanup_cpu(int cpu);
 
 // Update the IPI handler to collect all metrics
-static void memory_collector_ipi_handler(void *info)
+static void collect_sample_on_current_cpu(void *info)
 {
     u64 timestamp;
     u32 cpu;
@@ -74,10 +74,10 @@ static void memory_collector_overflow_handler(struct perf_event *event,
     
 
     // Send IPI to all other CPUs
-    smp_call_function_many(mask, memory_collector_ipi_handler, NULL, 1);
+    smp_call_function_many(mask, collect_sample_on_current_cpu, NULL, 1);
 
     // Run the trace on this CPU
-    memory_collector_ipi_handler(NULL);
+    collect_sample_on_current_cpu(NULL);
 }
 
 // Add the init_cpu function
