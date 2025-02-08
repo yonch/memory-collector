@@ -20,30 +20,49 @@ MODULE_VERSION("1.0");
 #define CREATE_TRACE_POINTS
 #include "memory_collector_trace.h"
 
-// Keep track of the LLC miss events for each CPU
-static struct perf_event **llc_miss_events;
+// Add the cpu_state struct definition after the includes
+struct cpu_state {
+    struct perf_event *llc_miss;
+    struct perf_event *cycles;
+    struct perf_event *instructions;
+};
 
-// Keep track of the time sampling
+// Replace the llc_miss_events global with cpu_states
+static struct cpu_state *cpu_states;
 static struct perf_event *sampling_event;
 
-// IPI handler function that will run on each CPU
+// Add the init_cpu and cleanup_cpu function declarations
+static int init_cpu(int cpu);
+static void cleanup_cpu(int cpu);
+
+// Update the IPI handler to collect all metrics
 static void memory_collector_ipi_handler(void *info)
 {
     u64 timestamp;
     u32 cpu;
-    u64 llc_misses, enabled, running;
+    u64 llc_misses = 0, cycles = 0, instructions = 0;
+    u64 enabled, running;
     
     timestamp = ktime_get_ns();
     cpu = smp_processor_id();
     
     // Read LLC misses
-    if (llc_miss_events[cpu]) {
-        llc_misses = perf_event_read_value(llc_miss_events[cpu], &enabled, &running);
-    } else {
-        llc_misses = 0;
+    if (cpu_states[cpu].llc_miss) {
+        llc_misses = perf_event_read_value(cpu_states[cpu].llc_miss, &enabled, &running);
     }
 
-    trace_memory_collector_sample(cpu, timestamp, current->comm, llc_misses);
+    // Read cycles
+    if (cpu_states[cpu].cycles) {
+        cycles = perf_event_read_value(cpu_states[cpu].cycles, &enabled, &running);
+    }
+
+    // Read instructions
+    if (cpu_states[cpu].instructions) {
+        instructions = perf_event_read_value(cpu_states[cpu].instructions, &enabled, &running);
+    }
+
+    trace_memory_collector_sample(cpu, timestamp, current->comm, 
+                                llc_misses, cycles, instructions);
 }
 
 // Overflow handler for the time sampling event
@@ -61,8 +80,85 @@ static void memory_collector_overflow_handler(struct perf_event *event,
     memory_collector_ipi_handler(NULL);
 }
 
+// Add the init_cpu function
+static int init_cpu(int cpu)
+{
+    struct perf_event_attr attr;
+    int ret;
 
-// Modify init function:
+    // Setup LLC miss event
+    memset(&attr, 0, sizeof(attr));
+    attr.type = PERF_TYPE_HW_CACHE;
+    attr.config = PERF_COUNT_HW_CACHE_MISSES;
+    attr.size = sizeof(attr);
+    attr.disabled = 0;
+    attr.exclude_kernel = 0;
+    attr.exclude_hv = 0;
+    attr.exclude_idle = 0;
+
+    cpu_states[cpu].llc_miss = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(cpu_states[cpu].llc_miss)) {
+        ret = PTR_ERR(cpu_states[cpu].llc_miss);
+        pr_err("Failed to create LLC miss event for CPU %d\n", cpu);
+        cpu_states[cpu].llc_miss = NULL;
+        goto error;
+    }
+
+    // Setup cycles event
+    memset(&attr, 0, sizeof(attr));
+    attr.type = PERF_TYPE_HARDWARE;
+    attr.config = PERF_COUNT_HW_CPU_CYCLES;
+    attr.size = sizeof(attr);
+    attr.disabled = 0;
+    
+    cpu_states[cpu].cycles = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(cpu_states[cpu].cycles)) {
+        ret = PTR_ERR(cpu_states[cpu].cycles);
+        pr_err("Failed to create cycles event for CPU %d\n", cpu);
+        cpu_states[cpu].cycles = NULL;
+        goto error;
+    }
+
+    // Setup instructions event
+    memset(&attr, 0, sizeof(attr));
+    attr.type = PERF_TYPE_HARDWARE;
+    attr.config = PERF_COUNT_HW_INSTRUCTIONS;
+    attr.size = sizeof(attr);
+    attr.disabled = 0;
+    
+    cpu_states[cpu].instructions = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(cpu_states[cpu].instructions)) {
+        ret = PTR_ERR(cpu_states[cpu].instructions);
+        pr_err("Failed to create instructions event for CPU %d\n", cpu);
+        cpu_states[cpu].instructions = NULL;
+        goto error;
+    }
+
+    return 0;
+
+error:
+    cleanup_cpu(cpu);
+    return ret;
+}
+
+// Add the cleanup_cpu function
+static void cleanup_cpu(int cpu)
+{
+    if (cpu_states[cpu].llc_miss) {
+        perf_event_release_kernel(cpu_states[cpu].llc_miss);
+        cpu_states[cpu].llc_miss = NULL;
+    }
+    if (cpu_states[cpu].cycles) {
+        perf_event_release_kernel(cpu_states[cpu].cycles);
+        cpu_states[cpu].cycles = NULL;
+    }
+    if (cpu_states[cpu].instructions) {
+        perf_event_release_kernel(cpu_states[cpu].instructions);
+        cpu_states[cpu].instructions = NULL;
+    }
+}
+
+// Update the init function
 static int __init memory_collector_init(void)
 {
     int cpu, ret;
@@ -75,8 +171,7 @@ static int __init memory_collector_init(void)
 
     printk(KERN_INFO "Memory Collector: initializing PMU module\n");
 
-
-    // Create a kernel counter that will drive our sampling
+    // Create sampling event
     sampling_event = perf_event_create_kernel_counter(&attr, 
                                                     0, // any CPU
                                                     NULL, // all threads
@@ -91,50 +186,36 @@ static int __init memory_collector_init(void)
     // Enable the event
     perf_event_enable(sampling_event);
 
-    // Allocate array for LLC miss events
-    llc_miss_events = kcalloc(num_possible_cpus(), sizeof(*llc_miss_events), GFP_KERNEL);
-    if (!llc_miss_events) {
+    // Allocate array for CPU states
+    cpu_states = kcalloc(num_possible_cpus(), sizeof(*cpu_states), GFP_KERNEL);
+    if (!cpu_states) {
         ret = -ENOMEM;
         goto error_alloc;
     }
 
-    // Setup LLC miss event attributes
-    memset(&attr, 0, sizeof(attr));
-    attr.type = PERF_TYPE_HW_CACHE;
-    attr.config = PERF_COUNT_HW_CACHE_MISSES;
-    attr.size = sizeof(attr);
-    attr.disabled = 0;
-    attr.exclude_kernel = 0;
-    attr.exclude_hv = 0;
-    attr.exclude_idle = 0;
-
-    // Create LLC miss counter for each CPU
+    // Initialize each CPU
     for_each_possible_cpu(cpu) {
-        llc_miss_events[cpu] = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-        if (IS_ERR(llc_miss_events[cpu])) {
-            pr_err("Failed to create LLC miss event for CPU %d\n", cpu);
-            llc_miss_events[cpu] = NULL;
-            ret = PTR_ERR(llc_miss_events[cpu]);
-            goto error_events;
+        ret = init_cpu(cpu);
+        if (ret < 0) {
+            goto error_init;
         }
     }
 
     return 0;
 
-error_events:
-    // Cleanup LLC miss events
+error_init:
+    // Cleanup CPUs that were initialized
     for_each_possible_cpu(cpu) {
-        if (llc_miss_events[cpu]) {
-            perf_event_release_kernel(llc_miss_events[cpu]);
-        }
+        cleanup_cpu(cpu);
     }
-    kfree(llc_miss_events);
+    kfree(cpu_states);
 error_alloc:
     perf_event_disable(sampling_event);
     perf_event_release_kernel(sampling_event);
     return ret;
 }
 
+// Update the exit function
 static void __exit memory_collector_exit(void)
 {
     int cpu;
@@ -145,15 +226,12 @@ static void __exit memory_collector_exit(void)
         perf_event_disable(sampling_event);
         perf_event_release_kernel(sampling_event);
     }
-    
 
-    // Cleanup LLC miss events
+    // Cleanup all CPUs
     for_each_possible_cpu(cpu) {
-        if (llc_miss_events[cpu]) {
-            perf_event_release_kernel(llc_miss_events[cpu]);
-        }
+        cleanup_cpu(cpu);
     }
-    kfree(llc_miss_events);
+    kfree(cpu_states);
 }
 
 module_init(memory_collector_init);
