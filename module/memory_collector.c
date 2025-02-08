@@ -36,8 +36,7 @@ static struct perf_event *sampling_event;
 static int init_cpu(int cpu);
 static void cleanup_cpu(int cpu);
 
-// Update the IPI handler to collect all metrics
-static void collect_sample_on_current_cpu(void *info)
+static void collect_sample_on_current_cpu(bool is_context_switch)
 {
     u64 timestamp;
     u32 cpu;
@@ -63,7 +62,7 @@ static void collect_sample_on_current_cpu(void *info)
     }
 
     trace_memory_collector_sample(cpu, timestamp, current->comm, 
-                                llc_misses, cycles, instructions);
+                                llc_misses, cycles, instructions, is_context_switch);
 }
 
 // Add context switch handler
@@ -72,7 +71,11 @@ static void context_switch_handler(struct perf_event *event,
                                  struct pt_regs *regs)
 {
     // Call the existing sample collection function
-    collect_sample_on_current_cpu(NULL);
+    collect_sample_on_current_cpu(true);
+}
+
+static void ipi_handler(void *info) {
+    collect_sample_on_current_cpu(false);
 }
 
 // Overflow handler for the time sampling event
@@ -84,10 +87,10 @@ static void memory_collector_overflow_handler(struct perf_event *event,
     
 
     // Send IPI to all other CPUs
-    smp_call_function_many(mask, collect_sample_on_current_cpu, NULL, 1);
+    smp_call_function_many(mask, ipi_handler, NULL, 1);
 
     // Run the trace on this CPU
-    collect_sample_on_current_cpu(NULL);
+    ipi_handler(NULL);
 }
 
 // Update init_cpu to include context switch event setup
