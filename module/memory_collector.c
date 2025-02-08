@@ -25,6 +25,7 @@ struct cpu_state {
     struct perf_event *llc_miss;
     struct perf_event *cycles;
     struct perf_event *instructions;
+    struct perf_event *ctx_switch;  // New field for context switch event
 };
 
 // Replace the llc_miss_events global with cpu_states
@@ -65,6 +66,15 @@ static void collect_sample_on_current_cpu(void *info)
                                 llc_misses, cycles, instructions);
 }
 
+// Add context switch handler
+static void context_switch_handler(struct perf_event *event,
+                                 struct perf_sample_data *data,
+                                 struct pt_regs *regs)
+{
+    // Call the existing sample collection function
+    collect_sample_on_current_cpu(NULL);
+}
+
 // Overflow handler for the time sampling event
 static void memory_collector_overflow_handler(struct perf_event *event,
                                            struct perf_sample_data *data,
@@ -80,7 +90,7 @@ static void memory_collector_overflow_handler(struct perf_event *event,
     collect_sample_on_current_cpu(NULL);
 }
 
-// Add the init_cpu function
+// Update init_cpu to include context switch event setup
 static int init_cpu(int cpu)
 {
     struct perf_event_attr attr;
@@ -134,6 +144,24 @@ static int init_cpu(int cpu)
         goto error;
     }
 
+    // After setting up instructions event, add context switch event
+    memset(&attr, 0, sizeof(attr));
+    attr.type = PERF_TYPE_SOFTWARE;
+    attr.config = PERF_COUNT_SW_CONTEXT_SWITCHES;
+    attr.size = sizeof(attr);
+    attr.disabled = 0;
+    attr.sample_period = 1; // Sample every context switch
+    
+    cpu_states[cpu].ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
+                                                                context_switch_handler, 
+                                                                NULL);
+    if (IS_ERR(cpu_states[cpu].ctx_switch)) {
+        ret = PTR_ERR(cpu_states[cpu].ctx_switch);
+        pr_err("Failed to create context switch event for CPU %d\n", cpu);
+        cpu_states[cpu].ctx_switch = NULL;
+        goto error;
+    }
+
     return 0;
 
 error:
@@ -141,7 +169,7 @@ error:
     return ret;
 }
 
-// Add the cleanup_cpu function
+// Update cleanup_cpu to clean up context switch event
 static void cleanup_cpu(int cpu)
 {
     if (cpu_states[cpu].llc_miss) {
@@ -155,6 +183,10 @@ static void cleanup_cpu(int cpu)
     if (cpu_states[cpu].instructions) {
         perf_event_release_kernel(cpu_states[cpu].instructions);
         cpu_states[cpu].instructions = NULL;
+    }
+    if (cpu_states[cpu].ctx_switch) {
+        perf_event_release_kernel(cpu_states[cpu].ctx_switch);
+        cpu_states[cpu].ctx_switch = NULL;
     }
 }
 
