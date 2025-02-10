@@ -205,7 +205,7 @@ static int __init memory_collector_init(void)
         .config = PERF_COUNT_SW_CPU_CLOCK,
     };
 
-    printk(KERN_INFO "Memory Collector: initializing PMU module\n");
+    printk(KERN_INFO "Memory Collector: initializing\n");
 
     // Create sampling event
     sampling_event = perf_event_create_kernel_counter(&attr, 
@@ -218,9 +218,6 @@ static int __init memory_collector_init(void)
         printk(KERN_ERR "Memory Collector: failed to create sampling event: %d\n", ret);
         return ret;
     }
-
-    // Enable the event
-    perf_event_enable(sampling_event);
 
     // Allocate array for CPU states
     cpu_states = kcalloc(num_possible_cpus(), sizeof(*cpu_states), GFP_KERNEL);
@@ -243,9 +240,13 @@ static int __init memory_collector_init(void)
         goto error_resctrl;
     }
 
+    // Enable the samplingevent
+    perf_event_enable(sampling_event);
+
     return 0;
 
 error_resctrl:
+    perf_event_disable(sampling_event);
     resctrl_exit();
 error_init:
     // Cleanup CPUs that were initialized
@@ -254,7 +255,6 @@ error_init:
     }
     kfree(cpu_states);
 error_alloc:
-    perf_event_disable(sampling_event);
     perf_event_release_kernel(sampling_event);
     return ret;
 }
