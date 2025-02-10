@@ -4,7 +4,7 @@
 sudo dmesg -c > /dev/null
 
 # Load the module
-sudo insmod module/collector.ko
+sudo insmod build/collector.ko
 
 # Store the timestamp when we started
 start_time=$(date +%s)
