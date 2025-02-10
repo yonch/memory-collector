@@ -135,6 +135,11 @@ jobs:
           
           # we do not unmount, maybe mounting affects the intel_cqm checks below
           #sudo umount /sys/fs/resctrl || true           
+      
+      - name: Run the interval dmesg reader
+        working-directory: module
+        run: |
+          ./run_module.sh
 
       - name: Load and test module
         id: load-and-test-module

@@ -5,6 +5,8 @@
 #include <linux/resctrl.h>
 #include <asm/resctrl.h>
 #include <linux/module.h>
+#include <linux/timer.h>
+#include <linux/atomic.h>
 
 #include "resctrl.h"
 
@@ -22,6 +24,11 @@ struct ipi_rmid_args {
     u32 rmid;
     int status;
 };
+
+/* Add these declarations at the top after the includes */
+static struct timer_list cpuid_check_timer;
+static atomic_t check_counter = ATOMIC_INIT(0);
+#define MAX_CHECKS 6
 
 /*
  * IPI function to write RMID to MSR
@@ -52,7 +59,7 @@ static int enumerate_cpuid(void)
     unsigned int eax, ebx, ecx, edx;
     int ret = 0;
 
-    if (!boot_cpu_has(X86_FEATURE_RESCTRL_QOSMON)) {
+    if (!boot_cpu_has( X86_FEATURE_CQM_LLC)) {
         pr_err("memory_collector: CPU does not support QoS monitoring\n");
         return -ENODEV;
     }
@@ -82,16 +89,61 @@ static int enumerate_cpuid(void)
     return ret;
 }
 
+static void cpuid_check_timer_callback(struct timer_list *t)
+{
+    int check_num = atomic_inc_return(&check_counter);
+    unsigned int eax, ebx, ecx, edx;
+
+    pr_info("memory_collector: Running CPUID check %d of %d\n", check_num, MAX_CHECKS);
+
+    switch (check_num) {
+        case 1:
+            if (!boot_cpu_has( X86_FEATURE_CQM_LLC)) {
+                pr_err("memory_collector: CPU does not support QoS monitoring\n");
+            }
+            break;
+        case 2:
+            pr_debug("memory_collector: Checking CPUID.0x7.0 for RDT support\n");
+            cpuid_count(0x7, 0, &eax, &ebx, &ecx, &edx);
+            if (!(ebx & (1 << 12))) {
+                pr_err("memory_collector: RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
+            }
+            break;
+        case 3:
+            pr_debug("memory_collector: Checking CPUID.0xF.0 for L3 monitoring\n");
+            cpuid_count(0xF, 0, &eax, &ebx, &ecx, &edx);
+            if (!(edx & (1 << 1))) {
+                pr_err("memory_collector: L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
+            }
+            break;
+        case 4:
+            pr_debug("memory_collector: Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
+            cpuid_count(0xF, 1, &eax, &ebx, &ecx, &edx);
+            if (!(edx & (1 << 0))) {
+                pr_err("memory_collector: L3 occupancy monitoring not supported (CPUID.0xF.1:EDX.0)\n");
+            }
+            break;
+        default:
+            pr_info("memory_collector: Completed all %d CPUID checks\n", MAX_CHECKS);
+            break;
+    }
+
+
+}
+
 int resctrl_init(void)
 {
     int cpu;
     int ret = 0;
 
-    ret = enumerate_cpuid();
-    if (ret) {
-        pr_err("Memory Collector: Failed to enumerate CPUID\n");
-        return ret;
-    }
+    // Initialize the timer
+    timer_setup(&cpuid_check_timer, cpuid_check_timer_callback, 0);
+    
+    // ret = enumerate_cpuid();
+    // if (ret) {
+    //     pr_err("Memory Collector: Failed to enumerate CPUID\n");
+    //     return ret;
+    // }
 
     // for_each_online_cpu(cpu) {
     //     struct ipi_rmid_args args = {
@@ -108,12 +160,19 @@ int resctrl_init(void)
     //     }
     //     pr_info("Memory Collector: Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
     // }
+
+    // Start the timer for first check in 5 seconds
+    mod_timer(&cpuid_check_timer, jiffies + (5 * HZ));
+    pr_info("memory_collector: Started periodic CPUID checks\n");
     
     return ret;
 }
 
 int resctrl_exit(void) 
 {
+    // Delete the timer first
+    del_timer_sync(&cpuid_check_timer);
+    
     int failure_count = 0;
     int cpu;
     
