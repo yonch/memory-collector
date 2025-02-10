@@ -108,8 +108,14 @@ jobs:
           ls -l build/collector.ko
 
       - name: Load and test module
+        id: load-and-test-module
         working-directory: module
         run: |
+
+          # Check undefined symbols
+          sudo modinfo -F depends build/collector.ko
+          sudo objdump -d build/collector.ko | grep undefined
+
           # Load module
           sudo insmod build/collector.ko
           
@@ -130,6 +136,13 @@ jobs:
           
           # Check kernel logs for cleanup message
           dmesg | grep "Memory Collector" || true
+      
+      - name: Check dmesg on failure
+        if: steps.load-and-test-module.outcome == 'failure'
+        run: |
+          echo "load and test module failed, showing last kernel messages:"
+          sudo dmesg | tail -n 100
+          exit 1
 
   stop-runner:
     name: Stop EC2 runner
