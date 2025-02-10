@@ -11,10 +11,10 @@ make clean
 make
 
 echo "Loading kernel module..."
-sudo insmod build/memory_collector.ko
+sudo insmod build/collector.ko
 
 echo "Verifying module is loaded..."
-lsmod | grep memory_collector || {
+lsmod | grep collector || {
     echo "Error: Module failed to load"
     exit 1
 }
@@ -46,7 +46,7 @@ if [ $SAMPLE_COUNT -lt $EXPECTED_MIN ]; then
 fi
 
 echo "Unloading module..."
-sudo rmmod memory_collector
+sudo rmmod collector
 
 echo "Cleaning up trace..."
 sudo trace-cmd reset
