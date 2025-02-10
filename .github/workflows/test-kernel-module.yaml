@@ -105,25 +105,25 @@ jobs:
           # Now try the actual build
           make
 
-          ls -l build/memory_collector.ko
+          ls -l build/collector.ko
 
       - name: Load and test module
         working-directory: module
         run: |
           # Load module
-          sudo insmod build/memory_collector.ko
+          sudo insmod build/collector.ko
           
           # Verify module is loaded
-          lsmod | grep memory_collector
+          lsmod | grep collector
           
           # Check kernel logs for module initialization
           dmesg | grep "Memory Collector" || true
           
           # Unload module
-          sudo rmmod memory_collector
+          sudo rmmod collector
           
           # Verify module unloaded successfully
-          if lsmod | grep -q memory_collector; then
+          if lsmod | grep -q collector; then
             echo "Error: Module still loaded"
             exit 1
           fi
