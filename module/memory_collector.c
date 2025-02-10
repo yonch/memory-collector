@@ -207,18 +207,6 @@ static int __init memory_collector_init(void)
 
     printk(KERN_INFO "Memory Collector: initializing\n");
 
-    // Create sampling event
-    sampling_event = perf_event_create_kernel_counter(&attr, 
-                                                    0, // any CPU
-                                                    NULL, // all threads
-                                                    memory_collector_overflow_handler,
-                                                    NULL);
-    if (IS_ERR(sampling_event)) {
-        ret = PTR_ERR(sampling_event);
-        printk(KERN_ERR "Memory Collector: failed to create sampling event: %d\n", ret);
-        return ret;
-    }
-
     // Allocate array for CPU states
     cpu_states = kcalloc(num_possible_cpus(), sizeof(*cpu_states), GFP_KERNEL);
     if (!cpu_states) {
@@ -230,7 +218,7 @@ static int __init memory_collector_init(void)
     for_each_possible_cpu(cpu) {
         ret = init_cpu(cpu);
         if (ret < 0) {
-            goto error_init;
+            goto error_cpu_init;
         }
     }
 
@@ -240,22 +228,35 @@ static int __init memory_collector_init(void)
         goto error_resctrl;
     }
 
+    // Create sampling event
+    sampling_event = perf_event_create_kernel_counter(&attr, 
+                                                    0, // any CPU
+                                                    NULL, // all threads
+                                                    memory_collector_overflow_handler,
+                                                    NULL);
+    if (IS_ERR(sampling_event)) {
+        ret = PTR_ERR(sampling_event);
+        printk(KERN_ERR "Memory Collector: failed to create sampling event: %d\n", ret);
+        goto error_sampling;
+    }
+
     // Enable the samplingevent
     perf_event_enable(sampling_event);
 
     return 0;
 
-error_resctrl:
+error_sampling:
     perf_event_disable(sampling_event);
+    perf_event_release_kernel(sampling_event);
+error_resctrl:
     resctrl_exit();
-error_init:
+error_cpu_init:
     // Cleanup CPUs that were initialized
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
     kfree(cpu_states);
 error_alloc:
-    perf_event_release_kernel(sampling_event);
     return ret;
 }
 
