@@ -128,7 +128,7 @@ static void cpuid_check_timer_callback(struct timer_list *t)
             break;
     }
 
-
+    mod_timer(&cpuid_check_timer, jiffies + (5 * HZ));
 }
 
 int resctrl_init(void)
