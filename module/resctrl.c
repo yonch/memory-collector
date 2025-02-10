@@ -45,26 +45,69 @@ static void ipi_write_rmid(void *info)
     }
 }
 
+static int enumerate_cpuid(void)
+{
+    u32 max_leaf = 0;
+    u32 has_rdt = 0;
+    u32 has_cmt = 0;
+    u32 highest_rmid = 0;
+
+    max_leaf = cpuid_eax(0);
+    pr_info("Memory Collector: max_leaf: %u\n", max_leaf);
+
+    if (max_leaf < 7) {
+        pr_err("Memory Collector: max_leaf is less than 7\n");
+        return -EINVAL;
+    }
+
+    has_rdt = (cpuid_ebx(0x7) >> 12) & 0x1;
+    pr_info("Memory Collector: has_rdt: %u\n", has_rdt);
+
+    if (!has_rdt) {
+        pr_err("Memory Collector: has_rdt is 0\n");
+        return -EINVAL;
+    }
+
+    has_cmt = (cpuid_edx(0xf) >> 1) & 0x1;
+    pr_info("Memory Collector: has_cmt: %u\n", has_cmt);
+
+    if (!has_cmt) {
+        pr_err("Memory Collector: has_cmt is 0\n");
+        return -EINVAL;
+    }
+    
+    highest_rmid = cpuid_ebx(0xf);
+    pr_info("Memory Collector: highest_rmid: %u\n", highest_rmid);
+
+    return 0;
+}
+
 int resctrl_init(void)
 {
     int cpu;
     int ret = 0;
-    
-    for_each_online_cpu(cpu) {
-        struct ipi_rmid_args args = {
-            .rmid = cpu + 1,
-            .status = 0
-        };
-        
-        on_each_cpu_mask(cpumask_of(cpu), ipi_write_rmid, &args, 1);
-        
-        if (args.status) {
-            pr_err("Memory Collector: Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
-            ret = args.status;
-            break;
-        }
-        pr_info("Memory Collector: Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
+
+    ret = enumerate_cpuid();
+    if (ret) {
+        pr_err("Memory Collector: Failed to enumerate CPUID\n");
+        return ret;
     }
+
+    // for_each_online_cpu(cpu) {
+    //     struct ipi_rmid_args args = {
+    //         .rmid = cpu + 1,
+    //         .status = 0
+    //     };
+        
+    //     on_each_cpu_mask(cpumask_of(cpu), ipi_write_rmid, &args, 1);
+        
+    //     if (args.status) {
+    //         pr_err("Memory Collector: Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
+    //         ret = args.status;
+    //         break;
+    //     }
+    //     pr_info("Memory Collector: Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
+    // }
     
     return ret;
 }
@@ -79,16 +122,16 @@ int resctrl_exit(void)
         .status = 0
     };
     
-    for_each_online_cpu(cpu) {
-        on_each_cpu_mask(cpumask_of(cpu), ipi_write_rmid, &args, 1);
+    // for_each_online_cpu(cpu) {
+    //     on_each_cpu_mask(cpumask_of(cpu), ipi_write_rmid, &args, 1);
         
-        if (args.status) {
-            pr_err("Memory Collector: Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
-            failure_count++;
-            continue;
-        }
-        pr_info("Memory Collector: Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
-    }
+    //     if (args.status) {
+    //         pr_err("Memory Collector: Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
+    //         failure_count++;
+    //         continue;
+    //     }
+    //     pr_info("Memory Collector: Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
+    // }
 
     if (failure_count > 0) {
         pr_err("Memory Collector: Failed to reset RMIDs to default on %d CPUs\n", failure_count);

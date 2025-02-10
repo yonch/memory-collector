@@ -71,15 +71,8 @@ static void context_switch_handler(struct perf_event *event,
                                  struct perf_sample_data *data,
                                  struct pt_regs *regs)
 {
-    u32 rmid = 0;
-    u32 clos = 0;
-    
     // Call the existing sample collection function
     collect_sample_on_current_cpu(true);
-
-    preempt_disable();
-    wrmsr(MSR_IA32_PQR_ASSOC, rmid, clos);
-    preempt_enable();
 }
 
 static void ipi_handler(void *info) {
@@ -244,15 +237,16 @@ static int __init memory_collector_init(void)
         }
     }
 
-    // ret = resctrl_init();
-    // if (ret < 0) {
-    //     pr_err("Failed to initialize resctrl: %d\n", ret);
-    //     // Add cleanup code here if needed
-    //     return ret;
-    // }
+    ret = resctrl_init();
+    if (ret < 0) {
+        pr_err("Failed to initialize resctrl: %d\n", ret);
+        goto error_resctrl;
+    }
 
     return 0;
 
+error_resctrl:
+    resctrl_exit();
 error_init:
     // Cleanup CPUs that were initialized
     for_each_possible_cpu(cpu) {
@@ -277,8 +271,8 @@ static void __exit memory_collector_exit(void)
         perf_event_release_kernel(sampling_event);
     }
 
-    // // Call resctrl exit first
-    // resctrl_exit();
+    // Call resctrl exit first
+    resctrl_exit();
 
     // Cleanup all CPUs
     for_each_possible_cpu(cpu) {
