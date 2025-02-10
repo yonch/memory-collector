@@ -30,11 +30,14 @@ struct ipi_rmid_args {
 static void ipi_write_rmid(void *info)
 {
     struct ipi_rmid_args *args = info;
-    u32 closid;
+    u32 closid = 0;
     u64 val;
 
-    rdmsrl(MSR_IA32_PQR_ASSOC, val);
-    closid = val >> 32;
+    // if we're not on CPU 2, don't do anything
+    if (smp_processor_id() != 2) {
+        args->status = 0;
+        return;
+    }
     
     if (wrmsr_safe(MSR_IA32_PQR_ASSOC, args->rmid, closid) != 0) {
         args->status = -EIO;
