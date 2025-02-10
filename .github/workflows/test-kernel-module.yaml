@@ -137,7 +137,13 @@ jobs:
           
           # Check kernel logs for cleanup message
           dmesg | grep "Memory Collector" || true
-      
+
+        - name: Run module test script
+          working-directory: module
+          run: |
+
+            ./test_module.sh
+
       - name: Check dmesg on failure
         if: steps.load-and-test-module.outcome == 'failure'
         run: |
