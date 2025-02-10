@@ -156,15 +156,16 @@ static int init_cpu(int cpu)
     attr.disabled = 0;
     attr.sample_period = 1; // Sample every context switch
     
-    cpu_states[cpu].ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
-                                                                context_switch_handler, 
-                                                                NULL);
-    if (IS_ERR(cpu_states[cpu].ctx_switch)) {
-        ret = PTR_ERR(cpu_states[cpu].ctx_switch);
-        pr_err("Failed to create context switch event for CPU %d\n", cpu);
-        cpu_states[cpu].ctx_switch = NULL;
-        goto error;
-    }
+    // cpu_states[cpu].ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
+    //                                                             context_switch_handler, 
+    //                                                             NULL);
+    // if (IS_ERR(cpu_states[cpu].ctx_switch)) {
+    //     ret = PTR_ERR(cpu_states[cpu].ctx_switch);
+    //     pr_err("Failed to create context switch event for CPU %d\n", cpu);
+    //     cpu_states[cpu].ctx_switch = NULL;
+    //     goto error;
+    // }
+    cpu_states[cpu].ctx_switch = NULL;
 
     return 0;
 
