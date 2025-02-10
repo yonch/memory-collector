@@ -34,6 +34,12 @@ sudo trace-cmd extract -o "$TRACE_DATA"
 echo "Reading trace report..."
 sudo trace-cmd report -i "$TRACE_DATA" > "$TRACE_OUTPUT"
 
+echo "Head of trace report:"
+head "$TRACE_OUTPUT"
+
+echo "Tail of trace report:"
+tail "$TRACE_OUTPUT"
+
 echo "Validating output..."
 # Check if we have any trace entries
 SAMPLE_COUNT=$(grep "memory_collector_sample:" "$TRACE_OUTPUT" | wc -l)
