@@ -71,11 +71,14 @@ static void context_switch_handler(struct perf_event *event,
                                  struct perf_sample_data *data,
                                  struct pt_regs *regs)
 {
+    u32 rmid = 0;
+    u32 clos = 0;
+    
     // Call the existing sample collection function
     collect_sample_on_current_cpu(true);
 
     preempt_disable();
-    wrmsr(MSR_IA32_PQR_ASSOC, 1, 0);
+    wrmsr(MSR_IA32_PQR_ASSOC, rmid, clos);
     preempt_enable();
 }
 
