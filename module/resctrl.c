@@ -47,39 +47,39 @@ static void ipi_write_rmid(void *info)
 
 static int enumerate_cpuid(void)
 {
-    u32 max_leaf = 0;
-    u32 has_rdt = 0;
-    u32 has_cmt = 0;
-    u32 highest_rmid = 0;
-
-    max_leaf = cpuid_eax(0);
-    pr_info("Memory Collector: max_leaf: %u\n", max_leaf);
-
-    if (max_leaf < 7) {
-        pr_err("Memory Collector: max_leaf is less than 7\n");
-        return -EINVAL;
-    }
-
-    has_rdt = (cpuid_ebx(0x7) >> 12) & 0x1;
-    pr_info("Memory Collector: has_rdt: %u\n", has_rdt);
-
-    if (!has_rdt) {
-        pr_err("Memory Collector: has_rdt is 0\n");
-        return -EINVAL;
-    }
-
-    has_cmt = (cpuid_edx(0xf) >> 1) & 0x1;
-    pr_info("Memory Collector: has_cmt: %u\n", has_cmt);
-
-    if (!has_cmt) {
-        pr_err("Memory Collector: has_cmt is 0\n");
-        return -EINVAL;
-    }
+    pr_info("memory_collector: Starting enumerate_cpuid\n");
     
-    highest_rmid = cpuid_ebx(0xf);
-    pr_info("Memory Collector: highest_rmid: %u\n", highest_rmid);
+    unsigned int eax, ebx, ecx, edx;
+    int ret = 0;
 
-    return 0;
+    if (!boot_cpu_has(X86_FEATURE_RESCTRL_QOSMON)) {
+        pr_err("memory_collector: CPU does not support QoS monitoring\n");
+        return -ENODEV;
+    }
+
+    pr_debug("memory_collector: Checking CPUID.0x7.0 for RDT support\n");
+    cpuid_count(0x7, 0, &eax, &ebx, &ecx, &edx);
+    if (!(ebx & (1 << 12))) {
+        pr_err("memory_collector: RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
+        return -ENODEV;
+    }
+
+    pr_debug("memory_collector: Checking CPUID.0xF.0 for L3 monitoring\n");
+    cpuid_count(0xF, 0, &eax, &ebx, &ecx, &edx);
+    if (!(edx & (1 << 1))) {
+        pr_err("memory_collector: L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
+        return -ENODEV;
+    }
+
+    pr_debug("memory_collector: Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
+    cpuid_count(0xF, 1, &eax, &ebx, &ecx, &edx);
+    if (!(edx & (1 << 0))) {
+        pr_err("memory_collector: L3 occupancy monitoring not supported (CPUID.0xF.1:EDX.0)\n");
+        return -ENODEV;
+    }
+
+    pr_info("memory_collector: enumerate_cpuid completed successfully\n");
+    return ret;
 }
 
 int resctrl_init(void)
