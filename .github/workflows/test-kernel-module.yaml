@@ -131,7 +131,7 @@ jobs:
           head -n 35 /proc/cpuinfo || true
 
           echo "CPU RDT features (head):"
-          grep -E "cat_l3|cdp_l3|cqm_occup_llc|cqm_mbm_total|cqm_mbm_local" /proc/cpuinfo || head
+          grep -E "cat_l3|cdp_l3|cqm_occup_llc|cqm_mbm_total|cqm_mbm_local" /proc/cpuinfo | head || true
           
           # we do not unmount, maybe mounting affects the intel_cqm checks below
           #sudo umount /sys/fs/resctrl || true           
