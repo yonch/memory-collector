@@ -71,17 +71,12 @@ static void context_switch_handler(struct perf_event *event,
                                  struct perf_sample_data *data,
                                  struct pt_regs *regs)
 {
-    int res;
     // Call the existing sample collection function
     collect_sample_on_current_cpu(true);
 
     preempt_disable();
-    res = wrmsr_safe(MSR_IA32_PQR_ASSOC, 1, 0);
+    wrmsr(MSR_IA32_PQR_ASSOC, 1, 0);
     preempt_enable();
-
-    if (res != 0) {
-        WARN_ONCE(1, "Memory Collector: Failed to set RMID 1 on CPU %d, error %d\n", smp_processor_id(), res);
-    }
 }
 
 static void ipi_handler(void *info) {
