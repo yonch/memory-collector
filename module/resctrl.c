@@ -31,7 +31,6 @@ static void ipi_write_rmid(void *info)
 {
     struct ipi_rmid_args *args = info;
     u32 closid = 0;
-    u64 val;
 
     // if we're not on CPU 2, don't do anything
     if (smp_processor_id() != 2) {

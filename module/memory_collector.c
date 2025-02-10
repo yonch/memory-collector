@@ -73,6 +73,11 @@ static void context_switch_handler(struct perf_event *event,
 {
     // Call the existing sample collection function
     collect_sample_on_current_cpu(true);
+
+    if (wrmsr_safe(MSR_IA32_PQR_ASSOC, 1, 0) != 0) {
+        WARN_ONCE(1, "Memory Collector: Failed to set RMID 1 on CPU %d\n", smp_processor_id());
+    }
+
 }
 
 static void ipi_handler(void *info) {
@@ -237,12 +242,12 @@ static int __init memory_collector_init(void)
         }
     }
 
-    ret = resctrl_init();
-    if (ret < 0) {
-        pr_err("Failed to initialize resctrl: %d\n", ret);
-        // Add cleanup code here if needed
-        return ret;
-    }
+    // ret = resctrl_init();
+    // if (ret < 0) {
+    //     pr_err("Failed to initialize resctrl: %d\n", ret);
+    //     // Add cleanup code here if needed
+    //     return ret;
+    // }
 
     return 0;
 
@@ -270,8 +275,8 @@ static void __exit memory_collector_exit(void)
         perf_event_release_kernel(sampling_event);
     }
 
-    // Call resctrl exit first
-    resctrl_exit();
+    // // Call resctrl exit first
+    // resctrl_exit();
 
     // Cleanup all CPUs
     for_each_possible_cpu(cpu) {
