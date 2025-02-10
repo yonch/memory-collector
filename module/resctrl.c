@@ -33,6 +33,10 @@ static void ipi_write_rmid(void *info)
     u32 closid = 0;
     u64 val;
 
+    // just return, this is to check if on_each_cpu_mask() causes CPUs to freeze
+    args->status = 0;
+    return;
+
     // if we're not on CPU 2, don't do anything
     if (smp_processor_id() != 2) {
         args->status = 0;
