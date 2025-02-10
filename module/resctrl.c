@@ -57,11 +57,11 @@ int resctrl_init(void)
         on_each_cpu_mask(cpumask_of(cpu), ipi_write_rmid, &args, 1);
         
         if (args.status) {
-            pr_err("Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
+            pr_err("Memory Collector: Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
             ret = args.status;
             break;
         }
-        pr_info("Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
+        pr_info("Memory Collector: Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
     }
     
     return ret;
@@ -81,19 +81,19 @@ int resctrl_exit(void)
         on_each_cpu_mask(cpumask_of(cpu), ipi_write_rmid, &args, 1);
         
         if (args.status) {
-            pr_err("Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
+            pr_err("Memory Collector: Failed to set RMID %u on CPU %d\n", args.rmid, cpu);
             failure_count++;
             continue;
         }
-        pr_info("Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
+        pr_info("Memory Collector: Successfully set RMID %u on CPU %d\n", args.rmid, cpu);
     }
 
     if (failure_count > 0) {
-        pr_err("Failed to reset RMIDs to default on %d CPUs\n", failure_count);
+        pr_err("Memory Collector: Failed to reset RMIDs to default on %d CPUs\n", failure_count);
         return -EIO;
     }
     
-    pr_info("Successfully reset all RMIDs to default\n");
+    pr_info("Memory Collector: Successfully reset all RMIDs to default\n");
     return 0;
 }
 
