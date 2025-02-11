@@ -159,17 +159,17 @@ static void init_cpu_state(struct work_struct *work)
     //     goto error;
     // }
 
-    // Initialize and start the timer (moved from start_cpu_timer)
-    hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
-    state->timer.function = timer_fn;
+    // // Initialize and start the timer (moved from start_cpu_timer)
+    // hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+    // state->timer.function = timer_fn;
     
-    now = ktime_get();
-    state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
-    state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
-                     (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
-                     NSEC_PER_MSEC * NSEC_PER_MSEC);
+    // now = ktime_get();
+    // state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
+    // state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
+    //                  (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
+    //                  NSEC_PER_MSEC * NSEC_PER_MSEC);
     
-    hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS);
+    // hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS);
     return;
 
 error:
