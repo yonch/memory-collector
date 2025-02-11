@@ -2,19 +2,25 @@
 #define _COLLECTOR_RESCTRL_H_
 
 
+// per-CPU state for RDT
+struct rdt_state {
+    bool supports_llc_occupancy;
+    bool supports_mbm_total;
+    bool supports_mbm_local;
+    bool has_overflow_bit;
+    bool supports_non_cpu_agent_mbm;
+    bool supports_non_cpu_agent_cache;
+    u32 max_rmid;
+    u32 counter_width;
+};
+
 /* Function declarations */
 
 /*
- * Initialize RMIDs per CPU via IPI
+ * Initialize RDT state for given CPU
  * Returns 0 on success, negative error code on failure
  */
-int resctrl_init(void);
-
-/*
- * Reset all CPU RMIDs to default via IPI
- * Returns 0 on success, negative error code on failure
- */
-int resctrl_exit(void);
+int resctrl_init_cpu(struct rdt_state *rdt_state);
 
 /*
  * Read memory bandwidth counter for given RMID

@@ -27,6 +27,7 @@ struct cpu_state {
     struct perf_event *ctx_switch;
     struct hrtimer timer;
     ktime_t next_expected;
+    struct rdt_state rdt_state;
 };
 
 static struct cpu_state __percpu *cpu_states;
@@ -105,6 +106,8 @@ static void init_cpu_state(struct work_struct *work)
                      NSEC_PER_MSEC * NSEC_PER_MSEC);
     
     hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS_PINNED);
+
+    resctrl_init_cpu(&state->rdt_state);
 }
 
 // Update cleanup_cpu to clean up context switch event
@@ -202,18 +205,9 @@ static int __init memory_collector_init(void)
         }
     }
 
-    pr_info("Memory Collector: initializing resctrl\n");
-    ret = resctrl_init();
-    if (ret < 0) {
-        pr_err("Failed to initialize resctrl: %d\n", ret);
-        goto error_resctrl;
-    }
-
     pr_info("Memory Collector: initialization completed\n");
     return 0;
 
-error_resctrl:
-    resctrl_exit();
 error_cpu_init:
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
@@ -238,8 +232,6 @@ static void __exit memory_collector_exit(void)
     
     printk(KERN_INFO "Memory Collector: unregistering PMU module\n");
     
-    resctrl_exit();
-
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
