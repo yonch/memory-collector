@@ -54,38 +54,38 @@ static void ipi_write_rmid(void *info)
 
 static int enumerate_cpuid(void)
 {
-    pr_info("memory_collector: Starting enumerate_cpuid\n");
+    pr_info("Memory Collector: Starting enumerate_cpuid\n");
     
     unsigned int eax, ebx, ecx, edx;
     int ret = 0;
 
     if (!boot_cpu_has( X86_FEATURE_CQM_LLC)) {
-        pr_err("memory_collector: CPU does not support QoS monitoring\n");
+        pr_err("Memory Collector: CPU does not support QoS monitoring\n");
         return -ENODEV;
     }
 
     pr_debug("memory_collector: Checking CPUID.0x7.0 for RDT support\n");
     cpuid_count(0x7, 0, &eax, &ebx, &ecx, &edx);
     if (!(ebx & (1 << 12))) {
-        pr_err("memory_collector: RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
+        pr_err("Memory Collector: RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
         return -ENODEV;
     }
 
     pr_debug("memory_collector: Checking CPUID.0xF.0 for L3 monitoring\n");
     cpuid_count(0xF, 0, &eax, &ebx, &ecx, &edx);
     if (!(edx & (1 << 1))) {
-        pr_err("memory_collector: L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
+        pr_err("Memory Collector: L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
         return -ENODEV;
     }
 
-    pr_debug("memory_collector: Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
+    pr_debug("Memory Collector: Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
     cpuid_count(0xF, 1, &eax, &ebx, &ecx, &edx);
     if (!(edx & (1 << 0))) {
-        pr_err("memory_collector: L3 occupancy monitoring not supported (CPUID.0xF.1:EDX.0)\n");
+        pr_err("Memory Collector: L3 occupancy monitoring not supported (CPUID.0xF.1:EDX.0)\n");
         return -ENODEV;
     }
 
-    pr_info("memory_collector: enumerate_cpuid completed successfully\n");
+    pr_info("Memory Collector: enumerate_cpuid completed successfully\n");
     return ret;
 }
 
@@ -94,37 +94,37 @@ static void cpuid_check_timer_callback(struct timer_list *t)
     int check_num = atomic_inc_return(&check_counter);
     unsigned int eax, ebx, ecx, edx;
 
-    pr_info("memory_collector: Running CPUID check %d of %d\n", check_num, MAX_CHECKS);
+    pr_info("Memory Collector: Running CPUID check %d of %d\n", check_num, MAX_CHECKS);
 
     switch (check_num) {
         case 1:
             if (!boot_cpu_has( X86_FEATURE_CQM_LLC)) {
-                pr_err("memory_collector: CPU does not support QoS monitoring\n");
+                pr_err("Memory Collector: CPU does not support QoS monitoring\n");
             }
             break;
         case 2:
-            pr_debug("memory_collector: Checking CPUID.0x7.0 for RDT support\n");
+            pr_debug("Memory Collector: Checking CPUID.0x7.0 for RDT support\n");
             cpuid_count(0x7, 0, &eax, &ebx, &ecx, &edx);
             if (!(ebx & (1 << 12))) {
-                pr_err("memory_collector: RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
+                pr_err("Memory Collector: RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
             }
             break;
         case 3:
-            pr_debug("memory_collector: Checking CPUID.0xF.0 for L3 monitoring\n");
+            pr_debug("Memory Collector: Checking CPUID.0xF.0 for L3 monitoring\n");
             cpuid_count(0xF, 0, &eax, &ebx, &ecx, &edx);
             if (!(edx & (1 << 1))) {
-                pr_err("memory_collector: L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
+                pr_err("Memory Collector: L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
             }
             break;
         case 4:
-            pr_debug("memory_collector: Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
+            pr_debug("Memory Collector: Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
             cpuid_count(0xF, 1, &eax, &ebx, &ecx, &edx);
             if (!(edx & (1 << 0))) {
-                pr_err("memory_collector: L3 occupancy monitoring not supported (CPUID.0xF.1:EDX.0)\n");
+                pr_err("Memory Collector: L3 occupancy monitoring not supported (CPUID.0xF.1:EDX.0)\n");
             }
             break;
         default:
-            pr_info("memory_collector: Completed all %d CPUID checks\n", MAX_CHECKS);
+            pr_info("Memory Collector: Completed all %d CPUID checks\n", MAX_CHECKS);
             break;
     }
 
@@ -135,6 +135,8 @@ int resctrl_init(void)
 {
     int cpu;
     int ret = 0;
+
+    pr_info("Memory Collector: Initializing resctrl\n");
 
     // Initialize the timer
     timer_setup(&cpuid_check_timer, cpuid_check_timer_callback, 0);
@@ -163,7 +165,7 @@ int resctrl_init(void)
 
     // Start the timer for first check in 5 seconds
     mod_timer(&cpuid_check_timer, jiffies + (5 * HZ));
-    pr_info("memory_collector: Started periodic CPUID checks\n");
+    pr_info("Memory Collector: Started periodic CPUID checks\n");
     
     return ret;
 }

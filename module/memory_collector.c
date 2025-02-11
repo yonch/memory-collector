@@ -231,6 +231,7 @@ static int __init memory_collector_init(void)
     }
 
     // Initialize each CPU
+    pr_info("Memory Collector: initializing per-cpu perf events\n");
     for_each_possible_cpu(cpu) {
         ret = init_cpu(cpu);
         if (ret < 0) {
@@ -238,14 +239,14 @@ static int __init memory_collector_init(void)
         }
     }
 
+    pr_info("Memory Collector: initializing resctrl\n");
     ret = resctrl_init();
     if (ret < 0) {
         pr_err("Failed to initialize resctrl: %d\n", ret);
         goto error_resctrl;
     }
 
-
-    // Start timers on all CPUs
+    pr_info("Memory Collector: starting timers on all CPUs\n");
     on_each_cpu(start_cpu_timer, NULL, 1);
 
     return 0;
