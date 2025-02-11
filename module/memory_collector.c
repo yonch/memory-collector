@@ -47,6 +47,7 @@ static void collect_sample_on_current_cpu(bool is_context_switch)
     u32 cpu;
     u64 llc_misses = 0, cycles = 0, instructions = 0;
     u64 enabled, running;
+    int ret;
     
     timestamp = ktime_get_ns();
     cpu = smp_processor_id();
@@ -54,7 +55,10 @@ static void collect_sample_on_current_cpu(bool is_context_switch)
     
     // Read LLC misses
     if (state->llc_miss) {
-        llc_misses = perf_event_read_value(state->llc_miss, &enabled, &running);
+        ret = perf_event_read_local(state->llc_miss, &llc_misses, &enabled, &running);
+        if (ret) {
+            llc_misses = 0;
+        }
     }
 
     // Read cycles
