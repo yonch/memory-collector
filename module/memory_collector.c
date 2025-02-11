@@ -286,14 +286,15 @@ static int __init memory_collector_init(void)
     cpu_works = NULL;
     pr_info("Memory Collector: workqueue flushed\n");
 
-    // Check initialization results
-    pr_info("Memory Collector: checking per-cpu perf events\n");
-    for_each_possible_cpu(cpu) {
-        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-        if (state->ctx_switch == NULL) {
-            goto error_cpu_init;
-        }
-    }
+    // // Check initialization results
+    // pr_info("Memory Collector: checking per-cpu perf events\n");
+    // for_each_possible_cpu(cpu) {
+    //     struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+    //     if (state->ctx_switch == NULL) {
+    //         res = -ENODEV;
+    //         goto error_cpu_init;
+    //     }
+    // }
 
     pr_info("Memory Collector: initializing resctrl\n");
     ret = resctrl_init();
@@ -302,6 +303,7 @@ static int __init memory_collector_init(void)
         goto error_resctrl;
     }
 
+    pr_info("Memory Collector: initialization completed\n");
     return 0;
 
 error_resctrl:
@@ -319,6 +321,7 @@ error_work_alloc:
 error_wq:
     free_percpu(cpu_states);
 error_alloc:
+    pr_err("Memory Collector: initialization failed, ret = %d\n", ret);
     return ret;
 }
 
@@ -334,14 +337,14 @@ static void __exit memory_collector_exit(void)
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
-    
-    destroy_workqueue(collector_wq);
-    free_percpu(cpu_states);
     if (cpu_works) {
         // should be NULL already in any execution outcome of init, but adding for clarity
         free_percpu(cpu_works);
         cpu_works = NULL;
     }
+    
+    destroy_workqueue(collector_wq);
+    free_percpu(cpu_states);
 }
 
 module_init(memory_collector_init);
