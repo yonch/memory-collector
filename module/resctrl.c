@@ -11,7 +11,7 @@
 #include "resctrl.h"
 #include "memory_collector_trace.h"
 
-MODULE_LICENSE("GPL");
+#define LOG_PREFIX "Memory Collector: "
 
 #ifndef RESCTRL_RESERVED_RMID
 #define RESCTRL_RESERVED_RMID 0
@@ -79,30 +79,30 @@ int resctrl_init_cpu(struct rdt_state *rdt_state)
     unsigned int eax, ebx, ecx, edx;
     int ret = 0;
 
-    pr_debug("Memory Collector: Starting enumerate_cpuid on CPU %d\n", cpu);
+    pr_debug(LOG_PREFIX "Starting enumerate_cpuid on CPU %d\n", cpu);
 
     memset(rdt_state, 0, sizeof(struct rdt_state));
 
     if (!boot_cpu_has( X86_FEATURE_CQM_LLC)) {
-        pr_debug("Memory Collector: CPU does not support QoS monitoring\n");
+        pr_debug(LOG_PREFIX "CPU does not support QoS monitoring\n");
         return -ENODEV;
     }
 
-    pr_debug("Memory Collector: Checking CPUID.0x7.0 for RDT support\n");
+    pr_debug(LOG_PREFIX "Checking CPUID.0x7.0 for RDT support\n");
     cpuid_count(0x7, 0, &eax, &ebx, &ecx, &edx);
     if (!(ebx & (1 << 12))) {
-        pr_debug("Memory Collector: RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
+        pr_debug(LOG_PREFIX "RDT monitoring not supported (CPUID.0x7.0:EBX.12)\n");
         return -ENODEV;
     }
 
-    pr_debug("Memory Collector: Checking CPUID.0xF.0 for L3 monitoring\n");
+    pr_debug(LOG_PREFIX "Checking CPUID.0xF.0 for L3 monitoring\n");
     cpuid_count(0xF, 0, &eax, &ebx, &ecx, &edx);
     if (!(edx & (1 << 1))) {
-        pr_debug("Memory Collector: L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
+        pr_debug(LOG_PREFIX "L3 monitoring not supported (CPUID.0xF.0:EDX.1)\n");
         return -ENODEV;
     }
 
-    pr_debug("Memory Collector: Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
+    pr_debug(LOG_PREFIX "Checking CPUID.0xF.1 for L3 occupancy monitoring\n");
     cpuid_count(0xF, 1, &eax, &ebx, &ecx, &edx);
     rdt_state->supports_llc_occupancy = (edx & (1 << 0));
     rdt_state->supports_mbm_total = (edx & (1 << 1));
@@ -113,20 +113,20 @@ int resctrl_init_cpu(struct rdt_state *rdt_state)
     rdt_state->supports_non_cpu_agent_cache = (eax & (1 << 8));
     rdt_state->supports_non_cpu_agent_mbm = (eax & (1 << 10));
 
-    pr_debug("Memory Collector: capabilities of core %d: llc_occupancy: %d, mbm_total: %d, mbm_local: %d, max_rmid: %d, counter_width: %d, has_overflow_bit: %d, supports_non_cpu_agent_cache: %d, supports_non_cpu_agent_mbm: %d\n", 
+    pr_debug(LOG_PREFIX "capabilities of core %d: llc_occupancy: %d, mbm_total: %d, mbm_local: %d, max_rmid: %d, counter_width: %d, has_overflow_bit: %d, supports_non_cpu_agent_cache: %d, supports_non_cpu_agent_mbm: %d\n", 
              cpu, rdt_state->supports_llc_occupancy, rdt_state->supports_mbm_total, rdt_state->supports_mbm_local, rdt_state->max_rmid, rdt_state->counter_width, rdt_state->has_overflow_bit, rdt_state->supports_non_cpu_agent_cache, rdt_state->supports_non_cpu_agent_mbm);
 
     if (cpu == 2) {
         u32 rmid = 1;
         u32 closid = 0;
         if (write_rmid_closid(rmid, closid) != 0) {
-            pr_err("Memory Collector: failed to write RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
+            pr_err(LOG_PREFIX "failed to write RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
         } else {
-            pr_info("Memory Collector: wrote RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
+            pr_info(LOG_PREFIX "wrote RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
         }
     }    
 
-    pr_debug("Memory Collector: enumerate_cpuid completed successfully on CPU %d\n", cpu);
+    pr_debug(LOG_PREFIX "enumerate_cpuid completed successfully on CPU %d\n", cpu);
     return ret;
 }
 

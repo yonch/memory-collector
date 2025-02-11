@@ -14,9 +14,7 @@ MODULE_AUTHOR("Memory Collector Project");
 MODULE_DESCRIPTION("Memory subsystem monitoring for Kubernetes");
 MODULE_VERSION("1.0");
 
-#ifndef CONFIG_PERF_EVENTS
-#error "This module requires CONFIG_PERF_EVENTS"
-#endif
+#define LOG_PREFIX "Memory Collector: "
 
 // Define the tracepoint
 #define CREATE_TRACE_POINTS
@@ -71,7 +69,7 @@ static void init_cpu_state(struct work_struct *work)
 
     // Verify this work matches the expected work for this CPU
     if (work != expected_work) {
-        pr_err("CPU mismatch in init_cpu_state. On CPU %d, expected work %px, got %px\n",
+        pr_err(LOG_PREFIX "CPU mismatch in init_cpu_state. On CPU %d, expected work %px, got %px\n",
                cpu, expected_work, work);
         return;
     }
@@ -93,7 +91,7 @@ static void init_cpu_state(struct work_struct *work)
                                                         NULL);
     if (IS_ERR(state->ctx_switch)) {
         ret = PTR_ERR(state->ctx_switch);
-        pr_err("Failed to create context switch event for CPU %d: error %d\n", cpu, ret);
+        pr_err(LOG_PREFIX "Failed to create context switch event for CPU %d: error %d\n", cpu, ret);
         state->ctx_switch = NULL;
     }
 
@@ -117,7 +115,7 @@ static void cleanup_cpu(int cpu)
 {
     struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
 
-    pr_debug("cleanup_cpu for CPU %d\n", cpu);
+    pr_debug(LOG_PREFIX "cleanup_cpu for CPU %d\n", cpu);
 
     hrtimer_cancel(&state->timer);
 
@@ -150,7 +148,7 @@ static int __init memory_collector_init(void)
 {
     int cpu, ret;
 
-    printk(KERN_INFO "Memory Collector: initializing\n");
+    pr_info(LOG_PREFIX "initializing\n");
 
     cpu_works = NULL;
 
@@ -184,7 +182,7 @@ static int __init memory_collector_init(void)
     }
 
     // Initialize and queue work for each CPU
-    pr_info("Memory Collector: initializing per-cpu perf events\n");
+    pr_info(LOG_PREFIX "initializing per-cpu perf events\n");
     for_each_online_cpu(cpu) {
         struct work_struct *work = per_cpu_ptr(cpu_works, cpu);
         INIT_WORK(work, init_cpu_state);
@@ -195,10 +193,10 @@ static int __init memory_collector_init(void)
     flush_workqueue(collector_wq);
     free_percpu(cpu_works);
     cpu_works = NULL;
-    pr_info("Memory Collector: workqueue flushed\n");
+    pr_info(LOG_PREFIX "workqueue flushed\n");
 
     // Check initialization results
-    pr_info("Memory Collector: checking per-cpu perf events\n");
+    pr_info(LOG_PREFIX "checking per-cpu perf events\n");
     for_each_possible_cpu(cpu) {
         struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
         if (state->ctx_switch == NULL) {
@@ -207,7 +205,7 @@ static int __init memory_collector_init(void)
         }
     }
 
-    pr_info("Memory Collector: initialization completed\n");
+    pr_info(LOG_PREFIX "initialization completed\n");
     return 0;
 
 error_cpu_init:
@@ -223,7 +221,7 @@ error_work_alloc:
 error_wq:
     free_percpu(cpu_states);
 error_alloc:
-    pr_err("Memory Collector: initialization failed, ret = %d\n", ret);
+    pr_err(LOG_PREFIX "initialization failed, ret = %d\n", ret);
     return ret;
 }
 
@@ -232,7 +230,7 @@ static void __exit memory_collector_exit(void)
 {
     int cpu;
     
-    printk(KERN_INFO "Memory Collector: unregistering PMU module\n");
+    pr_info(LOG_PREFIX "unregistering PMU module\n");
     
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
