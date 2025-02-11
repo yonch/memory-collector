@@ -6,8 +6,12 @@ name: Prometheus Integration Test
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - cmd/collector/**
   pull_request:
     branches: [ "main" ]
+    paths:
+      - cmd/collector/**
 
 jobs:
 
