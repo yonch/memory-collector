@@ -91,13 +91,13 @@ static void init_cpu_state(struct work_struct *work)
 
     // Verify this work matches the expected work for this CPU
     if (work != expected_work) {
-        pr_err("CPU mismatch in init_cpu_state. Expected work %px for CPU %d, got %px\n",
-               expected_work, cpu, work);
+        pr_err("CPU mismatch in init_cpu_state. On CPU %d, expected work %px, got %px\n",
+               cpu, expected_work, work);
         return;
     }
 
     state = this_cpu_ptr(cpu_states);
-    pr_info("init_cpu_state for CPU %d\n", cpu);
+    pr_info("init_cpu_state for CPU %d, got work %px\n", cpu, work);
     
     state->llc_miss = NULL;
     state->cycles = NULL;
@@ -259,7 +259,7 @@ static int __init memory_collector_init(void)
     }
 
     // Create workqueue
-    collector_wq = alloc_workqueue("collector_wq", WQ_UNBOUND, 0);
+    collector_wq = alloc_workqueue("collector_wq", 0, 0);
     if (!collector_wq) {
         ret = -ENOMEM;
         goto error_wq;
