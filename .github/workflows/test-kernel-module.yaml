@@ -179,6 +179,10 @@ jobs:
           # Check kernel logs for cleanup message
           dmesg | grep "Memory Collector" || true
 
+      - name: Install trace dependencies
+        run: |
+          sudo apt-get install -y trace-cmd
+
       - name: Run module test script
         working-directory: module
         run: |
