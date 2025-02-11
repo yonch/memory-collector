@@ -21,17 +21,17 @@ MODULE_VERSION("1.0");
 #define CREATE_TRACE_POINTS
 #include "memory_collector_trace.h"
 
-// Add the cpu_state struct definition after the includes
+// Replace the cpu_state struct and global variable definitions
 struct cpu_state {
     struct perf_event *llc_miss;
     struct perf_event *cycles;
     struct perf_event *instructions;
-    struct perf_event *ctx_switch;  // New field for context switch event
+    struct perf_event *ctx_switch;
+    struct hrtimer timer;
+    ktime_t next_expected;
 };
 
-// Replace the llc_miss_events global with cpu_states
-static struct cpu_state *cpu_states;
-static struct perf_event *sampling_event;
+static struct cpu_state __percpu *cpu_states;
 
 // Add the init_cpu and cleanup_cpu function declarations
 static int init_cpu(int cpu);
@@ -75,30 +75,12 @@ static void context_switch_handler(struct perf_event *event,
     collect_sample_on_current_cpu(true);
 }
 
-static void ipi_handler(void *info) {
-    collect_sample_on_current_cpu(false);
-}
-
-// Overflow handler for the time sampling event
-static void memory_collector_overflow_handler(struct perf_event *event,
-                                           struct perf_sample_data *data,
-                                           struct pt_regs *regs)
-{
-    const struct cpumask *mask = cpu_online_mask;
-    
-
-    // Send IPI to all other CPUs
-    smp_call_function_many(mask, ipi_handler, NULL, 1);
-
-    // Run the trace on this CPU
-    ipi_handler(NULL);
-}
-
 // Update init_cpu to include context switch event setup
 static int init_cpu(int cpu)
 {
     struct perf_event_attr attr;
     int ret;
+    struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
 
     // Setup LLC miss event
     memset(&attr, 0, sizeof(attr));
@@ -110,11 +92,11 @@ static int init_cpu(int cpu)
     attr.exclude_hv = 0;
     attr.exclude_idle = 0;
 
-    cpu_states[cpu].llc_miss = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    if (IS_ERR(cpu_states[cpu].llc_miss)) {
-        ret = PTR_ERR(cpu_states[cpu].llc_miss);
+    state->llc_miss = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(state->llc_miss)) {
+        ret = PTR_ERR(state->llc_miss);
         pr_err("Failed to create LLC miss event for CPU %d\n", cpu);
-        cpu_states[cpu].llc_miss = NULL;
+        state->llc_miss = NULL;
         goto error;
     }
 
@@ -125,11 +107,11 @@ static int init_cpu(int cpu)
     attr.size = sizeof(attr);
     attr.disabled = 0;
     
-    cpu_states[cpu].cycles = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    if (IS_ERR(cpu_states[cpu].cycles)) {
-        ret = PTR_ERR(cpu_states[cpu].cycles);
+    state->cycles = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(state->cycles)) {
+        ret = PTR_ERR(state->cycles);
         pr_err("Failed to create cycles event for CPU %d\n", cpu);
-        cpu_states[cpu].cycles = NULL;
+        state->cycles = NULL;
         goto error;
     }
 
@@ -140,11 +122,11 @@ static int init_cpu(int cpu)
     attr.size = sizeof(attr);
     attr.disabled = 0;
     
-    cpu_states[cpu].instructions = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    if (IS_ERR(cpu_states[cpu].instructions)) {
-        ret = PTR_ERR(cpu_states[cpu].instructions);
+    state->instructions = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(state->instructions)) {
+        ret = PTR_ERR(state->instructions);
         pr_err("Failed to create instructions event for CPU %d\n", cpu);
-        cpu_states[cpu].instructions = NULL;
+        state->instructions = NULL;
         goto error;
     }
 
@@ -156,16 +138,15 @@ static int init_cpu(int cpu)
     attr.disabled = 0;
     attr.sample_period = 1; // Sample every context switch
     
-    // cpu_states[cpu].ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
-    //                                                             context_switch_handler, 
-    //                                                             NULL);
-    // if (IS_ERR(cpu_states[cpu].ctx_switch)) {
-    //     ret = PTR_ERR(cpu_states[cpu].ctx_switch);
-    //     pr_err("Failed to create context switch event for CPU %d\n", cpu);
-    //     cpu_states[cpu].ctx_switch = NULL;
-    //     goto error;
-    // }
-    cpu_states[cpu].ctx_switch = NULL;
+    state->ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
+                                                                context_switch_handler, 
+                                                                NULL);
+    if (IS_ERR(state->ctx_switch)) {
+        ret = PTR_ERR(state->ctx_switch);
+        pr_err("Failed to create context switch event for CPU %d\n", cpu);
+        state->ctx_switch = NULL;
+        goto error;
+    }
 
     return 0;
 
@@ -177,53 +158,62 @@ error:
 // Update cleanup_cpu to clean up context switch event
 static void cleanup_cpu(int cpu)
 {
-    if (cpu_states[cpu].llc_miss) {
-        perf_event_release_kernel(cpu_states[cpu].llc_miss);
-        cpu_states[cpu].llc_miss = NULL;
+    struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+    if (state->ctx_switch) {
+        perf_event_release_kernel(state->ctx_switch);
+        state->ctx_switch = NULL;
     }
-    if (cpu_states[cpu].cycles) {
-        perf_event_release_kernel(cpu_states[cpu].cycles);
-        cpu_states[cpu].cycles = NULL;
+    if (state->llc_miss) {
+        perf_event_release_kernel(state->llc_miss);
+        state->llc_miss = NULL;
     }
-    if (cpu_states[cpu].instructions) {
-        perf_event_release_kernel(cpu_states[cpu].instructions);
-        cpu_states[cpu].instructions = NULL;
+    if (state->cycles) {
+        perf_event_release_kernel(state->cycles);
+        state->cycles = NULL;
     }
-    if (cpu_states[cpu].ctx_switch) {
-        perf_event_release_kernel(cpu_states[cpu].ctx_switch);
-        cpu_states[cpu].ctx_switch = NULL;
+    if (state->instructions) {
+        perf_event_release_kernel(state->instructions);
+        state->instructions = NULL;
     }
 }
 
-static void enable_sampling_work(struct work_struct *work)
+static enum hrtimer_restart timer_fn(struct hrtimer *timer)
 {
-    struct perf_event_attr attr = {
-        .type = PERF_TYPE_SOFTWARE,
-        .size = sizeof(struct perf_event_attr),
-        .sample_period = 1000000, // 1ms
-        .config = PERF_COUNT_SW_CPU_CLOCK,
-    };
-
-    pr_info("Memory Collector: enabling time-based sampling\n");
+    struct cpu_state *state = container_of(timer, struct cpu_state, timer);
+    ktime_t now = ktime_get();
     
-    // Create sampling event
-    sampling_event = perf_event_create_kernel_counter(&attr, 
-                                                    0, // any CPU
-                                                    NULL, // all threads
-                                                    memory_collector_overflow_handler,
-                                                    NULL);
-    if (IS_ERR(sampling_event)) {
-        pr_err("Memory Collector: failed to create sampling event: %ld\n", PTR_ERR(sampling_event));
-        sampling_event = NULL;
-        return;
-    }
-
-    // Enable the samplingevent
-    perf_event_enable(sampling_event);
+    // Collect the sample
+    collect_sample_on_current_cpu(false);
+    
+    // Schedule next timer
+    state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
+    state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
+                     (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
+                     NSEC_PER_MSEC * NSEC_PER_MSEC);
+    
+    hrtimer_forward_now(timer, state->next_expected);
+    return HRTIMER_RESTART;
 }
 
-static DECLARE_DELAYED_WORK(enable_sampling_delayed, enable_sampling_work);
-
+static void start_cpu_timer(void *info)
+{
+    struct cpu_state *state;
+    ktime_t now;
+    
+    state = this_cpu_ptr(cpu_states);
+    
+    hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+    state->timer.function = timer_fn;
+    
+    // Start timer at next millisecond boundary
+    now = ktime_get();
+    state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
+    state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
+                     (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
+                     NSEC_PER_MSEC * NSEC_PER_MSEC);
+    
+    hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS);
+}
 
 // Update the init function
 static int __init memory_collector_init(void)
@@ -232,8 +222,8 @@ static int __init memory_collector_init(void)
 
     printk(KERN_INFO "Memory Collector: initializing\n");
 
-    // Allocate array for CPU states
-    cpu_states = kcalloc(num_possible_cpus(), sizeof(*cpu_states), GFP_KERNEL);
+    // Allocate percpu array
+    cpu_states = alloc_percpu(struct cpu_state);
     if (!cpu_states) {
         ret = -ENOMEM;
         goto error_alloc;
@@ -253,24 +243,19 @@ static int __init memory_collector_init(void)
         goto error_resctrl;
     }
 
-    ret = schedule_delayed_work(&enable_sampling_delayed, msecs_to_jiffies(1000));  // 1 second delay
-    if (!ret) {
-        // unexpected since the work should not already be on a queue
-        pr_err("Memory Collector: failed to schedule sampling work\n");
-        goto error_schedule;
-    }
+
+    // Start timers on all CPUs
+    on_each_cpu(start_cpu_timer, NULL, 1);
 
     return 0;
 
-error_schedule:
 error_resctrl:
     resctrl_exit();
 error_cpu_init:
-    // Cleanup CPUs that were initialized
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
-    kfree(cpu_states);
+    free_percpu(cpu_states);
 error_alloc:
     return ret;
 }
@@ -282,19 +267,22 @@ static void __exit memory_collector_exit(void)
     
     printk(KERN_INFO "Memory Collector: unregistering PMU module\n");
     
-    if (sampling_event) {
-        perf_event_disable(sampling_event);
-        perf_event_release_kernel(sampling_event);
+    
+    // Cancel timers on all CPUs
+    for_each_possible_cpu(cpu) {
+        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+        hrtimer_cancel(&state->timer);
     }
 
-    // Call resctrl exit first
+    // Call resctrl exit
     resctrl_exit();
 
     // Cleanup all CPUs
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
-    kfree(cpu_states);
+    
+    free_percpu(cpu_states);
 }
 
 module_init(memory_collector_init);
