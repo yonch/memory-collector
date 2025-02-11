@@ -118,9 +118,8 @@ static void init_cpu_state(struct work_struct *work)
     state->llc_miss = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
     if (IS_ERR(state->llc_miss)) {
         ret = PTR_ERR(state->llc_miss);
-        pr_err("Failed to create LLC miss event for CPU %d\n", cpu);
+        pr_err("Failed to create LLC miss event for CPU %d: error %d\n", cpu, ret);
         state->llc_miss = NULL;
-        goto error;
     }
 
     // Setup cycles event
@@ -133,9 +132,8 @@ static void init_cpu_state(struct work_struct *work)
     state->cycles = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
     if (IS_ERR(state->cycles)) {
         ret = PTR_ERR(state->cycles);
-        pr_err("Failed to create cycles event for CPU %d\n", cpu);
+        pr_err("Failed to create cycles event for CPU %d: error %d\n", cpu, ret);
         state->cycles = NULL;
-        goto error;
     }
 
     // Setup instructions event
@@ -148,9 +146,8 @@ static void init_cpu_state(struct work_struct *work)
     state->instructions = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
     if (IS_ERR(state->instructions)) {
         ret = PTR_ERR(state->instructions);
-        pr_err("Failed to create instructions event for CPU %d\n", cpu);
+        pr_err("Failed to create instructions event for CPU %d: error %d\n", cpu, ret);
         state->instructions = NULL;
-        goto error;
     }
 
     // Setup context switch event
@@ -166,9 +163,8 @@ static void init_cpu_state(struct work_struct *work)
                                                         NULL);
     if (IS_ERR(state->ctx_switch)) {
         ret = PTR_ERR(state->ctx_switch);
-        pr_err("Failed to create context switch event for CPU %d\n", cpu);
+        pr_err("Failed to create context switch event for CPU %d: error %d\n", cpu, ret);
         state->ctx_switch = NULL;
-        goto error;
     }
 
     // Initialize and start the timer (moved from start_cpu_timer)
@@ -182,10 +178,6 @@ static void init_cpu_state(struct work_struct *work)
                      NSEC_PER_MSEC * NSEC_PER_MSEC);
     
     hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS_PINNED);
-    return;
-
-error:
-    cleanup_cpu(cpu);
 }
 
 // Update cleanup_cpu to clean up context switch event
