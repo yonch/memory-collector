@@ -47,7 +47,7 @@ echo "Head of is_context_switch=1:"
 grep "is_context_switch=1" "$TRACE_OUTPUT" | head
 
 echo "Head of mbm_total:"
-grep "memory_collector_mbm_total:" "$TRACE_OUTPUT" | head
+grep "memory_collector_mbm_total:" "$TRACE_OUTPUT" | head -n 20
 
 echo "Validating output..."
 # Check if we have any trace entries

@@ -109,8 +109,19 @@ int resctrl_init_cpu(struct rdt_state *rdt_state)
     rdt_state->supports_non_cpu_agent_cache = (eax & (1 << 8));
     rdt_state->supports_non_cpu_agent_mbm = (eax & (1 << 10));
 
-    pr_info("Memory Collector: capabilities of core %d: llc_occupancy: %d, mbm_total: %d, mbm_local: %d, max_rmid: %d, counter_width: %d, has_overflow_bit: %d, supports_non_cpu_agent_cache: %d, supports_non_cpu_agent_mbm: %d\n", 
+    pr_debug("Memory Collector: capabilities of core %d: llc_occupancy: %d, mbm_total: %d, mbm_local: %d, max_rmid: %d, counter_width: %d, has_overflow_bit: %d, supports_non_cpu_agent_cache: %d, supports_non_cpu_agent_mbm: %d\n", 
              cpu, rdt_state->supports_llc_occupancy, rdt_state->supports_mbm_total, rdt_state->supports_mbm_local, rdt_state->max_rmid, rdt_state->counter_width, rdt_state->has_overflow_bit, rdt_state->supports_non_cpu_agent_cache, rdt_state->supports_non_cpu_agent_mbm);
+
+    if (cpu == 2) {
+        u32 rmid = 1;
+        u32 closid = 0;
+        if (wrmsr_safe(MSR_IA32_PQR_ASSOC, rmid, closid) != 0) {
+            pr_err("Memory Collector: failed to write RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
+        } else {
+            pr_info("Memory Collector: wrote RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
+        }
+    }    
+
     pr_debug("Memory Collector: enumerate_cpuid completed successfully on CPU %d\n", cpu);
     return ret;
 }
