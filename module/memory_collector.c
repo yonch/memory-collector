@@ -7,6 +7,7 @@
 #include <linux/irq.h>
 #include <linux/tracepoint.h>
 #include "resctrl.h"
+#include <linux/workqueue.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Memory Collector Project");
@@ -33,8 +34,11 @@ struct cpu_state {
 
 static struct cpu_state __percpu *cpu_states;
 
-// Add the init_cpu and cleanup_cpu function declarations
 static void cleanup_cpu(int cpu);
+static enum hrtimer_restart timer_fn(struct hrtimer *timer);
+
+// Add workqueue declaration at the top with other global variables
+static struct workqueue_struct *collector_wq;
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
 {
@@ -75,13 +79,14 @@ static void context_switch_handler(struct perf_event *event,
     collect_sample_on_current_cpu(true);
 }
 
-// Update init_cpu to include context switch event setup
-static void init_cpu(void *info)
+// Merge init_cpu and start_cpu_timer into a single function
+static void init_cpu_state(struct work_struct *work)
 {
     struct perf_event_attr attr;
     int ret;
     int cpu = smp_processor_id();
     struct cpu_state *state = this_cpu_ptr(cpu_states);
+    ktime_t now;
     
     state->llc_miss = NULL;
     state->cycles = NULL;
@@ -136,17 +141,17 @@ static void init_cpu(void *info)
         goto error;
     }
 
-    // After setting up instructions event, add context switch event
+    // Setup context switch event
     memset(&attr, 0, sizeof(attr));
     attr.type = PERF_TYPE_SOFTWARE;
     attr.config = PERF_COUNT_SW_CONTEXT_SWITCHES;
     attr.size = sizeof(attr);
     attr.disabled = 0;
-    attr.sample_period = 1; // Sample every context switch
+    attr.sample_period = 1;
     
     state->ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
-                                                                context_switch_handler, 
-                                                                NULL);
+                                                        context_switch_handler, 
+                                                        NULL);
     if (IS_ERR(state->ctx_switch)) {
         ret = PTR_ERR(state->ctx_switch);
         pr_err("Failed to create context switch event for CPU %d\n", cpu);
@@ -154,7 +159,19 @@ static void init_cpu(void *info)
         goto error;
     }
 
+    // Initialize and start the timer (moved from start_cpu_timer)
+    hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+    state->timer.function = timer_fn;
+    
+    now = ktime_get();
+    state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
+    state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
+                     (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
+                     NSEC_PER_MSEC * NSEC_PER_MSEC);
+    
+    hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS);
     return;
+
 error:
     cleanup_cpu(cpu);
 }
@@ -199,30 +216,11 @@ static enum hrtimer_restart timer_fn(struct hrtimer *timer)
     return HRTIMER_RESTART;
 }
 
-static void start_cpu_timer(void *info)
-{
-    struct cpu_state *state;
-    ktime_t now;
-    
-    state = this_cpu_ptr(cpu_states);
-    
-    hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
-    state->timer.function = timer_fn;
-    
-    // Start timer at next millisecond boundary
-    now = ktime_get();
-    state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
-    state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
-                     (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
-                     NSEC_PER_MSEC * NSEC_PER_MSEC);
-    
-    hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS);
-}
-
-// Update the init function
+// Update the init function to use workqueue
 static int __init memory_collector_init(void)
 {
     int cpu, ret;
+    struct work_struct __percpu *cpu_works;
 
     printk(KERN_INFO "Memory Collector: initializing\n");
 
@@ -233,15 +231,37 @@ static int __init memory_collector_init(void)
         goto error_alloc;
     }
 
-    // Initialize each CPU
-    pr_info("Memory Collector: initializing per-cpu perf events\n");
-    on_each_cpu(init_cpu, NULL, 1);
+    // Create workqueue
+    collector_wq = alloc_workqueue("collector_wq", WQ_UNBOUND, 0);
+    if (!collector_wq) {
+        ret = -ENOMEM;
+        goto error_wq;
+    }
 
+    // Allocate per-CPU work structures
+    cpu_works = alloc_percpu(struct work_struct);
+    if (!cpu_works) {
+        ret = -ENOMEM;
+        goto error_work_alloc;
+    }
+
+    // Initialize and queue work for each CPU
+    pr_info("Memory Collector: initializing per-cpu perf events\n");
+    for_each_possible_cpu(cpu) {
+        struct work_struct *work = per_cpu_ptr(cpu_works, cpu);
+        INIT_WORK(work, init_cpu_state);
+        queue_work_on(cpu, collector_wq, work);
+    }
+
+    // Wait for all work to complete
+    flush_workqueue(collector_wq);
+    free_percpu(cpu_works);
+
+    // Check initialization results
     pr_info("Memory Collector: checking per-cpu perf events\n");
     for_each_possible_cpu(cpu) {
         struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
         if (state->ctx_switch == NULL) {
-            // there was an error during one of the init_cpu calls
             goto error_cpu_init;
         }
     }
@@ -253,9 +273,6 @@ static int __init memory_collector_init(void)
         goto error_resctrl;
     }
 
-    pr_info("Memory Collector: starting timers on all CPUs\n");
-    on_each_cpu(start_cpu_timer, NULL, 1);
-
     return 0;
 
 error_resctrl:
@@ -264,18 +281,20 @@ error_cpu_init:
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
+error_work_alloc:
+    destroy_workqueue(collector_wq);
+error_wq:
     free_percpu(cpu_states);
 error_alloc:
     return ret;
 }
 
-// Update the exit function
+// Update the exit function to destroy workqueue
 static void __exit memory_collector_exit(void)
 {
     int cpu;
     
     printk(KERN_INFO "Memory Collector: unregistering PMU module\n");
-    
     
     // Cancel timers on all CPUs
     for_each_possible_cpu(cpu) {
@@ -291,6 +310,7 @@ static void __exit memory_collector_exit(void)
         cleanup_cpu(cpu);
     }
     
+    destroy_workqueue(collector_wq);
     free_percpu(cpu_states);
 }
 
