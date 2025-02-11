@@ -46,20 +46,21 @@ static void collect_sample_on_current_cpu(bool is_context_switch)
     
     timestamp = ktime_get_ns();
     cpu = smp_processor_id();
+    struct cpu_state *state = this_cpu_ptr(cpu_states);
     
-    // // Read LLC misses
-    // if (cpu_states[cpu].llc_miss) {
-    //     llc_misses = perf_event_read_value(cpu_states[cpu].llc_miss, &enabled, &running);
-    // }
+    // Read LLC misses
+    if (state->llc_miss) {
+        llc_misses = perf_event_read_value(state->llc_miss, &enabled, &running);
+    }
 
     // Read cycles
-    if (cpu_states[cpu].cycles) {
-        cycles = perf_event_read_value(cpu_states[cpu].cycles, &enabled, &running);
+    if (state->cycles) {
+        cycles = perf_event_read_value(state->cycles, &enabled, &running);
     }
 
     // Read instructions
-    if (cpu_states[cpu].instructions) {
-        instructions = perf_event_read_value(cpu_states[cpu].instructions, &enabled, &running);
+    if (state->instructions) {
+        instructions = perf_event_read_value(state->instructions, &enabled, &running);
     }
 
     trace_memory_collector_sample(cpu, timestamp, current->comm, 
