@@ -274,7 +274,7 @@ static int __init memory_collector_init(void)
 
     // Initialize and queue work for each CPU
     pr_info("Memory Collector: initializing per-cpu perf events\n");
-    for_each_possible_cpu(cpu) {
+    for_each_online_cpu(cpu) {
         struct work_struct *work = per_cpu_ptr(cpu_works, cpu);
         INIT_WORK(work, init_cpu_state);
         queue_work_on(cpu, collector_wq, work);
