@@ -34,7 +34,6 @@ struct cpu_state {
 static struct cpu_state __percpu *cpu_states;
 
 // Add the init_cpu and cleanup_cpu function declarations
-static int init_cpu(int cpu);
 static void cleanup_cpu(int cpu);
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
@@ -77,11 +76,17 @@ static void context_switch_handler(struct perf_event *event,
 }
 
 // Update init_cpu to include context switch event setup
-static int init_cpu(int cpu)
+static void init_cpu(void *info)
 {
     struct perf_event_attr attr;
     int ret;
-    struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+    int cpu = smp_processor_id();
+    struct cpu_state *state = this_cpu_ptr(cpu_states);
+    
+    state->llc_miss = NULL;
+    state->cycles = NULL;
+    state->instructions = NULL;
+    state->ctx_switch = NULL;
 
     // Setup LLC miss event
     memset(&attr, 0, sizeof(attr));
@@ -149,11 +154,9 @@ static int init_cpu(int cpu)
         goto error;
     }
 
-    return 0;
-
+    return;
 error:
     cleanup_cpu(cpu);
-    return ret;
 }
 
 // Update cleanup_cpu to clean up context switch event
@@ -232,9 +235,13 @@ static int __init memory_collector_init(void)
 
     // Initialize each CPU
     pr_info("Memory Collector: initializing per-cpu perf events\n");
+    on_each_cpu(init_cpu, NULL, 1);
+
+    pr_info("Memory Collector: checking per-cpu perf events\n");
     for_each_possible_cpu(cpu) {
-        ret = init_cpu(cpu);
-        if (ret < 0) {
+        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+        if (state->ctx_switch == NULL) {
+            // there was an error during one of the init_cpu calls
             goto error_cpu_init;
         }
     }
