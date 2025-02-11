@@ -63,6 +63,10 @@ fi
 echo "Unloading module..."
 sudo rmmod collector
 
+# Verify module unloaded successfully
+echo "Verifying unload..."
+! lsmod | grep collector
+
 echo "Cleaning up trace..."
 sudo trace-cmd reset
 

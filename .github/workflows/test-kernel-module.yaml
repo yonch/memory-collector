@@ -176,7 +176,7 @@ jobs:
           
           # Verify module unloaded successfully
           echo "lsmod | grep collector:"
-          lsmod | grep collector
+          ! lsmod | grep collector
           if lsmod | grep -q collector; then
             echo "Error: Module still loaded"
             exit 1
