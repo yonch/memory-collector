@@ -20,7 +20,7 @@ lsmod | grep collector || {
 }
 
 echo "Setting up tracing..."
-sudo trace-cmd start -e memory_collector_sample -e memory_collector_mbm_total
+sudo trace-cmd start -e memory_collector_sample -e memory_collector_resctrl
 
 echo "Collecting samples for 1 second..."
 sleep 1
@@ -46,8 +46,8 @@ grep "is_context_switch=0" "$TRACE_OUTPUT" | head
 echo "Head of is_context_switch=1:"
 grep "is_context_switch=1" "$TRACE_OUTPUT" | head
 
-echo "Head of mbm_total:"
-grep "memory_collector_mbm_total:" "$TRACE_OUTPUT" | head -n 20
+echo "Head of resctrl:"
+grep "memory_collector_resctrl:" "$TRACE_OUTPUT" | head -n 20
 
 echo "Validating output..."
 # Check if we have any trace entries

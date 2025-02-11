@@ -29,25 +29,33 @@ TRACE_EVENT(memory_collector_sample,
         __entry->cpu, __entry->timestamp, __entry->comm, __entry->is_context_switch)
 );
 
-TRACE_EVENT(memory_collector_mbm_total,
-    TP_PROTO(u32 rmid, u64 timestamp, u64 val, int err),
-    TP_ARGS(rmid, timestamp, val, err),
+TRACE_EVENT(memory_collector_resctrl,
+    TP_PROTO(u32 rmid, u64 timestamp, u64 llc_occupancy_val, int llc_occupancy_err, u64 mbm_total_val, int mbm_total_err, u64 mbm_local_val, int mbm_local_err),
+    TP_ARGS(rmid, timestamp, llc_occupancy_val, llc_occupancy_err, mbm_total_val, mbm_total_err, mbm_local_val, mbm_local_err),
     TP_STRUCT__entry(
         __field(u32, rmid)
         __field(u64, timestamp)
-        __field(u64, val)
-        __field(int, err)
+        __field(u64, llc_occupancy_val)
+        __field(int, llc_occupancy_err)
+        __field(u64, mbm_total_val)
+        __field(int, mbm_total_err)
+        __field(u64, mbm_local_val)
+        __field(int, mbm_local_err)
     ),
     
     TP_fast_assign(
         __entry->rmid = rmid;
         __entry->timestamp = timestamp;
-        __entry->val = val;
-        __entry->err = err;
+        __entry->llc_occupancy_val = llc_occupancy_val;
+        __entry->llc_occupancy_err = llc_occupancy_err;
+        __entry->mbm_total_val = mbm_total_val;
+        __entry->mbm_total_err = mbm_total_err;
+        __entry->mbm_local_val = mbm_local_val;
+        __entry->mbm_local_err = mbm_local_err;
     ),
     
-    TP_printk("rmid=%u timestamp=%llu val=%llu err=%d",
-        __entry->rmid, __entry->timestamp, __entry->val, __entry->err)
+    TP_printk("rmid=%u timestamp=%llu llc_occupancy_val=%llu llc_occupancy_err=%d mbm_total_val=%llu mbm_total_err=%d mbm_local_val=%llu mbm_local_err=%d",
+        __entry->rmid, __entry->timestamp, __entry->llc_occupancy_val, __entry->llc_occupancy_err, __entry->mbm_total_val, __entry->mbm_total_err, __entry->mbm_local_val, __entry->mbm_local_err)
 );
 
 #endif /* _MEMORY_COLLECTOR_TRACE_H */
