@@ -98,7 +98,6 @@ static void init_cpu_state(struct work_struct *work)
     }
 
     state = this_cpu_ptr(cpu_states);
-    pr_info("init_cpu_state for CPU %d, got work %px\n", cpu, work);
     
     state->llc_miss = NULL;
     state->cycles = NULL;
