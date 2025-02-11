@@ -180,6 +180,7 @@ error:
 static void cleanup_cpu(int cpu)
 {
     struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+    hrtimer_cancel(&state->timer);
     if (state->ctx_switch) {
         perf_event_release_kernel(state->ctx_switch);
         state->ctx_switch = NULL;
@@ -229,6 +230,16 @@ static int __init memory_collector_init(void)
     if (!cpu_states) {
         ret = -ENOMEM;
         goto error_alloc;
+    }
+    // initialize the cpu_states, so we can query whether each variable is initialized
+    for_each_possible_cpu(cpu) {
+        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+        state->llc_miss = NULL;
+        state->cycles = NULL;
+        state->instructions = NULL;
+        state->ctx_switch = NULL;
+        hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+        state->timer.function = timer_fn;
     }
 
     // Create workqueue
@@ -296,12 +307,6 @@ static void __exit memory_collector_exit(void)
     
     printk(KERN_INFO "Memory Collector: unregistering PMU module\n");
     
-    // Cancel timers on all CPUs
-    for_each_possible_cpu(cpu) {
-        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-        hrtimer_cancel(&state->timer);
-    }
-
     // Call resctrl exit
     resctrl_exit();
 
