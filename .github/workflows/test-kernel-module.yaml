@@ -116,7 +116,7 @@ jobs:
 
       - name: Check RDT Capabilities
         run: |
-          sudo mkdir -p /sys/fs/resctrl
+          sudo mkdir -p /sys/fs/resctrl || true
           sudo mount -t resctrl resctrl /sys/fs/resctrl || true
           
           echo "Mounting resctrl filesystem"
