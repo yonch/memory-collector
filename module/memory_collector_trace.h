@@ -7,17 +7,14 @@
 #include <linux/tracepoint.h>
 
 TRACE_EVENT(memory_collector_sample,
-    TP_PROTO(u32 cpu, u64 timestamp, const char *comm, u64 llc_misses, u64 cycles, u64 instructions, bool is_context_switch),
+    TP_PROTO(u32 cpu, u64 timestamp, const char *comm, bool is_context_switch),
     
-    TP_ARGS(cpu, timestamp, comm, llc_misses, cycles, instructions, is_context_switch),
+    TP_ARGS(cpu, timestamp, comm, is_context_switch),
     
     TP_STRUCT__entry(
         __field(u32, cpu)
         __field(u64, timestamp)
         __array(char, comm, TASK_COMM_LEN)
-        __field(u64, llc_misses)
-        __field(u64, cycles)
-        __field(u64, instructions)
         __field(bool, is_context_switch)
     ),
     
@@ -25,15 +22,11 @@ TRACE_EVENT(memory_collector_sample,
         __entry->cpu = cpu;
         __entry->timestamp = timestamp;
         memcpy(__entry->comm, comm, TASK_COMM_LEN);
-        __entry->llc_misses = llc_misses;
-        __entry->cycles = cycles;
-        __entry->instructions = instructions;
         __entry->is_context_switch = is_context_switch;
     ),
     
-    TP_printk("cpu=%u timestamp=%llu comm=%s llc_misses=%llu cycles=%llu instructions=%llu is_context_switch=%d",
-        __entry->cpu, __entry->timestamp, __entry->comm,
-        __entry->llc_misses, __entry->cycles, __entry->instructions, __entry->is_context_switch)
+    TP_printk("cpu=%u timestamp=%llu comm=%s is_context_switch=%d",
+        __entry->cpu, __entry->timestamp, __entry->comm, __entry->is_context_switch)
 );
 
 #endif /* _MEMORY_COLLECTOR_TRACE_H */

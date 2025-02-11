@@ -24,9 +24,6 @@ MODULE_VERSION("1.0");
 
 // Replace the cpu_state struct and global variable definitions
 struct cpu_state {
-    struct perf_event *llc_miss;
-    struct perf_event *cycles;
-    struct perf_event *instructions;
     struct perf_event *ctx_switch;
     struct hrtimer timer;
     ktime_t next_expected;
@@ -43,36 +40,11 @@ static struct workqueue_struct *collector_wq;
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
 {
-    u64 timestamp;
-    u32 cpu;
-    u64 llc_misses = 0, cycles = 0, instructions = 0;
-    u64 enabled, running;
-    int ret;
-    
-    timestamp = ktime_get_ns();
-    cpu = smp_processor_id();
+    u64 timestamp = ktime_get_ns();
+    u32 cpu = smp_processor_id();
     struct cpu_state *state = this_cpu_ptr(cpu_states);
     
-    // Read LLC misses
-    if (state->llc_miss) {
-        ret = perf_event_read_local(state->llc_miss, &llc_misses, &enabled, &running);
-        if (ret) {
-            llc_misses = 0;
-        }
-    }
-
-    // Read cycles
-    if (state->cycles) {
-        cycles = perf_event_read_value(state->cycles, &enabled, &running);
-    }
-
-    // Read instructions
-    if (state->instructions) {
-        instructions = perf_event_read_value(state->instructions, &enabled, &running);
-    }
-
-    trace_memory_collector_sample(cpu, timestamp, current->comm, 
-                                llc_misses, cycles, instructions, is_context_switch);
+    trace_memory_collector_sample(cpu, timestamp, current->comm, is_context_switch);
 }
 
 // Add context switch handler
@@ -103,55 +75,7 @@ static void init_cpu_state(struct work_struct *work)
 
     state = this_cpu_ptr(cpu_states);
     
-    state->llc_miss = NULL;
-    state->cycles = NULL;
-    state->instructions = NULL;
     state->ctx_switch = NULL;
-
-    // Setup LLC miss event
-    memset(&attr, 0, sizeof(attr));
-    attr.type = PERF_TYPE_HW_CACHE;
-    attr.config = PERF_COUNT_HW_CACHE_MISSES;
-    attr.size = sizeof(attr);
-    attr.disabled = 0;
-    attr.exclude_kernel = 0;
-    attr.exclude_hv = 0;
-    attr.exclude_idle = 0;
-
-    state->llc_miss = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    if (IS_ERR(state->llc_miss)) {
-        ret = PTR_ERR(state->llc_miss);
-        pr_err("Failed to create LLC miss event for CPU %d: error %d\n", cpu, ret);
-        state->llc_miss = NULL;
-    }
-
-    // Setup cycles event
-    memset(&attr, 0, sizeof(attr));
-    attr.type = PERF_TYPE_HARDWARE;
-    attr.config = PERF_COUNT_HW_CPU_CYCLES;
-    attr.size = sizeof(attr);
-    attr.disabled = 0;
-    
-    state->cycles = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    if (IS_ERR(state->cycles)) {
-        ret = PTR_ERR(state->cycles);
-        pr_err("Failed to create cycles event for CPU %d: error %d\n", cpu, ret);
-        state->cycles = NULL;
-    }
-
-    // Setup instructions event
-    memset(&attr, 0, sizeof(attr));
-    attr.type = PERF_TYPE_HARDWARE;
-    attr.config = PERF_COUNT_HW_INSTRUCTIONS;
-    attr.size = sizeof(attr);
-    attr.disabled = 0;
-    
-    state->instructions = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    if (IS_ERR(state->instructions)) {
-        ret = PTR_ERR(state->instructions);
-        pr_err("Failed to create instructions event for CPU %d: error %d\n", cpu, ret);
-        state->instructions = NULL;
-    }
 
     // Setup context switch event
     memset(&attr, 0, sizeof(attr));
@@ -196,18 +120,6 @@ static void cleanup_cpu(int cpu)
         perf_event_release_kernel(state->ctx_switch);
         state->ctx_switch = NULL;
     }
-    if (state->llc_miss) {
-        perf_event_release_kernel(state->llc_miss);
-        state->llc_miss = NULL;
-    }
-    if (state->cycles) {
-        perf_event_release_kernel(state->cycles);
-        state->cycles = NULL;
-    }
-    if (state->instructions) {
-        perf_event_release_kernel(state->instructions);
-        state->instructions = NULL;
-    }
 }
 
 static enum hrtimer_restart timer_fn(struct hrtimer *timer)
@@ -247,9 +159,6 @@ static int __init memory_collector_init(void)
     // Initialize the cpu_states
     for_each_possible_cpu(cpu) {
         struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-        state->llc_miss = NULL;
-        state->cycles = NULL;
-        state->instructions = NULL;
         state->ctx_switch = NULL;
         hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
         state->timer.function = timer_fn;
@@ -283,15 +192,15 @@ static int __init memory_collector_init(void)
     cpu_works = NULL;
     pr_info("Memory Collector: workqueue flushed\n");
 
-    // // Check initialization results
-    // pr_info("Memory Collector: checking per-cpu perf events\n");
-    // for_each_possible_cpu(cpu) {
-    //     struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-    //     if (state->ctx_switch == NULL) {
-    //         res = -ENODEV;
-    //         goto error_cpu_init;
-    //     }
-    // }
+    // Check initialization results
+    pr_info("Memory Collector: checking per-cpu perf events\n");
+    for_each_possible_cpu(cpu) {
+        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+        if (state->ctx_switch == NULL) {
+            ret = -ENODEV;
+            goto error_cpu_init;
+        }
+    }
 
     pr_info("Memory Collector: initializing resctrl\n");
     ret = resctrl_init();
