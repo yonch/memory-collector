@@ -28,11 +28,11 @@ int resctrl_init_cpu(struct rdt_state *rdt_state);
 void resctrl_timer_tick(struct rdt_state *rdt_state);
 
 /*
- * Read memory bandwidth counter for given RMID
- * val is set to the bandwidth value on success
+ * Read RDT counter for given RMID and event ID
+ * val is set to the counter value on success
  * Returns -EIO if error occurred
  * Returns -EINVAL if data unavailable
  */
-int read_rmid_mbm(u32 rmid, u64 *val);
+int read_resctrl_value(u32 rmid, u32 event_id, u64 *val);
 
 #endif /* _COLLECTOR_RESCTRL_H_ */ 

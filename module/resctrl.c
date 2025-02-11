@@ -61,7 +61,7 @@ void resctrl_timer_tick(struct rdt_state *rdt_state)
 
     // if we support mbm, read it on this CPU
     if (rdt_state->supports_mbm_total) {
-        mbm_total_err = read_rmid_mbm(cpu, &mbm_total_val);
+        mbm_total_err = read_resctrl_value(cpu, QOS_L3_MBM_TOTAL_EVENT_ID, &mbm_total_val);
     } else {
         mbm_total_err = -ENODEV;
     }
@@ -126,12 +126,12 @@ int resctrl_init_cpu(struct rdt_state *rdt_state)
     return ret;
 }
 
-int read_rmid_mbm(u32 rmid, u64 *val)
+int read_resctrl_value(u32 rmid, u32 event_id, u64 *val)
 {
     int err;
     
     err = wrmsr_safe(MSR_IA32_QM_EVTSEL, 
-                     QOS_L3_MBM_TOTAL_EVENT_ID,
+                     event_id,
                      rmid);
     if (err)
         return err;
