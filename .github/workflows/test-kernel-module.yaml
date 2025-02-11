@@ -7,6 +7,9 @@ on:
         required: false
         default: 'c7i.metal-24xl'
         type: string
+  push:
+    branches:
+      - main
 
 permissions:
   id-token: write # Required for requesting the JWT
@@ -33,7 +36,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
-          ec2-instance-type: ${{ inputs.instance-type }}
+          ec2-instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
           market-type: spot
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
