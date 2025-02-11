@@ -40,6 +40,12 @@ head "$TRACE_OUTPUT"
 echo "Tail of trace report:"
 tail "$TRACE_OUTPUT"
 
+echo "Head of is_context_switch=0:"
+grep "is_context_switch=0" "$TRACE_OUTPUT" | head || true
+
+echo "Head of is_context_switch=1:"
+grep "is_context_switch=1" "$TRACE_OUTPUT" | head || true
+
 echo "Validating output..."
 # Check if we have any trace entries
 SAMPLE_COUNT=$(grep "memory_collector_sample:" "$TRACE_OUTPUT" | wc -l)

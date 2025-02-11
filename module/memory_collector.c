@@ -221,7 +221,7 @@ static enum hrtimer_restart timer_fn(struct hrtimer *timer)
                      (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
                      NSEC_PER_MSEC * NSEC_PER_MSEC);
     
-    hrtimer_forward_now(timer, state->next_expected);
+    hrtimer_set_expires(timer, state->next_expected);
     return HRTIMER_RESTART;
 }
 
