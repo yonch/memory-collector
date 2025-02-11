@@ -26,25 +26,11 @@ struct ipi_rmid_args {
     int status;
 };
 /*
- * IPI function to write RMID to MSR
- * Called on each CPU by on_each_cpu()
+ * write RMID and CLOSID to MSR
  */
-static void ipi_write_rmid(void *info)
+static int write_rmid_closid(u32 rmid, u32 closid)
 {
-    struct ipi_rmid_args *args = info;
-    u32 closid = 0;
-
-    // if we're not on CPU 2, don't do anything
-    if (smp_processor_id() != 2) {
-        args->status = 0;
-        return;
-    }
-    
-    if (wrmsr_safe(MSR_IA32_PQR_ASSOC, args->rmid, closid) != 0) {
-        args->status = -EIO;
-    } else {
-        args->status = 0;
-    }
+    return wrmsr_safe(MSR_IA32_PQR_ASSOC, rmid, closid);
 }
 
 void resctrl_timer_tick(struct rdt_state *rdt_state)
@@ -133,7 +119,7 @@ int resctrl_init_cpu(struct rdt_state *rdt_state)
     if (cpu == 2) {
         u32 rmid = 1;
         u32 closid = 0;
-        if (wrmsr_safe(MSR_IA32_PQR_ASSOC, rmid, closid) != 0) {
+        if (write_rmid_closid(rmid, closid) != 0) {
             pr_err("Memory Collector: failed to write RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
         } else {
             pr_info("Memory Collector: wrote RMID %d to MSR_IA32_PQR_ASSOC\n", rmid);
