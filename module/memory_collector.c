@@ -230,7 +230,7 @@ static void __exit memory_collector_exit(void)
 {
     int cpu;
     
-    pr_info(LOG_PREFIX "unregistering PMU module\n");
+    pr_info(LOG_PREFIX "unloading\n");
     
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
@@ -243,6 +243,8 @@ static void __exit memory_collector_exit(void)
     
     destroy_workqueue(collector_wq);
     free_percpu(cpu_states);
+
+    pr_info(LOG_PREFIX "done unloading\n");
 }
 
 module_init(memory_collector_init);
