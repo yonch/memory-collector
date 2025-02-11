@@ -88,6 +88,7 @@ static void init_cpu_state(struct work_struct *work)
     int cpu = smp_processor_id();
     struct work_struct *expected_work = per_cpu_ptr(cpu_works, cpu);
     struct cpu_state *state;
+    ktime_t now;
 
     // Verify this work matches the expected work for this CPU
     if (work != expected_work) {
@@ -171,7 +172,8 @@ static void init_cpu_state(struct work_struct *work)
     // }
 
     // Initialize and start the timer (moved from start_cpu_timer)
-    hrtimer_setup(&state->timer, timer_fn, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
+    hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
+    state->timer.function = timer_fn;
     
     now = ktime_get();
     state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
@@ -254,7 +256,8 @@ static int __init memory_collector_init(void)
         state->cycles = NULL;
         state->instructions = NULL;
         state->ctx_switch = NULL;
-        hrtimer_setup(&state->timer, timer_fn, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+        hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+        state->timer.function = timer_fn;
     }
 
     // Create workqueue
