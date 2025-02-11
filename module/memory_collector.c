@@ -37,7 +37,8 @@ static struct cpu_state __percpu *cpu_states;
 static void cleanup_cpu(int cpu);
 static enum hrtimer_restart timer_fn(struct hrtimer *timer);
 
-// Add workqueue declaration at the top with other global variables
+// Add global cpu_works declaration after other global variables
+static struct work_struct __percpu *cpu_works;
 static struct workqueue_struct *collector_wq;
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
@@ -79,14 +80,24 @@ static void context_switch_handler(struct perf_event *event,
     collect_sample_on_current_cpu(true);
 }
 
-// Merge init_cpu and start_cpu_timer into a single function
+// Modify init_cpu_state to verify the work struct matches the current CPU
 static void init_cpu_state(struct work_struct *work)
 {
     struct perf_event_attr attr;
     int ret;
     int cpu = smp_processor_id();
-    struct cpu_state *state = this_cpu_ptr(cpu_states);
-    ktime_t now;
+    struct work_struct *expected_work = per_cpu_ptr(cpu_works, cpu);
+    struct cpu_state *state;
+
+    // Verify this work matches the expected work for this CPU
+    if (work != expected_work) {
+        pr_err("CPU mismatch in init_cpu_state. Expected work %px for CPU %d, got %px\n",
+               expected_work, cpu, work);
+        return;
+    }
+
+    state = this_cpu_ptr(cpu_states);
+    pr_info("init_cpu_state for CPU %d\n", cpu);
     
     state->llc_miss = NULL;
     state->cycles = NULL;
@@ -180,6 +191,9 @@ error:
 static void cleanup_cpu(int cpu)
 {
     struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+
+    pr_debug("cleanup_cpu for CPU %d\n", cpu);
+
     hrtimer_cancel(&state->timer);
     if (state->ctx_switch) {
         perf_event_release_kernel(state->ctx_switch);
@@ -221,9 +235,10 @@ static enum hrtimer_restart timer_fn(struct hrtimer *timer)
 static int __init memory_collector_init(void)
 {
     int cpu, ret;
-    struct work_struct __percpu *cpu_works;
 
     printk(KERN_INFO "Memory Collector: initializing\n");
+
+    cpu_works = NULL;
 
     // Allocate percpu array
     cpu_states = alloc_percpu(struct cpu_state);
@@ -231,7 +246,8 @@ static int __init memory_collector_init(void)
         ret = -ENOMEM;
         goto error_alloc;
     }
-    // initialize the cpu_states, so we can query whether each variable is initialized
+
+    // Initialize the cpu_states
     for_each_possible_cpu(cpu) {
         struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
         state->llc_miss = NULL;
@@ -249,7 +265,7 @@ static int __init memory_collector_init(void)
         goto error_wq;
     }
 
-    // Allocate per-CPU work structures
+    // Allocate per-CPU work structures (now global)
     cpu_works = alloc_percpu(struct work_struct);
     if (!cpu_works) {
         ret = -ENOMEM;
@@ -267,6 +283,8 @@ static int __init memory_collector_init(void)
     // Wait for all work to complete
     flush_workqueue(collector_wq);
     free_percpu(cpu_works);
+    cpu_works = NULL;
+    pr_info("Memory Collector: workqueue flushed\n");
 
     // Check initialization results
     pr_info("Memory Collector: checking per-cpu perf events\n");
@@ -292,6 +310,10 @@ error_cpu_init:
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
+    if (cpu_works) {
+        free_percpu(cpu_works);
+        cpu_works = NULL;
+    }
 error_work_alloc:
     destroy_workqueue(collector_wq);
 error_wq:
@@ -307,16 +329,19 @@ static void __exit memory_collector_exit(void)
     
     printk(KERN_INFO "Memory Collector: unregistering PMU module\n");
     
-    // Call resctrl exit
     resctrl_exit();
 
-    // Cleanup all CPUs
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
     }
     
     destroy_workqueue(collector_wq);
     free_percpu(cpu_states);
+    if (cpu_works) {
+        // should be NULL already in any execution outcome of init, but adding for clarity
+        free_percpu(cpu_works);
+        cpu_works = NULL;
+    }
 }
 
 module_init(memory_collector_init);
