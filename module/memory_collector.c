@@ -46,6 +46,8 @@ static void collect_sample_on_current_cpu(bool is_context_switch)
     struct cpu_state *state = this_cpu_ptr(cpu_states);
     
     trace_memory_collector_sample(cpu, timestamp, current->comm, is_context_switch);
+
+    resctrl_timer_tick(&state->rdt_state);
 }
 
 // Add context switch handler

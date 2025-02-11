@@ -23,6 +23,11 @@ struct rdt_state {
 int resctrl_init_cpu(struct rdt_state *rdt_state);
 
 /*
+ * Read memory bandwidth counter for given RMID and output to trace
+ */
+void resctrl_timer_tick(struct rdt_state *rdt_state);
+
+/*
  * Read memory bandwidth counter for given RMID
  * val is set to the bandwidth value on success
  * Returns -EIO if error occurred

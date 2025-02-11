@@ -12,7 +12,7 @@ start_time=$(date +%s)
 echo "Module loaded, monitoring dmesg output..."
 echo "Press Ctrl+C to stop monitoring"
 
-for i in {1..30}; do
+for i in {1..5}; do
     # Get new dmesg entries and timestamp them
     sudo dmesg -c | while read line; do
         current_time=$(($(date +%s) - start_time))

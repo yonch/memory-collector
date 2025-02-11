@@ -9,6 +9,7 @@
 #include <linux/atomic.h>
 
 #include "resctrl.h"
+#include "memory_collector_trace.h"
 
 MODULE_LICENSE("GPL");
 
@@ -44,6 +45,28 @@ static void ipi_write_rmid(void *info)
     } else {
         args->status = 0;
     }
+}
+
+void resctrl_timer_tick(struct rdt_state *rdt_state)
+{
+    int cpu = smp_processor_id();
+    u64 now = ktime_get_ns();
+    int mbm_total_err = 0;
+    u64 mbm_total_val = 0;
+
+    // for now, just output the first 4 RMID, on CPUs 0..3
+    if (cpu > 4) {
+        return;
+    }
+
+    // if we support mbm, read it on this CPU
+    if (rdt_state->supports_mbm_total) {
+        mbm_total_err = read_rmid_mbm(cpu, &mbm_total_val);
+    } else {
+        mbm_total_err = -ENODEV;
+    }
+
+    trace_memory_collector_mbm_total(cpu, now, mbm_total_val, mbm_total_err);
 }
 
 int resctrl_init_cpu(struct rdt_state *rdt_state)
