@@ -131,8 +131,8 @@ int read_rmid_mbm(u32 rmid, u64 *val)
     int err;
     
     err = wrmsr_safe(MSR_IA32_QM_EVTSEL, 
-                     rmid,
-                     QOS_L3_MBM_TOTAL_EVENT_ID);
+                     QOS_L3_MBM_TOTAL_EVENT_ID,
+                     rmid);
     if (err)
         return err;
 
