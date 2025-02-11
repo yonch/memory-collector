@@ -115,61 +115,61 @@ static void init_cpu_state(struct work_struct *work)
     attr.exclude_hv = 0;
     attr.exclude_idle = 0;
 
-    // state->llc_miss = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    // if (IS_ERR(state->llc_miss)) {
-    //     ret = PTR_ERR(state->llc_miss);
-    //     pr_err("Failed to create LLC miss event for CPU %d\n", cpu);
-    //     state->llc_miss = NULL;
-    //     goto error;
-    // }
+    state->llc_miss = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(state->llc_miss)) {
+        ret = PTR_ERR(state->llc_miss);
+        pr_err("Failed to create LLC miss event for CPU %d\n", cpu);
+        state->llc_miss = NULL;
+        goto error;
+    }
 
-    // // Setup cycles event
-    // memset(&attr, 0, sizeof(attr));
-    // attr.type = PERF_TYPE_HARDWARE;
-    // attr.config = PERF_COUNT_HW_CPU_CYCLES;
-    // attr.size = sizeof(attr);
-    // attr.disabled = 0;
+    // Setup cycles event
+    memset(&attr, 0, sizeof(attr));
+    attr.type = PERF_TYPE_HARDWARE;
+    attr.config = PERF_COUNT_HW_CPU_CYCLES;
+    attr.size = sizeof(attr);
+    attr.disabled = 0;
     
-    // state->cycles = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    // if (IS_ERR(state->cycles)) {
-    //     ret = PTR_ERR(state->cycles);
-    //     pr_err("Failed to create cycles event for CPU %d\n", cpu);
-    //     state->cycles = NULL;
-    //     goto error;
-    // }
+    state->cycles = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(state->cycles)) {
+        ret = PTR_ERR(state->cycles);
+        pr_err("Failed to create cycles event for CPU %d\n", cpu);
+        state->cycles = NULL;
+        goto error;
+    }
 
-    // // Setup instructions event
-    // memset(&attr, 0, sizeof(attr));
-    // attr.type = PERF_TYPE_HARDWARE;
-    // attr.config = PERF_COUNT_HW_INSTRUCTIONS;
-    // attr.size = sizeof(attr);
-    // attr.disabled = 0;
+    // Setup instructions event
+    memset(&attr, 0, sizeof(attr));
+    attr.type = PERF_TYPE_HARDWARE;
+    attr.config = PERF_COUNT_HW_INSTRUCTIONS;
+    attr.size = sizeof(attr);
+    attr.disabled = 0;
     
-    // state->instructions = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
-    // if (IS_ERR(state->instructions)) {
-    //     ret = PTR_ERR(state->instructions);
-    //     pr_err("Failed to create instructions event for CPU %d\n", cpu);
-    //     state->instructions = NULL;
-    //     goto error;
-    // }
+    state->instructions = perf_event_create_kernel_counter(&attr, cpu, NULL, NULL, NULL);
+    if (IS_ERR(state->instructions)) {
+        ret = PTR_ERR(state->instructions);
+        pr_err("Failed to create instructions event for CPU %d\n", cpu);
+        state->instructions = NULL;
+        goto error;
+    }
 
-    // // Setup context switch event
-    // memset(&attr, 0, sizeof(attr));
-    // attr.type = PERF_TYPE_SOFTWARE;
-    // attr.config = PERF_COUNT_SW_CONTEXT_SWITCHES;
-    // attr.size = sizeof(attr);
-    // attr.disabled = 0;
-    // attr.sample_period = 1;
+    // Setup context switch event
+    memset(&attr, 0, sizeof(attr));
+    attr.type = PERF_TYPE_SOFTWARE;
+    attr.config = PERF_COUNT_SW_CONTEXT_SWITCHES;
+    attr.size = sizeof(attr);
+    attr.disabled = 0;
+    attr.sample_period = 1;
     
-    // state->ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
-    //                                                     context_switch_handler, 
-    //                                                     NULL);
-    // if (IS_ERR(state->ctx_switch)) {
-    //     ret = PTR_ERR(state->ctx_switch);
-    //     pr_err("Failed to create context switch event for CPU %d\n", cpu);
-    //     state->ctx_switch = NULL;
-    //     goto error;
-    // }
+    state->ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
+                                                        context_switch_handler, 
+                                                        NULL);
+    if (IS_ERR(state->ctx_switch)) {
+        ret = PTR_ERR(state->ctx_switch);
+        pr_err("Failed to create context switch event for CPU %d\n", cpu);
+        state->ctx_switch = NULL;
+        goto error;
+    }
 
     // Initialize and start the timer (moved from start_cpu_timer)
     hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
@@ -196,7 +196,7 @@ static void cleanup_cpu(int cpu)
     pr_debug("cleanup_cpu for CPU %d\n", cpu);
 
     hrtimer_cancel(&state->timer);
-    
+
     if (state->ctx_switch) {
         perf_event_release_kernel(state->ctx_switch);
         state->ctx_switch = NULL;
