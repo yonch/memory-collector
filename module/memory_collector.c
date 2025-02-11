@@ -195,16 +195,40 @@ static void cleanup_cpu(int cpu)
     }
 }
 
-// Update the init function
-static int __init memory_collector_init(void)
+static void enable_sampling_work(struct work_struct *work)
 {
-    int cpu, ret;
     struct perf_event_attr attr = {
         .type = PERF_TYPE_SOFTWARE,
         .size = sizeof(struct perf_event_attr),
         .sample_period = 1000000, // 1ms
         .config = PERF_COUNT_SW_CPU_CLOCK,
     };
+
+    pr_info("Memory Collector: enabling time-based sampling\n");
+    
+    // Create sampling event
+    sampling_event = perf_event_create_kernel_counter(&attr, 
+                                                    0, // any CPU
+                                                    NULL, // all threads
+                                                    memory_collector_overflow_handler,
+                                                    NULL);
+    if (IS_ERR(sampling_event)) {
+        pr_err("Memory Collector: failed to create sampling event: %ld\n", PTR_ERR(sampling_event));
+        sampling_event = NULL;
+        return;
+    }
+
+    // Enable the samplingevent
+    perf_event_enable(sampling_event);
+}
+
+static DECLARE_DELAYED_WORK(enable_sampling_delayed, enable_sampling_work);
+
+
+// Update the init function
+static int __init memory_collector_init(void)
+{
+    int cpu, ret;
 
     printk(KERN_INFO "Memory Collector: initializing\n");
 
@@ -229,26 +253,16 @@ static int __init memory_collector_init(void)
         goto error_resctrl;
     }
 
-    // Create sampling event
-    sampling_event = perf_event_create_kernel_counter(&attr, 
-                                                    0, // any CPU
-                                                    NULL, // all threads
-                                                    memory_collector_overflow_handler,
-                                                    NULL);
-    if (IS_ERR(sampling_event)) {
-        ret = PTR_ERR(sampling_event);
-        printk(KERN_ERR "Memory Collector: failed to create sampling event: %d\n", ret);
-        goto error_sampling;
+    ret = schedule_delayed_work(&enable_sampling_delayed, msecs_to_jiffies(1000));  // 1 second delay
+    if (!ret) {
+        // unexpected since the work should not already be on a queue
+        pr_err("Memory Collector: failed to schedule sampling work\n");
+        goto error_schedule;
     }
-
-    // Enable the samplingevent
-    perf_event_enable(sampling_event);
 
     return 0;
 
-error_sampling:
-    perf_event_disable(sampling_event);
-    perf_event_release_kernel(sampling_event);
+error_schedule:
 error_resctrl:
     resctrl_exit();
 error_cpu_init:
