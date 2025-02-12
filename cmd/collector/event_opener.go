@@ -18,18 +18,8 @@ type EventOpener struct {
 	eventFDs []int
 }
 
-// PerfEventAttr represents perf_event_attr structure
-type PerfEventAttr struct {
-	Type        uint32
-	Size        uint32
-	Config      uint64
-	Disabled    uint32
-	ExcludeKernel uint32
-	ExcludeHv   uint32
-}
-
-// NewEventOpener creates perf events for CPU cycles on each CPU
-func NewEventOpener(array *ebpf.Map) (*EventOpener, error) {
+// NewEventOpener creates perf events for each CPU with the given attributes
+func NewEventOpener(array *ebpf.Map, attr unix.PerfEventAttr) (*EventOpener, error) {
 	nCPU := int(array.MaxEntries())
 	eventFDs := make([]int, 0, nCPU)
 
@@ -41,19 +31,6 @@ func NewEventOpener(array *ebpf.Map) (*EventOpener, error) {
 
 	// Create perf events for each CPU
 	for cpu := 0; cpu < nCPU; cpu++ {
-		attr := unix.PerfEventAttr{
-			Type:           unix.PERF_TYPE_HARDWARE,
-			Config:         unix.PERF_COUNT_HW_CPU_CYCLES,
-			Sample:         0,
-			Sample_type:    0,
-			Read_format:    unix.PERF_FORMAT_TOTAL_TIME_ENABLED | unix.PERF_FORMAT_TOTAL_TIME_RUNNING,
-			Bits:          0,
-			Wakeup:        0,
-			Bp_type:       0,
-			Ext1:          0,
-			Ext2:          0,
-		}
-
 		fd, err := unix.PerfEventOpen(&attr, -1, cpu, -1, 0)
 		if err != nil {
 			// Clean up already opened FDs
