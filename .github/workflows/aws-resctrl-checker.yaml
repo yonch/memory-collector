@@ -52,6 +52,8 @@ jobs:
   do-job:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - name: Test runner
         run: |
