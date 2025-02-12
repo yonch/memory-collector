@@ -24,8 +24,6 @@ jobs:
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
-    env:
-      HOME: /tmp
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -116,17 +114,21 @@ jobs:
       - name: Build collector
         working-directory: cmd/collector
         run: |
-          echo "HOME: $HOME"
           export HOME=/tmp
+          echo "HOME: $HOME"
           export GOCACHE=$HOME/golang/pkg/mod
           echo "GOCACHE: $GOCACHE"
 
           mkdir -p $GOCACHE
           go env -w GOMODCACHE=$GOCACHE
 
-          echo "*** go env:"
-          go env
-
+          # Set up asm link for go2bpf
+          arch=$(uname -m) && \
+              case ${arch} in \
+                  aarch64) ln -sf /usr/include/aarch64-linux-gnu/asm /usr/include/asm ;; \
+                  x86_64)  ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm ;; \
+                  *)       echo "Unsupported architecture: ${arch}" && exit 1 ;; \
+              esac
           go generate
           go build -v
           ls -l collector
