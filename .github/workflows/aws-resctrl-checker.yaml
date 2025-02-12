@@ -11,6 +11,8 @@ jobs:
   start-runner:
     name: Start EC2 runner
     runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
       ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
@@ -52,8 +54,6 @@ jobs:
   do-job:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
-    env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - name: Test runner
         run: |
