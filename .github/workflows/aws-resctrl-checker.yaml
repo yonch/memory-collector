@@ -80,7 +80,9 @@ jobs:
       - name: Print go version
         run: go version
       - name: Build checker binary
-        run: go build main.go
+        run: | 
+          go mod tidy
+          go build main.go
       - name: Run resctrl checker
         run: go run main.go
 
