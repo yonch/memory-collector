@@ -111,9 +111,7 @@ jobs:
 
           ls -l build/collector.ko
 
-      - name: Set up golang
-        working-directory: cmd/collector
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22.2'
 
