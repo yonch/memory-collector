@@ -12,6 +12,7 @@ on:
       - main
     paths:
       - cmd/collector/**
+      - .github/workflows/test-ebpf-collector.yaml
 
 permissions:
   id-token: write # Required for requesting the JWT
