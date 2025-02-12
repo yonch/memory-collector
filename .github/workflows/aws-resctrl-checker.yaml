@@ -36,8 +36,7 @@ jobs:
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
-            export ACTIONS_RUNNER_FORCED_INTERNAL_NODE_VERSION=node16
-            export ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION=node16
+            export ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true
             sudo yum update -y && \
             sudo yum install docker git libicu -y
             sudo systemctl enable docker
