@@ -18,6 +18,9 @@ deb [arch=amd64] http://security.ubuntu.com/ubuntu noble-security main restricte
 
 RUN rm /etc/apt/sources.list.d/ubuntu.sources
 
+# Packages required for cilium/ebpf development
+ENV EBPF_PACKAGES="golang-go llvm clang libbpf-dev"
+
 # Update and install essential build tools and kernel headers
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -28,6 +31,7 @@ RUN apt-get update && apt-get install -y \
     vim \
     curl \
     kmod \
+    ${EBPF_PACKAGES} \
     && rm -rf /var/lib/apt/lists/*
 
 # Set the working directory
