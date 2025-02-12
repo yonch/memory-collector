@@ -1,5 +1,7 @@
 name: Workflow for AWS ResCtrl Checker
-on: workflow_dispatch  # Manual trigger for testing
+on: 
+  push:
+      branches: feature/#9-resctrl_support_checker
 
 # Add permissions needed for OIDC authentication
 permissions:
