@@ -72,19 +72,11 @@ jobs:
           go-version: "1.22.9"
       - name: Change directory to pkg/checker
         run: | 
-          pwd
-          ls -lart
           cd pkg/checker
           pwd
-          ls -lart
-      - name: Print go version
-        run: go version
-      - name: Build checker binary
-        run: | 
           go mod tidy
           go build main.go
-      - name: Run resctrl checker
-        run: go run main.go
+          go run main.go
 
   stop-runner:
     name: Stop EC2 runner
