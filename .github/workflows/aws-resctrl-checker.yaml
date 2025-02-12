@@ -56,6 +56,10 @@ jobs:
       - name: Test runner
         run: |
           echo "Hello from EC2 runner!"
+      - name: Create home directory
+        run: |
+          mkdir -p /home/runner
+          echo "HOME=/home/runner" >> $GITHUB_ENV
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
@@ -66,7 +70,7 @@ jobs:
           go-version: "1.22.9"
       - name: Print go version
         run: go version
-      - name: Run cpi-count binary
+      - name: Build checker binary
         run: go build . && ./pkg/checker
       - name: Run resctrl checker
         run: go run main.go
