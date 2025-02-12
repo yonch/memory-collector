@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
 	"time"
 
 	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
 )
 
@@ -32,6 +36,13 @@ func main() {
 	}
 	defer tp.Close()
 
+	// Open a perf reader from userspace
+	rd, err := perf.NewReader(objs.Events, os.Getpagesize())
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rd.Close()
+
 	// Catch CTRL+C
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt)
@@ -40,24 +51,50 @@ func main() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	log.Println("Counting memory_collector_sample events...")
-	
 	timeout := time.After(5 * time.Second)
+
+
+	log.Println("Waiting for events...")
+
+	// Counter to maintain in userspace
+	var totalEvents uint64 = 0
+
 	for {
 		select {
+		case <-stopper:
+			log.Printf("Received interrupt, exiting... Total events: %d\n", totalEvents)
+			return
+
 		case <-ticker.C:
-			var count uint64
-			var key uint32 = 0
-			if err := objs.EventCount.Lookup(&key, &count); err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("Event count: %d\n", count)
+			log.Printf("Event count: %d\n", totalEvents)
+
 		case <-timeout:
 			log.Println("Finished counting after 5 seconds")
 			return
-		case <-stopper:
-			log.Println("Received interrupt, exiting...")
-			return
+
+		default:
+			record, err := rd.Read()
+			if err != nil {
+				if errors.Is(err, perf.ErrClosed) {
+					return
+				}
+				log.Printf("Reading from perf event reader: %s", err)
+				continue
+			}
+
+			if record.LostSamples != 0 {
+				log.Printf("Lost %d samples", record.LostSamples)
+				continue
+			}
+
+			// Parse the raw bytes into our Event struct
+			var event taskCounterEvent
+			if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+				log.Printf("Failed to parse perf event: %s", err)
+				continue
+			}
+
+			totalEvents++
 		}
 	}
 }
