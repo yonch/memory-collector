@@ -66,7 +66,12 @@ func main() {
 			return
 
 		case <-ticker.C:
-			log.Printf("Event count: %d\n", totalEvents)
+			var count uint64
+			var key uint32 = 0
+			if err := objs.EventCount.Lookup(&key, &count); err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("Event count: userspace %d, eBPF %d\n", totalEvents, count)
 
 		case <-timeout:
 			log.Println("Finished counting after 5 seconds")
