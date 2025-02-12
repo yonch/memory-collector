@@ -1,0 +1,172 @@
+name: Test eBPF Collector
+on: 
+  workflow_dispatch:  # Manual trigger for testing
+    inputs:
+      instance-type:
+        description: 'EC2 instance type to use'
+        required: false
+        default: 't3.xlarge'
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - cmd/collector/**
+      - .github/workflows/test-ebpf-collector.yaml
+
+permissions:
+  id-token: write # Required for requesting the JWT
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: start
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          ec2-image-id: ami-0cb91c7de36eed2cb  # Ubuntu 24.04 LTS in us-east-2
+          ec2-instance-type: ${{ inputs.instance-type || 't3.xlarge' }}
+          market-type: spot
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "github-runner"},
+              {"Key": "Repository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+              {"Key": "RunId", "Value": "${{ github.run_id }}"},
+              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+              {"Key": "SHA", "Value": "${{ github.sha }}"},
+              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+              {"Key": "Actor", "Value": "${{ github.actor }}"}
+            ]
+
+  test-ebpf:
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Install dependencies
+        run: |
+          # Update all archive URLs to use HTTPS in both old and new locations
+          sudo find /etc/apt/sources.list /etc/apt/sources.list.d/ -type f -exec sed -i 's/http:/https:/g' {} +
+          sudo apt-get update
+          sudo apt-get install -y build-essential linux-headers-$(uname -r) \
+            golang-go llvm clang libbpf-dev git vim curl kmod
+          
+      - name: Build kernel module
+        working-directory: module
+        run: |
+          # Try to compile and capture the warning message
+          make 2>&1 | tee compile_output.txt || true
+          
+          # Extract gcc version from the warning message
+          KERNEL_GCC_VERSION=$(grep "The kernel was built by:" compile_output.txt | grep -oP 'gcc-\K\d+' || echo "")
+          echo "Detected kernel compiler version: ${KERNEL_GCC_VERSION}"
+          
+          # Install specific gcc version if detected
+          if [ ! -z "$KERNEL_GCC_VERSION" ]; then
+            echo "Installing gcc-${KERNEL_GCC_VERSION}"
+            sudo apt-get install -y gcc-${KERNEL_GCC_VERSION}
+            
+            # Configure as default gcc
+            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${KERNEL_GCC_VERSION} 100
+            sudo update-alternatives --set gcc /usr/bin/gcc-${KERNEL_GCC_VERSION}
+          else
+            echo "Warning: Could not detect kernel compiler version"
+          fi
+          
+          # Verify gcc version
+          gcc --version
+          
+          # Now try the actual build
+          make
+
+          ls -l build/collector.ko
+
+      - name: Build collector
+        working-directory: cmd/collector
+        run: |
+          export HOME=/tmp
+          echo "HOME: $HOME"
+          export GOCACHE=$HOME/golang/pkg/mod
+          echo "GOCACHE: $GOCACHE"
+
+          mkdir -p $GOCACHE
+          go env -w GOMODCACHE=$GOCACHE
+
+          # Set up asm link for go2bpf
+          arch=$(uname -m) && \
+              case ${arch} in \
+                  aarch64) ln -sf /usr/include/aarch64-linux-gnu/asm /usr/include/asm ;; \
+                  x86_64)  ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm ;; \
+                  *)       echo "Unsupported architecture: ${arch}" && exit 1 ;; \
+              esac
+          go generate
+          go build -v
+          ls -l collector
+
+      - name: Load kernel module
+        working-directory: module
+        run: |
+          sudo insmod build/collector.ko
+          lsmod | grep collector
+
+      - name: Run eBPF collector
+        working-directory: cmd/collector
+        run: |
+          sudo ./collector
+
+      - name: Unload kernel module
+        working-directory: module
+        run: |
+          sudo rmmod collector
+          ! lsmod | grep collector
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, test-ebpf]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: stop
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }} 
