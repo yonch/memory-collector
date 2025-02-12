@@ -53,6 +53,8 @@ func main() {
 
 	timeout := time.After(5 * time.Second)
 
+	// set deadline in the past for rd, so it will not block
+	rd.SetDeadline(time.Now().Add(-time.Second))
 
 	log.Println("Waiting for events...")
 
@@ -66,6 +68,36 @@ func main() {
 			return
 
 		case <-ticker.C:
+
+			for {
+				record, err := rd.Read()
+				if err != nil {
+					if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, perf.ErrFlushed) {
+						break // no more events, done processing this batch
+					}
+					if errors.Is(err, perf.ErrClosed) {
+						return
+					}
+					log.Printf("Reading from perf event reader: %s", err)
+					continue
+				}
+
+				if record.LostSamples != 0 {
+					log.Printf("Lost %d samples", record.LostSamples)
+					continue
+				}
+
+				// Parse the raw bytes into our Event struct
+				var event taskCounterEvent
+				if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+					log.Printf("Failed to parse perf event: %s", err)
+					continue
+				}
+
+				totalEvents++
+
+			}
+			
 			var count uint64
 			var key uint32 = 0
 			if err := objs.EventCount.Lookup(&key, &count); err != nil {
@@ -76,30 +108,6 @@ func main() {
 		case <-timeout:
 			log.Println("Finished counting after 5 seconds")
 			return
-
-		default:
-			record, err := rd.Read()
-			if err != nil {
-				if errors.Is(err, perf.ErrClosed) {
-					return
-				}
-				log.Printf("Reading from perf event reader: %s", err)
-				continue
-			}
-
-			if record.LostSamples != 0 {
-				log.Printf("Lost %d samples", record.LostSamples)
-				continue
-			}
-
-			// Parse the raw bytes into our Event struct
-			var event taskCounterEvent
-			if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
-				log.Printf("Failed to parse perf event: %s", err)
-				continue
-			}
-
-			totalEvents++
 		}
 	}
 }
