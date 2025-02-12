@@ -74,7 +74,7 @@ jobs:
         run: | 
           pwd
           ls -lart
-          cd ./memory-checker
+          cd pkg/checker
           pwd
           ls -lart
       - name: Print go version
