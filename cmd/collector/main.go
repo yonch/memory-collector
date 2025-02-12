@@ -36,8 +36,14 @@ func main() {
 	}
 	defer tp.Close()
 
+	// Create a ReaderOptions with a large Watermark
+	perCPUBufferSize := 16 * os.Getpagesize()
+	opts := perf.ReaderOptions{
+		Watermark: perCPUBufferSize / 2,
+	}
+
 	// Open a perf reader from userspace
-	rd, err := perf.NewReader(objs.Events, os.Getpagesize())
+	rd, err := perf.NewReaderWithOptions(objs.Events, perCPUBufferSize, opts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -47,14 +53,11 @@ func main() {
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt)
 
-	// Print the event count every second for 5 seconds
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
 	timeout := time.After(5 * time.Second)
 
 	// set deadline in the past for rd, so it will not block
-	rd.SetDeadline(time.Now().Add(-time.Second))
+	nextDeadline := time.Now().Add(time.Second)
+	rd.SetDeadline(nextDeadline)
 
 	log.Println("Waiting for events...")
 
@@ -66,48 +69,49 @@ func main() {
 		case <-stopper:
 			log.Printf("Received interrupt, exiting... Total events: %d\n", totalEvents)
 			return
-
-		case <-ticker.C:
-
-			for {
-				record, err := rd.Read()
-				if err != nil {
-					if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, perf.ErrFlushed) {
-						break // no more events, done processing this batch
-					}
-					if errors.Is(err, perf.ErrClosed) {
-						return
-					}
-					log.Printf("Reading from perf event reader: %s", err)
-					continue
-				}
-
-				if record.LostSamples != 0 {
-					log.Printf("Lost %d samples", record.LostSamples)
-					continue
-				}
-
-				// Parse the raw bytes into our Event struct
-				var event taskCounterEvent
-				if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
-					log.Printf("Failed to parse perf event: %s", err)
-					continue
-				}
-
-				totalEvents++
-
-			}
-			
-			var count uint64
-			var key uint32 = 0
-			if err := objs.EventCount.Lookup(&key, &count); err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("Event count: userspace %d, eBPF %d\n", totalEvents, count)
-
 		case <-timeout:
 			log.Println("Finished counting after 5 seconds")
 			return
+		default:
+
+			// if the deadline is in the past, set it to the next deadline
+			if time.Now().After(nextDeadline) {
+				nextDeadline = nextDeadline.Add(time.Second)
+				rd.SetDeadline(nextDeadline)
+
+				// output counts
+				var count uint64
+				var key uint32 = 0
+				if err := objs.EventCount.Lookup(&key, &count); err != nil {
+					log.Fatal(err)
+				}
+				log.Printf("Event count: userspace %d, eBPF %d\n", totalEvents, count)
+			}
+
+			record, err := rd.Read()
+			if err != nil {
+				if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, perf.ErrFlushed) {					
+					break // make for loop check the select statement and set the deadline
+				} else if errors.Is(err, perf.ErrClosed) {
+					return
+				}
+				log.Printf("Reading from perf event reader: %s", err)
+				continue
+			}
+
+			if record.LostSamples != 0 {
+				log.Printf("Lost %d samples", record.LostSamples)
+				continue
+			}
+
+			// Parse the raw bytes into our Event struct
+			var event taskCounterEvent
+			if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+				log.Printf("Failed to parse perf event: %s", err)
+				continue
+			}
+
+			totalEvents++
 		}
 	}
 }
