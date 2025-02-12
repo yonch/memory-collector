@@ -34,6 +34,14 @@ RUN apt-get update && apt-get install -y \
     ${EBPF_PACKAGES} \
     && rm -rf /var/lib/apt/lists/*
 
+# Create architecture-specific symlink for asm
+RUN arch=$(uname -m) && \
+    case ${arch} in \
+        aarch64) ln -sf /usr/include/aarch64-linux-gnu/asm /usr/include/asm ;; \
+        x86_64)  ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm ;; \
+        *)       echo "Unsupported architecture: ${arch}" && exit 1 ;; \
+    esac
+
 # Set the working directory
 WORKDIR /workspace
 
