@@ -79,7 +79,7 @@ jobs:
           sudo find /etc/apt/sources.list /etc/apt/sources.list.d/ -type f -exec sed -i 's/http:/https:/g' {} +
           sudo apt-get update
           sudo apt-get install -y build-essential linux-headers-$(uname -r) \
-            llvm clang libbpf-dev git vim curl kmod
+            golang-go llvm clang libbpf-dev git vim curl kmod
           
           # set up home for go cache
           export HOME=/tmp
@@ -113,10 +113,6 @@ jobs:
           make
 
           ls -l build/collector.ko
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22.2'
 
       - name: Build collector
         working-directory: cmd/collector
