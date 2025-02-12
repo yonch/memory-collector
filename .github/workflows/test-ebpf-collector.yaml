@@ -79,7 +79,7 @@ jobs:
           sudo find /etc/apt/sources.list /etc/apt/sources.list.d/ -type f -exec sed -i 's/http:/https:/g' {} +
           sudo apt-get update
           sudo apt-get install -y build-essential linux-headers-$(uname -r) \
-            golang-go llvm clang libbpf-dev git vim curl kmod
+            llvm clang libbpf-dev git vim curl kmod
 
       - name: Build kernel module
         working-directory: module
@@ -111,7 +111,13 @@ jobs:
 
           ls -l build/collector.ko
 
-      - name: Build eBPF collector
+      - name: Set up golang
+        working-directory: cmd/collector
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.2'
+
+      - name: Build collector
         working-directory: cmd/collector
         run: |
           go generate
