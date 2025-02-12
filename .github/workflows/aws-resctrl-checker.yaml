@@ -72,6 +72,8 @@ jobs:
           go-version: "1.22.9"
       - name: Change directory to pkg/checker
         run: | 
+          pwd
+          ls -lart
           cd ./memory-checker
           pwd
           ls -lart
