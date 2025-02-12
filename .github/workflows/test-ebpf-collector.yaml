@@ -83,6 +83,9 @@ jobs:
           
           # set up home for go cache
           export HOME=/tmp
+          export GOCACHE=$HOME/golang/pkg/mod
+          mkdir -p $GOCACHE
+          go env -w GOMODCACHE=$GOCACHE
 
       - name: Build kernel module
         working-directory: module
