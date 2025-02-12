@@ -154,8 +154,8 @@ func main() {
 				continue
 			}
 
-			log.Printf("Event - Counter: %d, Cycles: %d, Instructions: %d, LLC Misses: %d", 
-				event.Counter, event.Cycles, event.Instructions, event.LlcMisses)
+			log.Printf("Event - CPU: %d, Cycles: %d, Instructions: %d, LLC Misses: %d", 
+				record.CPU, event.Cycles, event.Instructions, event.LlcMisses)
 			totalEvents++
 		}
 	}
