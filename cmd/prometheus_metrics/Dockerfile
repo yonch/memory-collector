@@ -17,18 +17,18 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN go build -o collector
+RUN go build -o prometheus-metrics
 
 # Stage 2: Create a lightweight production image
 FROM alpine:latest
 
-# Install runtime dependencies and create a collector user
+# Install runtime dependencies and create a prometheus-metrics user
 RUN apk --no-cache add ca-certificates && \
-    addgroup -S collector && adduser -S collector -G collector
+    addgroup -S prometheus-metrics && adduser -S prometheus-metrics -G prometheus-metrics
 
 WORKDIR /
-COPY --from=builder /app/collector .
-RUN chown collector:collector /collector
+COPY --from=builder /app/prometheus-metrics .
+RUN chown prometheus-metrics:prometheus-metrics /prometheus-metrics
 
-USER collector
-CMD ["./collector"]
+USER prometheus-metrics
+CMD ["./prometheus-metrics"] 

@@ -1,5 +1,5 @@
-name: CI Collector Workflow
-run-name: Building Collector by @${{ github.actor }}
+name: CI Prometheus Metrics Workflow
+run-name: Building Prometheus Metrics by @${{ github.actor }}
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
     branches:
       - main
     paths:
-      - 'cmd/collector/**'
+      - 'cmd/prometheus_metrics/**'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,7 +33,7 @@ jobs:
         id: docker-metadata
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/collector
+          images: ghcr.io/${{ github.repository }}/prometheus-metrics
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}.{{patch}}
@@ -44,9 +44,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.docker-metadata.outputs.tags }}
           labels: ${{ steps.docker-metadata.outputs.labels }}
-          context: cmd/collector
-          file: cmd/collector/Dockerfile
+          context: cmd/prometheus_metrics
+          file: cmd/prometheus_metrics/Dockerfile
           platforms: linux/amd64,linux/arm64
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/collector:cache
-          cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/collector:cache,mode=max
-        
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/prometheus-metrics:cache
+          cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/prometheus-metrics:cache,mode=max 
