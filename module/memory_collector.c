@@ -352,6 +352,14 @@ static int __init memory_collector_init(void)
         pr_err(LOG_PREFIX "Failed to allocate per-CPU state\n");
         return -ENOMEM;
     }
+    // Initialize the cpu_states so we can clean up safely if an error occurs
+    for_each_possible_cpu(cpu) {
+        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
+        state->ctx_switch = NULL;
+        hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+        state->timer.function = timer_fn;
+    }
+
 
     // Create workqueue first
     collector_wq = alloc_workqueue("memory_collector_wq", 0, 0);
