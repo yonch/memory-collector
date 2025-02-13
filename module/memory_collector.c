@@ -49,6 +49,7 @@ static void cleanup_rmid_allocator(void);
 static void assign_rmid_to_task(struct task_struct *task);
 static void assign_rmids_to_leaders(void);
 static void propagate_leader_rmids(void);
+static void reset_cpu_rmid(void *info);
 
 // Replace the cpu_state struct and global variable definitions
 struct cpu_state {
@@ -66,6 +67,19 @@ static enum hrtimer_restart timer_fn(struct hrtimer *timer);
 // Add global cpu_works declaration after other global variables
 static struct work_struct __percpu *cpu_works;
 static struct workqueue_struct *collector_wq;
+
+static void probe_sched_switch(void *data,
+                             bool preempt,
+                             struct task_struct *prev,
+                             struct task_struct *next,
+                             unsigned int prev_state)
+{
+    // Only update RMID if it's changing
+    if (prev->rmid != next->rmid) {
+        // Write new RMID with closid 0
+        write_rmid_closid(next->rmid, 0);
+    }
+}
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
 {
@@ -289,6 +303,7 @@ static void probe_sched_process_free(void *data, struct task_struct *task)
 // Tracepoint probe registration structures
 static struct tracepoint *tp_sched_process_fork;
 static struct tracepoint *tp_sched_process_free;
+static struct tracepoint *tp_sched_switch;
 
 static void lookup_tracepoints(struct tracepoint *tp, void *ignore)
 {
@@ -296,6 +311,8 @@ static void lookup_tracepoints(struct tracepoint *tp, void *ignore)
         tp_sched_process_fork = tp;
     else if (!strcmp(tp->name, "sched_process_free"))
         tp_sched_process_free = tp;
+    else if (!strcmp(tp->name, "sched_switch"))
+        tp_sched_switch = tp;
 }
 
 static void cleanup_tracepoints(void)
@@ -308,6 +325,10 @@ static void cleanup_tracepoints(void)
         tracepoint_probe_unregister(tp_sched_process_free,
                                    probe_sched_process_free, NULL);
     }
+    if (tp_sched_switch) {
+        tracepoint_probe_unregister(tp_sched_switch,
+                                   probe_sched_switch, NULL);
+    }
 }
 
 static int init_tracepoints(void)
@@ -316,7 +337,7 @@ static int init_tracepoints(void)
 
     for_each_kernel_tracepoint(lookup_tracepoints, NULL);
 
-    if (!tp_sched_process_fork || !tp_sched_process_free) {
+    if (!tp_sched_process_fork || !tp_sched_process_free || !tp_sched_switch) {
         pr_err(LOG_PREFIX "Failed to find required tracepoints\n");
         return -EINVAL;
     }
@@ -334,6 +355,14 @@ static int init_tracepoints(void)
         tracepoint_probe_unregister(tp_sched_process_fork,
                                    probe_sched_process_fork, NULL);
         pr_err(LOG_PREFIX "Failed to register free tracepoint\n");
+        return ret;
+    }
+
+    ret = tracepoint_probe_register(tp_sched_switch,
+                                   probe_sched_switch, NULL);
+    if (ret) {
+        pr_err(LOG_PREFIX "Failed to register switch tracepoint\n");
+        cleanup_tracepoints();
         return ret;
     }
 
@@ -449,6 +478,9 @@ static void __exit memory_collector_exit(void)
     
     // Ensure all tracepoint handlers finished before freeing resources
     tracepoint_synchronize_unregister();
+
+    // Reset RMID to 0 on all CPUs
+    on_each_cpu(reset_cpu_rmid, NULL, 1);
 
     // Clean up RMID allocator
     cleanup_rmid_allocator();
@@ -566,6 +598,12 @@ static void propagate_leader_rmids(void)
         }
     }
     rcu_read_unlock();
+}
+
+// Move reset_cpu_rmid function definition before it's used
+static void reset_cpu_rmid(void *info)
+{
+    write_rmid_closid(0, 0);
 }
 
 module_init(memory_collector_init);

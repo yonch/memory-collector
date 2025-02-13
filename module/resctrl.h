@@ -35,4 +35,10 @@ void resctrl_timer_tick(struct rdt_state *rdt_state);
  */
 int read_resctrl_value(u32 rmid, u32 event_id, u64 *val);
 
+/*
+ * Write RMID and CLOSID to MSR_IA32_PQR_ASSOC
+ * Returns 0 on success, negative error code on failure
+ */
+int write_rmid_closid(u32 rmid, u32 closid);
+
 #endif /* _COLLECTOR_RESCTRL_H_ */ 

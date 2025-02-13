@@ -28,7 +28,7 @@ struct ipi_rmid_args {
 /*
  * write RMID and CLOSID to MSR
  */
-static int write_rmid_closid(u32 rmid, u32 closid)
+int write_rmid_closid(u32 rmid, u32 closid)
 {
     return wrmsr_safe(MSR_IA32_PQR_ASSOC, rmid, closid);
 }
