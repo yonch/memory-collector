@@ -538,6 +538,7 @@ static void assign_rmids_to_leaders(void)
     for_each_process(task) {
         if (task == task->group_leader) {
             assign_rmid_to_task(task);
+            pr_info(LOG_PREFIX "assigned RMID %d to leader %s\n", task->rmid, task->comm);
         }
     }
     rcu_read_unlock();
