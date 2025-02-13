@@ -249,6 +249,10 @@ static void assign_rmid_to_task(struct task_struct *task)
     if (group_leader->rmid)
         return;  // Leader already has an RMID
 
+    // We do not assign RMIDs to kernel threads
+    if ((group_leader->mm == NULL) || (group_leader->flags & PF_KTHREAD))
+        return;
+
     // No RMID assigned to leader, need to allocate one
     spin_lock_irqsave(&rmid_allocator.lock, flags);
 
