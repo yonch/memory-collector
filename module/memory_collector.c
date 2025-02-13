@@ -66,6 +66,17 @@ static enum hrtimer_restart timer_fn(struct hrtimer *timer);
 static struct work_struct __percpu *cpu_works;
 static struct workqueue_struct *collector_wq;
 
+static void collect_sample_on_current_cpu(bool is_context_switch)
+{
+    u64 timestamp = ktime_get_ns();
+    u32 cpu = smp_processor_id();
+    struct cpu_state *state = this_cpu_ptr(cpu_states);
+    
+    trace_memory_collector_sample(cpu, timestamp, current->comm, is_context_switch, current->rmid);
+
+    resctrl_timer_tick(&state->rdt_state);
+}
+
 static void probe_sched_switch(void *data,
                              bool preempt,
                              struct task_struct *prev,
@@ -80,18 +91,6 @@ static void probe_sched_switch(void *data,
         write_rmid_closid(next->rmid, 0);
     }
 }
-
-static void collect_sample_on_current_cpu(bool is_context_switch)
-{
-    u64 timestamp = ktime_get_ns();
-    u32 cpu = smp_processor_id();
-    struct cpu_state *state = this_cpu_ptr(cpu_states);
-    
-    trace_memory_collector_sample(cpu, timestamp, current->comm, is_context_switch, current->rmid);
-
-    resctrl_timer_tick(&state->rdt_state);
-}
-
 
 static void init_cpu_state(struct work_struct *work)
 {
