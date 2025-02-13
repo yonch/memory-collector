@@ -37,7 +37,7 @@ echo "Tail of trace report:"
 tail "$TRACE_OUTPUT"
 
 echo "Head of is_context_switch=0:"
-grep "is_context_switch=0" "$TRACE_OUTPUT" | head
+grep "is_context_switch=0" "$TRACE_OUTPUT" | head -n 300
 
 echo "Head of is_context_switch=1:"
 grep "is_context_switch=1" "$TRACE_OUTPUT" | head
