@@ -6,10 +6,6 @@ RUN_ID=$(openssl rand -hex 8)
 TRACE_DATA="/tmp/trace_data_$RUN_ID"
 TRACE_OUTPUT="/tmp/trace_output_$RUN_ID.txt"
 
-echo "Building kernel module..."
-make clean
-make
-
 echo "Loading kernel module..."
 sudo insmod build/collector.ko
 
@@ -41,7 +37,7 @@ echo "Tail of trace report:"
 tail "$TRACE_OUTPUT"
 
 echo "Head of is_context_switch=0:"
-grep "is_context_switch=0" "$TRACE_OUTPUT" | head
+grep "is_context_switch=0" "$TRACE_OUTPUT" | head -n 300
 
 echo "Head of is_context_switch=1:"
 grep "is_context_switch=1" "$TRACE_OUTPUT" | head
