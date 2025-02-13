@@ -6,9 +6,30 @@
 // Define the event structure that matches the Go side
 struct event {
     __u64 counter;
+    __u64 cycles;
+    __u64 instructions;
+    __u64 llc_misses;
 };
 
-// Declare the perf event array
+// Declare the perf event arrays
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+} cycles SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+} instructions SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+} llc_misses SEC(".maps");
+
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
     __uint(key_size, 0);
@@ -35,6 +56,27 @@ SEC("tracepoint/memory_collector/memory_collector_sample")
 int count_events(void *ctx) {
     struct event e = {};
     e.counter = 1;
+    
+    // Read cycles from perf event
+    struct bpf_perf_event_value cycles_val = {};
+    int err = bpf_perf_event_read_value(&cycles, BPF_F_CURRENT_CPU, &cycles_val, sizeof(cycles_val));
+    if (err == 0) {
+        e.cycles = cycles_val.counter;
+    }
+
+    // Read instructions from perf event
+    struct bpf_perf_event_value instructions_val = {};
+    err = bpf_perf_event_read_value(&instructions, BPF_F_CURRENT_CPU, &instructions_val, sizeof(instructions_val));
+    if (err == 0) {
+        e.instructions = instructions_val.counter;
+    }
+
+    // Read LLC misses from perf event
+    struct bpf_perf_event_value llc_misses_val = {};
+    err = bpf_perf_event_read_value(&llc_misses, BPF_F_CURRENT_CPU, &llc_misses_val, sizeof(llc_misses_val));
+    if (err == 0) {
+        e.llc_misses = llc_misses_val.counter;
+    }
 
     // Submit the event to the perf event array
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &e, sizeof(e));
