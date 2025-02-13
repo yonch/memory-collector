@@ -49,10 +49,9 @@ static void cleanup_rmid_allocator(void);
 static void assign_rmid_to_task(struct task_struct *task);
 static void assign_rmids_to_leaders(void);
 static void propagate_leader_rmids(void);
+static void reset_cpu_rmid(void *info);
 
-// Replace the cpu_state struct and global variable definitions
 struct cpu_state {
-    struct perf_event *ctx_switch;
     struct hrtimer timer;
     ktime_t next_expected;
     struct rdt_state rdt_state;
@@ -78,19 +77,23 @@ static void collect_sample_on_current_cpu(bool is_context_switch)
     resctrl_timer_tick(&state->rdt_state);
 }
 
-// Add context switch handler
-static void context_switch_handler(struct perf_event *event,
-                                 struct perf_sample_data *data,
-                                 struct pt_regs *regs)
+static void probe_sched_switch(void *data,
+                             bool preempt,
+                             struct task_struct *prev,
+                             struct task_struct *next,
+                             unsigned int prev_state)
 {
-    // Call the existing sample collection function
+    // Collect sample for the outgoing task
     collect_sample_on_current_cpu(true);
+
+    // Update RMID if it's changing
+    if (prev->rmid != next->rmid) {
+        write_rmid_closid(next->rmid, 0);
+    }
 }
 
-// Modify init_cpu_state to verify the work struct matches the current CPU
 static void init_cpu_state(struct work_struct *work)
 {
-    struct perf_event_attr attr;
     int ret;
     int cpu = smp_processor_id();
     struct work_struct *expected_work = per_cpu_ptr(cpu_works, cpu);
@@ -112,25 +115,6 @@ static void init_cpu_state(struct work_struct *work)
         pr_err(LOG_PREFIX "Failed to initialize RDT state for CPU %d: error %d\n", cpu, ret);
         return;
     }
-    
-    state->ctx_switch = NULL;
-
-    // Setup context switch event
-    memset(&attr, 0, sizeof(attr));
-    attr.type = PERF_TYPE_SOFTWARE;
-    attr.config = PERF_COUNT_SW_CONTEXT_SWITCHES;
-    attr.size = sizeof(attr);
-    attr.disabled = 0;
-    attr.sample_period = 1;
-    
-    state->ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
-                                                        context_switch_handler, 
-                                                        NULL);
-    if (IS_ERR(state->ctx_switch)) {
-        ret = PTR_ERR(state->ctx_switch);
-        pr_err(LOG_PREFIX "Failed to create context switch event for CPU %d: error %d\n", cpu, ret);
-        state->ctx_switch = NULL;
-    }
 
     // Initialize and start the timer
     hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
@@ -145,7 +129,6 @@ static void init_cpu_state(struct work_struct *work)
     hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS_PINNED);
 }
 
-// Update cleanup_cpu to clean up context switch event
 static void cleanup_cpu(int cpu)
 {
     struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
@@ -153,11 +136,6 @@ static void cleanup_cpu(int cpu)
     pr_debug(LOG_PREFIX "cleanup_cpu for CPU %d\n", cpu);
 
     hrtimer_cancel(&state->timer);
-
-    if (state->ctx_switch) {
-        perf_event_release_kernel(state->ctx_switch);
-        state->ctx_switch = NULL;
-    }
 }
 
 static enum hrtimer_restart timer_fn(struct hrtimer *timer)
@@ -289,6 +267,7 @@ static void probe_sched_process_free(void *data, struct task_struct *task)
 // Tracepoint probe registration structures
 static struct tracepoint *tp_sched_process_fork;
 static struct tracepoint *tp_sched_process_free;
+static struct tracepoint *tp_sched_switch;
 
 static void lookup_tracepoints(struct tracepoint *tp, void *ignore)
 {
@@ -296,6 +275,8 @@ static void lookup_tracepoints(struct tracepoint *tp, void *ignore)
         tp_sched_process_fork = tp;
     else if (!strcmp(tp->name, "sched_process_free"))
         tp_sched_process_free = tp;
+    else if (!strcmp(tp->name, "sched_switch"))
+        tp_sched_switch = tp;
 }
 
 static void cleanup_tracepoints(void)
@@ -308,6 +289,10 @@ static void cleanup_tracepoints(void)
         tracepoint_probe_unregister(tp_sched_process_free,
                                    probe_sched_process_free, NULL);
     }
+    if (tp_sched_switch) {
+        tracepoint_probe_unregister(tp_sched_switch,
+                                   probe_sched_switch, NULL);
+    }
 }
 
 static int init_tracepoints(void)
@@ -316,7 +301,7 @@ static int init_tracepoints(void)
 
     for_each_kernel_tracepoint(lookup_tracepoints, NULL);
 
-    if (!tp_sched_process_fork || !tp_sched_process_free) {
+    if (!tp_sched_process_fork || !tp_sched_process_free || !tp_sched_switch) {
         pr_err(LOG_PREFIX "Failed to find required tracepoints\n");
         return -EINVAL;
     }
@@ -334,6 +319,14 @@ static int init_tracepoints(void)
         tracepoint_probe_unregister(tp_sched_process_fork,
                                    probe_sched_process_fork, NULL);
         pr_err(LOG_PREFIX "Failed to register free tracepoint\n");
+        return ret;
+    }
+
+    ret = tracepoint_probe_register(tp_sched_switch,
+                                   probe_sched_switch, NULL);
+    if (ret) {
+        pr_err(LOG_PREFIX "Failed to register switch tracepoint\n");
+        cleanup_tracepoints();
         return ret;
     }
 
@@ -359,7 +352,6 @@ static int __init memory_collector_init(void)
     // Initialize the cpu_states so we can clean up safely if an error occurs
     for_each_possible_cpu(cpu) {
         struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-        state->ctx_switch = NULL;
         hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
         state->timer.function = timer_fn;
     }
@@ -449,6 +441,9 @@ static void __exit memory_collector_exit(void)
     
     // Ensure all tracepoint handlers finished before freeing resources
     tracepoint_synchronize_unregister();
+
+    // Reset RMID to 0 on all CPUs
+    on_each_cpu(reset_cpu_rmid, NULL, 1);
 
     // Clean up RMID allocator
     cleanup_rmid_allocator();
@@ -566,6 +561,12 @@ static void propagate_leader_rmids(void)
         }
     }
     rcu_read_unlock();
+}
+
+// Move reset_cpu_rmid function definition before it's used
+static void reset_cpu_rmid(void *info)
+{
+    write_rmid_closid(0, 0);
 }
 
 module_init(memory_collector_init);
