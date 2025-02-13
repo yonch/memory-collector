@@ -51,9 +51,7 @@ static void assign_rmids_to_leaders(void);
 static void propagate_leader_rmids(void);
 static void reset_cpu_rmid(void *info);
 
-// Replace the cpu_state struct and global variable definitions
 struct cpu_state {
-    struct perf_event *ctx_switch;
     struct hrtimer timer;
     ktime_t next_expected;
     struct rdt_state rdt_state;
@@ -74,9 +72,11 @@ static void probe_sched_switch(void *data,
                              struct task_struct *next,
                              unsigned int prev_state)
 {
-    // Only update RMID if it's changing
+    // Collect sample for the outgoing task
+    collect_sample_on_current_cpu(true);
+
+    // Update RMID if it's changing
     if (prev->rmid != next->rmid) {
-        // Write new RMID with closid 0
         write_rmid_closid(next->rmid, 0);
     }
 }
@@ -92,19 +92,9 @@ static void collect_sample_on_current_cpu(bool is_context_switch)
     resctrl_timer_tick(&state->rdt_state);
 }
 
-// Add context switch handler
-static void context_switch_handler(struct perf_event *event,
-                                 struct perf_sample_data *data,
-                                 struct pt_regs *regs)
-{
-    // Call the existing sample collection function
-    collect_sample_on_current_cpu(true);
-}
 
-// Modify init_cpu_state to verify the work struct matches the current CPU
 static void init_cpu_state(struct work_struct *work)
 {
-    struct perf_event_attr attr;
     int ret;
     int cpu = smp_processor_id();
     struct work_struct *expected_work = per_cpu_ptr(cpu_works, cpu);
@@ -126,25 +116,6 @@ static void init_cpu_state(struct work_struct *work)
         pr_err(LOG_PREFIX "Failed to initialize RDT state for CPU %d: error %d\n", cpu, ret);
         return;
     }
-    
-    state->ctx_switch = NULL;
-
-    // Setup context switch event
-    memset(&attr, 0, sizeof(attr));
-    attr.type = PERF_TYPE_SOFTWARE;
-    attr.config = PERF_COUNT_SW_CONTEXT_SWITCHES;
-    attr.size = sizeof(attr);
-    attr.disabled = 0;
-    attr.sample_period = 1;
-    
-    state->ctx_switch = perf_event_create_kernel_counter(&attr, cpu, NULL, 
-                                                        context_switch_handler, 
-                                                        NULL);
-    if (IS_ERR(state->ctx_switch)) {
-        ret = PTR_ERR(state->ctx_switch);
-        pr_err(LOG_PREFIX "Failed to create context switch event for CPU %d: error %d\n", cpu, ret);
-        state->ctx_switch = NULL;
-    }
 
     // Initialize and start the timer
     hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
@@ -159,7 +130,6 @@ static void init_cpu_state(struct work_struct *work)
     hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS_PINNED);
 }
 
-// Update cleanup_cpu to clean up context switch event
 static void cleanup_cpu(int cpu)
 {
     struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
@@ -167,11 +137,6 @@ static void cleanup_cpu(int cpu)
     pr_debug(LOG_PREFIX "cleanup_cpu for CPU %d\n", cpu);
 
     hrtimer_cancel(&state->timer);
-
-    if (state->ctx_switch) {
-        perf_event_release_kernel(state->ctx_switch);
-        state->ctx_switch = NULL;
-    }
 }
 
 static enum hrtimer_restart timer_fn(struct hrtimer *timer)
@@ -388,7 +353,6 @@ static int __init memory_collector_init(void)
     // Initialize the cpu_states so we can clean up safely if an error occurs
     for_each_possible_cpu(cpu) {
         struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-        state->ctx_switch = NULL;
         hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
         state->timer.function = timer_fn;
     }
