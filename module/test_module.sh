@@ -6,10 +6,6 @@ RUN_ID=$(openssl rand -hex 8)
 TRACE_DATA="/tmp/trace_data_$RUN_ID"
 TRACE_OUTPUT="/tmp/trace_output_$RUN_ID.txt"
 
-echo "Building kernel module..."
-make clean
-make
-
 echo "Loading kernel module..."
 sudo insmod build/collector.ko
 
