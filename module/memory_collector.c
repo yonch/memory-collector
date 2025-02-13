@@ -354,7 +354,7 @@ static int __init memory_collector_init(void)
     }
 
     // Create workqueue first
-    collector_wq = alloc_workqueue("memory_collector_wq", WQ_UNBOUND, 0);
+    collector_wq = alloc_workqueue("memory_collector_wq", 0, 0);
     if (!collector_wq) {
         pr_err(LOG_PREFIX "Failed to create workqueue\n");
         ret = -ENOMEM;
