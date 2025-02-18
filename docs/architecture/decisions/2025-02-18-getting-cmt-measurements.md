@@ -1,6 +1,44 @@
-# How to collect CMT measurements with Perf
+# 2025-02-18: Collecting Intel CMT Measurements
 
-## intel-cmt-cat: summary
+## Context
+
+We need to collect Intel CMT (Cache Monitoring Technology) measurements at millisecond granularity for containers in a cloud-native environment. 
+
+## Decision
+
+**We will build a kernel module that interacts directly with Intel RDT MSRs (Model Specific Registers) to configure and read CMT measurements.**
+
+## Rationale
+
+We considered three approaches for collecting CMT measurements:
+
+1. **Using Linux perf counters**: After investigating the Intel CMT-CAT repository and relevant Linux kernel code, we found that although the Intel software repository seemed to support perf counters for CMT, the Linux kernel did not actually implement this. Therefore, using perf was not a viable option.
+
+2. **Using the resctrl filesystem interface**: The Linux kernel's resctrl subsystem provides a filesystem-based interface for configuring Intel RDT and reading measurements. However, this approach has several drawbacks:
+   - Collecting measurements at millisecond granularity through the filesystem interface for all containers would be complex and potentially inefficient due to the overhead of system calls. 
+   - Resctrl is based on tasks and processes rather than containers. To use resctrl, we would need to build a system to monitor container lifecycle events and configure resctrl accordingly, which would add complexity and potential gaps in measurement.
+
+3. **Building a kernel module to interact with MSRs directly**: This approach offers several advantages:
+   - By interacting with MSRs directly, the kernel module can read CMT information with very low overhead, without the layers of the filesystem interface.
+   - The kernel module can probe container lifecycle tracepoints to allocate RMIDs (Resource Monitoring IDs) and assign them to containers automatically.
+   - This approach enables a cloud-native solution that seamlessly measures containers as they are created.
+
+Given these considerations, we chose to build a kernel module that interacts with Intel RDT MSRs directly. This approach provides the best performance, flexibility, and compatibility with a cloud-native container environment.
+
+## Consequences
+
+Building a kernel module for CMT measurement has the following consequences:
+
+- We will need to maintain the kernel module code and ensure compatibility with different Linux kernel versions.
+- Users will need to load the kernel module to enable CMT measurement collection.
+- We will have tight integration with container lifecycle events, enabling seamless measurement of containers.
+- We can achieve low-overhead, millisecond-granularity measurement collection, meeting our performance requirements.
+
+## Status
+Accepted
+
+
+## Appendix A: intel-cmt-cat summary
 
 The `perf_monitoring.c` file:
 
@@ -11,9 +49,9 @@ The `perf_monitoring.c` file:
     - their value is parsed to get the `config` field of the perf struct
     - the same file with extension `.scale` is used to read a `double` scale
 
-## Using the perf command line
+### Mentions of using the perf command line
 
-Here are references from the web for monitoring RDT using perf
+Here are references from the web for monitoring RDT using perf. However note that we found that the patches discussed in these references were not present in the Linux kernel whose code we checked (6.13.2) and appear to have not been merged into the kernel originally.
 
 A 2017 [forum post](https://community.intel.com/t5/Software-Tuning-Performance/How-to-use-perf-event-open-function-exposed-by-linux-kernel-to/td-p/1144059) was able to view events with `perf stat` as events:
 > `intel_cqm/llc_occupancy , intel_cqm/llc_local_bytes/,intel_cqm_total_bytes/`
@@ -36,7 +74,7 @@ A [2016 Kanaka Juuva presentation](http://events17.linuxfoundation.org/sites/eve
 >   - perf stat –e intel_cqm/llc_occupancy/ -p “pid of my_application”
 - discusses cgroups-based measurements. This might have been before the switch from cgroup to resctrl.
 
-## Appendix: A journey through intel-cmt-cat
+## Appendix B: A journey through intel-cmt-cat
 
 The [intel-cmt-cat](https://github.com/intel/intel-cmt-cat) repo documentation suggests perf can read CMT data as well ([table 5 in README](https://github.com/intel/intel-cmt-cat?tab=readme-ov-file#software-compatibility)).
 
