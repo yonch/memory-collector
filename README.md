@@ -1,5 +1,3 @@
-Note: this project was renamed to `unvariance/collector` (previously `perfpod/memory-collector`). See [issue#34](https://github.com/perfpod/memory-collector/issues/34).
-
 # Memory Collector
 
 A Kubernetes-native collector for monitoring memory subsystem interference between pods. This project is under active development and we welcome contributors to help build this critical observability component.
