@@ -23,6 +23,10 @@ MODULE_VERSION("1.0");
 #define CREATE_TRACE_POINTS
 #include "memory_collector_trace.h"
 
+#define EMULATED_MAX_RMID 512
+#define RMID_INVALID 0
+#define CLOSID_CATCHALL 0
+
 // RMID allocation structure
 struct rmid_info {
     struct list_head list;  // For free list
@@ -37,6 +41,7 @@ struct rmid_alloc {
     struct list_head free_list;  // List of free RMIDs
     u32 max_rmid;  // Minimum of max_rmid across all CPUs
     struct rmid_info *rmids;  // Array of RMID info, indexed by RMID
+    bool hardware_support;  // true if RDT hardware support is detected
 };
 
 static struct rmid_alloc rmid_allocator;
@@ -86,9 +91,9 @@ static void probe_sched_switch(void *data,
     // Collect sample for the outgoing task
     collect_sample_on_current_cpu(true);
 
-    // Update RMID if it's changing
-    if (prev->rmid != next->rmid) {
-        write_rmid_closid(next->rmid, 0);
+    // Update RMID if it's changing and we have hardware support
+    if (prev->rmid != next->rmid && rmid_allocator.hardware_support) {
+        write_rmid_closid(next->rmid, CLOSID_CATCHALL);
     }
 }
 
@@ -442,8 +447,10 @@ static void __exit memory_collector_exit(void)
     // Ensure all tracepoint handlers finished before freeing resources
     tracepoint_synchronize_unregister();
 
-    // Reset RMID to 0 on all CPUs
-    on_each_cpu(reset_cpu_rmid, NULL, 1);
+    // Reset RMID to 0 on all CPUs if we have hardware support
+    if (rmid_allocator.hardware_support) {
+        on_each_cpu(reset_cpu_rmid, NULL, 1);
+    }
 
     // Clean up RMID allocator
     cleanup_rmid_allocator();
@@ -472,8 +479,13 @@ static int init_rmid_allocator(void)
     }
 
     if (min_max_rmid == U32_MAX || min_max_rmid == 0) {
-        pr_err(LOG_PREFIX "No valid max_rmid found across CPUs\n");
-        return -EINVAL;
+        min_max_rmid = EMULATED_MAX_RMID;
+        rmid_allocator.hardware_support = false;
+        pr_info(LOG_PREFIX "Using emulated RMIDs (max=%d)\n", EMULATED_MAX_RMID);
+    } else {
+        rmid_allocator.hardware_support = true;
+        pr_info(LOG_PREFIX "Using hardware RMIDs (max=%d)\n", min_max_rmid);
+
     }
 
     // Initialize allocator structure
@@ -493,7 +505,7 @@ static int init_rmid_allocator(void)
         rmid_allocator.rmids[i].rmid = i;
         rmid_allocator.rmids[i].tgid = 0;
         rmid_allocator.rmids[i].free_time = ktime_get();
-        if (i > 0) {  // Don't add RMID 0 to free list
+        if (i != RMID_INVALID) {  // Don't add RMID 0 to free list
             list_add_tail(&rmid_allocator.rmids[i].list, &rmid_allocator.free_list);
         }
     }
@@ -512,7 +524,7 @@ static void rmid_free(u32 rmid)
     unsigned long flags;
     struct rmid_info *info;
 
-    if (rmid == 0 || rmid > rmid_allocator.max_rmid)
+    if (rmid == RMID_INVALID || rmid > rmid_allocator.max_rmid)
         return;
 
     spin_lock_irqsave(&rmid_allocator.lock, flags);
@@ -566,7 +578,7 @@ static void propagate_leader_rmids(void)
 // Move reset_cpu_rmid function definition before it's used
 static void reset_cpu_rmid(void *info)
 {
-    write_rmid_closid(0, 0);
+    write_rmid_closid(RMID_INVALID, CLOSID_CATCHALL);
 }
 
 module_init(memory_collector_init);
