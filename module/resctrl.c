@@ -13,10 +13,6 @@
 
 #define LOG_PREFIX "Memory Collector: "
 
-#ifndef RESCTRL_RESERVED_RMID
-#define RESCTRL_RESERVED_RMID 0
-#endif
-
 #define RMID_VAL_ERROR BIT_ULL(63)
 #define RMID_VAL_UNAVAIL BIT_ULL(62)
 
