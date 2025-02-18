@@ -23,8 +23,9 @@ MODULE_VERSION("1.0");
 #define CREATE_TRACE_POINTS
 #include "memory_collector_trace.h"
 
-// Add these constants after the existing #defines
 #define EMULATED_MAX_RMID 512
+#define RMID_INVALID 0
+#define CLOSID_CATCHALL 0
 
 // RMID allocation structure
 struct rmid_info {
@@ -92,7 +93,7 @@ static void probe_sched_switch(void *data,
 
     // Update RMID if it's changing and we have hardware support
     if (prev->rmid != next->rmid && rmid_allocator.hardware_support) {
-        write_rmid_closid(next->rmid, 0);
+        write_rmid_closid(next->rmid, CLOSID_CATCHALL);
     }
 }
 
@@ -504,7 +505,7 @@ static int init_rmid_allocator(void)
         rmid_allocator.rmids[i].rmid = i;
         rmid_allocator.rmids[i].tgid = 0;
         rmid_allocator.rmids[i].free_time = ktime_get();
-        if (i > 0) {  // Don't add RMID 0 to free list
+        if (i != RMID_INVALID) {  // Don't add RMID 0 to free list
             list_add_tail(&rmid_allocator.rmids[i].list, &rmid_allocator.free_list);
         }
     }
@@ -523,7 +524,7 @@ static void rmid_free(u32 rmid)
     unsigned long flags;
     struct rmid_info *info;
 
-    if (rmid == 0 || rmid > rmid_allocator.max_rmid)
+    if (rmid == RMID_INVALID || rmid > rmid_allocator.max_rmid)
         return;
 
     spin_lock_irqsave(&rmid_allocator.lock, flags);
@@ -577,7 +578,7 @@ static void propagate_leader_rmids(void)
 // Move reset_cpu_rmid function definition before it's used
 static void reset_cpu_rmid(void *info)
 {
-    write_rmid_closid(0, 0);
+    write_rmid_closid(RMID_INVALID, CLOSID_CATCHALL);
 }
 
 module_init(memory_collector_init);
