@@ -2,77 +2,86 @@
 
 This kernel module provides low-level memory subsystem monitoring capabilities for the Memory Collector project.
 
-## Building the Module
+## Development Environment
+
+The recommended way to build and test the module is using the provided dev container, which ensures consistent build environments across different systems.
 
 ### Prerequisites
 
-- Linux kernel headers for your running kernel
-- Build tools (gcc, make)
+- Docker
+- VS Code with Dev Containers extension (optional)
 
-On Ubuntu/Debian:
+### Using Dev Container
+
+The dev container provides all necessary build tools and kernel headers. It is configured for both ARM64 and AMD64 architectures (compilation-only on ARM64) and includes:
+
+- Build essentials (gcc, make)
+- Linux kernel headers (6.8.0-52-generic)
+- eBPF development tools (golang, llvm, clang, libbpf-dev)
+- Testing tools (trace-cmd)
+
+To start the dev container:
+
 ```bash
-sudo apt-get install linux-headers-$(uname -r) build-essential
+docker build -f Dockerfile.devcontainer -t memory-collector-dev .
+docker run -it --privileged memory-collector-dev
 ```
 
-On RHEL/Fedora:
-```bash
-sudo dnf install kernel-devel kernel-headers gcc make
-```
+## Building the Module
 
-### Manual Build
-
-To build the module directly:
+Inside the dev container or on a compatible system:
 
 ```bash
+cd module
 make
 ```
 
-This will create `memory_collector.ko` which can be loaded with:
+This will create `build/collector.ko`.
+
+## Testing
+
+The module includes automated tests that verify its functionality:
 
 ```bash
-sudo insmod memory_collector.ko
+./test_module.sh
+```
+
+The test script:
+1. Loads the module using `insmod`
+2. Verifies proper loading
+3. Collects trace data using `trace-cmd`
+4. Validates the collected samples
+5. Unloads the module
+
+### CI/CD Testing
+
+The module is automatically tested on push to main branch using GitHub Actions. The workflow:
+- Runs on bare metal EC2 instances (default: m7i.xlarge)
+- Supports optional RDT testing on m7i.metal-24xl instances
+- Performs multiple load/unload cycles
+- Validates trace data collection
+- Checks RDT capabilities when available
+
+## Manual Testing
+
+To load the module:
+```bash
+sudo insmod build/collector.ko
+```
+
+Verify it's loaded:
+```bash
+lsmod | grep collector
+dmesg | grep "Memory Collector"
 ```
 
 To unload:
 ```bash
-sudo rmmod memory_collector
+sudo rmmod collector
 ```
 
-### DKMS Installation
+## System Requirements
 
-For automatic rebuilding when the kernel updates:
-
-1. Install DKMS:
-```bash
-# Ubuntu/Debian
-sudo apt-get install dkms
-
-# RHEL/Fedora
-sudo dnf install dkms
-```
-
-2. Install the module through DKMS:
-```bash
-sudo dkms add .
-sudo dkms install memory-collector/1.0
-```
-
-The module will now automatically rebuild when your kernel is updated.
-
-To uninstall:
-```bash
-sudo dkms remove memory-collector/1.0 --all
-```
-
-## Verification
-
-After loading the module, verify it's running:
-
-```bash
-lsmod | grep memory_collector
-```
-
-Check kernel logs for module status:
-```bash
-dmesg | tail
-``` 
+- Linux kernel 6.8.0 or compatible
+- For RDT features: Intel CPU with Resource Director Technology support
+- trace-cmd for data collection 
