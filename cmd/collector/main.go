@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -30,12 +31,32 @@ func main() {
 	}
 	defer objs.Close()
 
-	// Attach the tracepoint program
+	// Attach the tracepoint programs
 	tp, err := link.Tracepoint("memory_collector", "memory_collector_sample", objs.CountEvents, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer tp.Close()
+
+	// Attach RMID free tracepoint first, so we don't get dangling RMIDs
+	rmidFreeTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_free", objs.HandleRmidFree, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rmidFreeTp.Close()
+
+	// Attach RMID allocation tracepoint
+	rmidAllocTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_alloc", objs.HandleRmidAlloc, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rmidAllocTp.Close()
+
+	// Attach RMID existing tracepoint
+	rmidExistingTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_existing", objs.HandleRmidExisting, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Create a ReaderOptions with a large Watermark
 	perCPUBufferSize := 16 * os.Getpagesize()
@@ -91,6 +112,18 @@ func main() {
 		log.Fatal(err)
 	}
 	defer llcOpener.Close()
+
+	// Trigger RMID dump via procfs
+	if err := ioutil.WriteFile("/proc/unvariance_collector", []byte("dump"), 0644); err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Triggered RMID dump via procfs")
+
+	// Close the RMID existing tracepoint since we're done with the dump
+	if err := rmidExistingTp.Close(); err != nil {
+		log.Printf("Warning: Failed to close RMID existing tracepoint: %v", err)
+	}
+	log.Println("Closed RMID existing tracepoint")
 
 	// Catch CTRL+C
 	stopper := make(chan os.Signal, 1)
