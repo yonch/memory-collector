@@ -8,7 +8,7 @@
 #include <linux/timer.h>
 #include <linux/atomic.h>
 
-#include "resctrl.h"
+#include "rdt.h"
 #include "memory_collector_trace.h"
 
 #define LOG_PREFIX "Memory Collector: "

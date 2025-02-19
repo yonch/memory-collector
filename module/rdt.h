@@ -1,6 +1,7 @@
 #ifndef _COLLECTOR_RESCTRL_H_
 #define _COLLECTOR_RESCTRL_H_
 
+#include <linux/types.h>
 
 // per-CPU state for RDT
 struct rdt_state {

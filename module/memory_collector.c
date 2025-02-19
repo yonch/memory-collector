@@ -9,7 +9,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
-#include "resctrl.h"
+#include "rdt.h"
 #include <linux/workqueue.h>
 #include "procfs.h"
 

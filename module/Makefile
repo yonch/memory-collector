@@ -2,7 +2,7 @@ EXTRA_CFLAGS += -I$(src)
 
 # Define the module name and its source files
 obj-m := collector.o
-collector-objs := memory_collector.o resctrl.o procfs.o
+collector-objs := memory_collector.o rdt.o procfs.o
 
 # Always set architecture to x86_64 (not just x86)
 ARCH := x86_64
