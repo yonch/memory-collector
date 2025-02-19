@@ -9,7 +9,7 @@
 #include <linux/atomic.h>
 
 #include "rdt.h"
-#include "memory_collector_trace.h"
+#include "tracepoints.h"
 #include "collector.h"
 
 #define RMID_VAL_ERROR BIT_ULL(63)

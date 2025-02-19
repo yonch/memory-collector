@@ -1,6 +1,6 @@
 #include <linux/sched.h>
 #include "rmid_allocator.h"
-#include "memory_collector_trace.h"
+#include "tracepoints.h"
 #include "collector.h"
 
 // forward declarations

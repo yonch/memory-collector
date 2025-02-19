@@ -22,7 +22,7 @@ MODULE_VERSION("1.0");
 
 // Define the tracepoint
 #define CREATE_TRACE_POINTS
-#include "memory_collector_trace.h"
+#include "tracepoints.h"
 
 #define EMULATED_MAX_RMID 512
 #define CLOSID_CATCHALL 0
