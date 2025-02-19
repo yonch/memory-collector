@@ -101,6 +101,11 @@ int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
     struct rmid_metadata meta = {};
     struct rmid_metadata *existing;
     
+    if (!ctx) {
+        bpf_trace_printk("ctx is NULL\\n");
+        return 0;
+    }
+
     // Check RMID bounds
     if (ctx->rmid >= MAX_RMID) {
         bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
@@ -134,6 +139,11 @@ int handle_rmid_free(struct rmid_free_args *ctx) {
     struct rmid_metadata *existing;
     struct rmid_metadata meta = {};
     
+    if (!ctx) {
+        bpf_trace_printk("ctx is NULL\\n");
+        return 0;
+    }
+    
     // Check RMID bounds
     if (ctx->rmid >= MAX_RMID) {
         bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
@@ -160,6 +170,11 @@ SEC("tracepoint/memory_collector/memory_collector_rmid_existing")
 int handle_rmid_existing(struct rmid_existing_args *ctx) {
     struct rmid_metadata meta = {};
     struct rmid_metadata *existing;
+    
+    if (!ctx) {
+        bpf_trace_printk("ctx is NULL\\n");
+        return 0;
+    }
     
     // Check RMID bounds
     if (ctx->rmid >= MAX_RMID) {
