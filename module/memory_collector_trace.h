@@ -27,8 +27,9 @@ TRACE_EVENT(memory_collector_sample,
         __entry->rmid = rmid;
     ),
     
-    TP_printk("cpu=%u timestamp=%llu comm=%s is_context_switch=%d rmid=%u",
-        __entry->cpu, __entry->timestamp, __entry->comm, __entry->is_context_switch, __entry->rmid)
+    TP_printk("cpu=%u timestamp=%llu comm=%s context_switch=%d rmid=%u",
+        __entry->cpu, __entry->timestamp, __entry->comm,
+        __entry->is_context_switch, __entry->rmid)
 );
 
 TRACE_EVENT(memory_collector_resctrl,
@@ -58,6 +59,62 @@ TRACE_EVENT(memory_collector_resctrl,
     
     TP_printk("rmid=%u timestamp=%llu llc_occupancy_val=%llu llc_occupancy_err=%d mbm_total_val=%llu mbm_total_err=%d mbm_local_val=%llu mbm_local_err=%d",
         __entry->rmid, __entry->timestamp, __entry->llc_occupancy_val, __entry->llc_occupancy_err, __entry->mbm_total_val, __entry->mbm_total_err, __entry->mbm_local_val, __entry->mbm_local_err)
+);
+
+// New tracepoint for RMID allocation
+TRACE_EVENT(memory_collector_rmid_alloc,
+    TP_PROTO(u32 rmid, const char *comm, pid_t tgid, u64 timestamp),
+    TP_ARGS(rmid, comm, tgid, timestamp),
+    TP_STRUCT__entry(
+        __field(u32, rmid)
+        __array(char, comm, TASK_COMM_LEN)
+        __field(pid_t, tgid)
+        __field(u64, timestamp)
+    ),
+    TP_fast_assign(
+        __entry->rmid = rmid;
+        memcpy(__entry->comm, comm, TASK_COMM_LEN);
+        __entry->tgid = tgid;
+        __entry->timestamp = timestamp;
+    ),
+    TP_printk("rmid=%u comm=%s tgid=%d timestamp=%llu",
+        __entry->rmid, __entry->comm, __entry->tgid, __entry->timestamp)
+);
+
+// New tracepoint for RMID deallocation
+TRACE_EVENT(memory_collector_rmid_free,
+    TP_PROTO(u32 rmid, u64 timestamp),
+    TP_ARGS(rmid, timestamp),
+    TP_STRUCT__entry(
+        __field(u32, rmid)
+        __field(u64, timestamp)
+    ),
+    TP_fast_assign(
+        __entry->rmid = rmid;
+        __entry->timestamp = timestamp;
+    ),
+    TP_printk("rmid=%u timestamp=%llu",
+        __entry->rmid, __entry->timestamp)
+);
+
+// New tracepoint for existing RMID dump
+TRACE_EVENT(memory_collector_rmid_existing,
+    TP_PROTO(u32 rmid, const char *comm, pid_t tgid, u64 timestamp),
+    TP_ARGS(rmid, comm, tgid, timestamp),
+    TP_STRUCT__entry(
+        __field(u32, rmid)
+        __array(char, comm, TASK_COMM_LEN)
+        __field(pid_t, tgid)
+        __field(u64, timestamp)
+    ),
+    TP_fast_assign(
+        __entry->rmid = rmid;
+        memcpy(__entry->comm, comm, TASK_COMM_LEN);
+        __entry->tgid = tgid;
+        __entry->timestamp = timestamp;
+    ),
+    TP_printk("rmid=%u comm=%s tgid=%d timestamp=%llu",
+        __entry->rmid, __entry->comm, __entry->tgid, __entry->timestamp)
 );
 
 #endif /* _MEMORY_COLLECTOR_TRACE_H */
