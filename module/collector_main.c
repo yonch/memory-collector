@@ -111,12 +111,15 @@ static void probe_sched_switch(void *data,
                              struct task_struct *next,
                              unsigned int prev_state)
 {
-    // Collect sample for the outgoing task
-    collect_sample_on_current_cpu(true);
+    // Only collect sample if RMID is changing
+    if (prev->rmid != next->rmid) {
+        // Collect sample for the outgoing task
+        collect_sample_on_current_cpu(true);
 
-    // Update RMID if it's changing and we have hardware support
-    if (prev->rmid != next->rmid && rdt_hardware_support) {
-        rdt_write_rmid_closid(next->rmid, CLOSID_CATCHALL);
+        // Update RMID if we have hardware support
+        if (rdt_hardware_support) {
+            rdt_write_rmid_closid(next->rmid, CLOSID_CATCHALL);
+        }
     }
 }
 
