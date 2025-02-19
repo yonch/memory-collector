@@ -5,6 +5,7 @@
 #include <linux/sched.h>
 
 #define TASK_COMM_LEN 16
+#define MAX_RMID 512  // Match with max_entries in rmid_map
 
 // Define the event structure that matches the Go side
 struct event {
@@ -100,6 +101,12 @@ int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
     struct rmid_metadata meta = {};
     struct rmid_metadata *existing;
     
+    // Check RMID bounds
+    if (ctx->rmid >= MAX_RMID) {
+        bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
+        return 0;
+    }
+    
     // Look up existing metadata
     existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
     
@@ -127,6 +134,12 @@ int handle_rmid_free(struct rmid_free_args *ctx) {
     struct rmid_metadata *existing;
     struct rmid_metadata meta = {};
     
+    // Check RMID bounds
+    if (ctx->rmid >= MAX_RMID) {
+        bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
+        return 0;
+    }
+    
     // Look up existing metadata
     existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
     
@@ -147,6 +160,12 @@ SEC("tracepoint/memory_collector/memory_collector_rmid_existing")
 int handle_rmid_existing(struct rmid_existing_args *ctx) {
     struct rmid_metadata meta = {};
     struct rmid_metadata *existing;
+    
+    // Check RMID bounds
+    if (ctx->rmid >= MAX_RMID) {
+        bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
+        return 0;
+    }
     
     // Look up existing metadata
     existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
