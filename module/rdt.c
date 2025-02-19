@@ -24,12 +24,12 @@ struct ipi_rmid_args {
 /*
  * write RMID and CLOSID to MSR
  */
-int write_rmid_closid(u32 rmid, u32 closid)
+int rdt_write_rmid_closid(u32 rmid, u32 closid)
 {
     return wrmsr_safe(MSR_IA32_PQR_ASSOC, rmid, closid);
 }
 
-void resctrl_timer_tick(struct rdt_state *rdt_state)
+void rdt_timer_tick(struct rdt_state *rdt_state)
 {
     int cpu = smp_processor_id();
     u64 now = ktime_get_ns();
@@ -47,21 +47,21 @@ void resctrl_timer_tick(struct rdt_state *rdt_state)
 
     // if we support cache, read it on this CPU
     if (rdt_state->supports_llc_occupancy) {
-        llc_occupancy_err = read_resctrl_value(cpu, QOS_L3_OCCUP_EVENT_ID, &llc_occupancy_val);
+        llc_occupancy_err = rdt_read_resctrl_value(cpu, QOS_L3_OCCUP_EVENT_ID, &llc_occupancy_val);
     } else {
         llc_occupancy_err = -ENODEV;
     }
 
     // if we support mbm, read it on this CPU
     if (rdt_state->supports_mbm_total) {
-        mbm_total_err = read_resctrl_value(cpu, QOS_L3_MBM_TOTAL_EVENT_ID, &mbm_total_val);
+        mbm_total_err = rdt_read_resctrl_value(cpu, QOS_L3_MBM_TOTAL_EVENT_ID, &mbm_total_val);
     } else {
         mbm_total_err = -ENODEV;
     }
 
     // if we support mbm local, read it on this CPU
     if (rdt_state->supports_mbm_local) {
-        mbm_local_err = read_resctrl_value(cpu, QOS_L3_MBM_LOCAL_EVENT_ID, &mbm_local_val);
+        mbm_local_err = rdt_read_resctrl_value(cpu, QOS_L3_MBM_LOCAL_EVENT_ID, &mbm_local_val);
     } else {
         mbm_local_err = -ENODEV;
     }
@@ -69,7 +69,7 @@ void resctrl_timer_tick(struct rdt_state *rdt_state)
     trace_memory_collector_resctrl(cpu, now, llc_occupancy_val, llc_occupancy_err, mbm_total_val, mbm_total_err, mbm_local_val, mbm_local_err);
 }
 
-int resctrl_init_cpu(struct rdt_state *rdt_state)
+int rdt_init_cpu(struct rdt_state *rdt_state)
 {
     int cpu = smp_processor_id();
     unsigned int eax, ebx, ecx, edx;
@@ -117,7 +117,7 @@ int resctrl_init_cpu(struct rdt_state *rdt_state)
     return 0;
 }
 
-int read_resctrl_value(u32 rmid, u32 event_id, u64 *val)
+int rdt_read_resctrl_value(u32 rmid, u32 event_id, u64 *val)
 {
     int err;
     

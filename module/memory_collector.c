@@ -79,7 +79,7 @@ static void collect_sample_on_current_cpu(bool is_context_switch)
     
     trace_memory_collector_sample(cpu, timestamp, current->comm, is_context_switch, current->rmid);
 
-    resctrl_timer_tick(&state->rdt_state);
+    rdt_timer_tick(&state->rdt_state);
 }
 
 static void probe_sched_switch(void *data,
@@ -93,7 +93,7 @@ static void probe_sched_switch(void *data,
 
     // Update RMID if it's changing and we have hardware support
     if (prev->rmid != next->rmid && rmid_allocator.hardware_support) {
-        write_rmid_closid(next->rmid, CLOSID_CATCHALL);
+        rdt_write_rmid_closid(next->rmid, CLOSID_CATCHALL);
     }
 }
 
@@ -115,7 +115,7 @@ static void init_cpu_state(struct work_struct *work)
     state = this_cpu_ptr(cpu_states);
     
     // Initialize RDT state for this CPU (must run on the CPU being initialized)
-    ret = resctrl_init_cpu(&state->rdt_state);
+    ret = rdt_init_cpu(&state->rdt_state);
     if (ret) {
         pr_err(LOG_PREFIX "Failed to initialize RDT state for CPU %d: error %d\n", cpu, ret);
         return;
@@ -621,7 +621,7 @@ static void propagate_leader_rmids(void)
 // Move reset_cpu_rmid function definition before it's used
 static void reset_cpu_rmid(void *info)
 {
-    write_rmid_closid(RMID_INVALID, CLOSID_CATCHALL);
+    rdt_write_rmid_closid(RMID_INVALID, CLOSID_CATCHALL);
 }
 
 module_init(memory_collector_init);

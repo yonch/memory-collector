@@ -21,12 +21,12 @@ struct rdt_state {
  * Initialize RDT state for given CPU
  * Returns 0 on success, negative error code on failure
  */
-int resctrl_init_cpu(struct rdt_state *rdt_state);
+int rdt_init_cpu(struct rdt_state *rdt_state);
 
 /*
  * Read memory bandwidth counter for given RMID and output to trace
  */
-void resctrl_timer_tick(struct rdt_state *rdt_state);
+void rdt_timer_tick(struct rdt_state *rdt_state);
 
 /*
  * Read RDT counter for given RMID and event ID
@@ -34,12 +34,12 @@ void resctrl_timer_tick(struct rdt_state *rdt_state);
  * Returns -EIO if error occurred
  * Returns -EINVAL if data unavailable
  */
-int read_resctrl_value(u32 rmid, u32 event_id, u64 *val);
+int rdt_read_resctrl_value(u32 rmid, u32 event_id, u64 *val);
 
 /*
  * Write RMID and CLOSID to MSR_IA32_PQR_ASSOC
  * Returns 0 on success, negative error code on failure
  */
-int write_rmid_closid(u32 rmid, u32 closid);
+int rdt_write_rmid_closid(u32 rmid, u32 closid);
 
 #endif /* _COLLECTOR_RESCTRL_H_ */ 
