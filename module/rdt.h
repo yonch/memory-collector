@@ -24,17 +24,14 @@ struct rdt_state {
 int rdt_init_cpu(struct rdt_state *rdt_state);
 
 /*
- * Read memory bandwidth counter for given RMID and output to trace
- */
-void rdt_timer_tick(struct rdt_state *rdt_state);
-
-/*
- * Read RDT counter for given RMID and event ID
+ * Read RDT counter for given RMID
  * val is set to the counter value on success
  * Returns -EIO if error occurred
  * Returns -EINVAL if data unavailable
  */
-int rdt_read_resctrl_value(u32 rmid, u32 event_id, u64 *val);
+int rdt_read_llc_occupancy(u32 rmid, u64 *val);
+int rdt_read_mbm_total(u32 rmid, u64 *val);
+int rdt_read_mbm_local(u32 rmid, u64 *val);
 
 /*
  * Write RMID and CLOSID to MSR_IA32_PQR_ASSOC

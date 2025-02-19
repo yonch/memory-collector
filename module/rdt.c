@@ -9,7 +9,6 @@
 #include <linux/atomic.h>
 
 #include "rdt.h"
-#include "tracepoints.h"
 #include "collector.h"
 
 #define RMID_VAL_ERROR BIT_ULL(63)
@@ -26,46 +25,6 @@ struct ipi_rmid_args {
 int rdt_write_rmid_closid(u32 rmid, u32 closid)
 {
     return wrmsr_safe(MSR_IA32_PQR_ASSOC, rmid, closid);
-}
-
-void rdt_timer_tick(struct rdt_state *rdt_state)
-{
-    int cpu = smp_processor_id();
-    u64 now = ktime_get_ns();
-    int llc_occupancy_err = 0;
-    u64 llc_occupancy_val = 0;
-    int mbm_total_err = 0;
-    u64 mbm_total_val = 0;
-    int mbm_local_err = 0;
-    u64 mbm_local_val = 0;
-
-    // for now, just output the first 4 RMID, on CPUs 0..3
-    if (cpu > 4) {
-        return;
-    }
-
-    // if we support cache, read it on this CPU
-    if (rdt_state->supports_llc_occupancy) {
-        llc_occupancy_err = rdt_read_resctrl_value(cpu, QOS_L3_OCCUP_EVENT_ID, &llc_occupancy_val);
-    } else {
-        llc_occupancy_err = -ENODEV;
-    }
-
-    // if we support mbm, read it on this CPU
-    if (rdt_state->supports_mbm_total) {
-        mbm_total_err = rdt_read_resctrl_value(cpu, QOS_L3_MBM_TOTAL_EVENT_ID, &mbm_total_val);
-    } else {
-        mbm_total_err = -ENODEV;
-    }
-
-    // if we support mbm local, read it on this CPU
-    if (rdt_state->supports_mbm_local) {
-        mbm_local_err = rdt_read_resctrl_value(cpu, QOS_L3_MBM_LOCAL_EVENT_ID, &mbm_local_val);
-    } else {
-        mbm_local_err = -ENODEV;
-    }
-
-    trace_memory_collector_resctrl(cpu, now, llc_occupancy_val, llc_occupancy_err, mbm_total_val, mbm_total_err, mbm_local_val, mbm_local_err);
 }
 
 int rdt_init_cpu(struct rdt_state *rdt_state)
@@ -116,7 +75,13 @@ int rdt_init_cpu(struct rdt_state *rdt_state)
     return 0;
 }
 
-int rdt_read_resctrl_value(u32 rmid, u32 event_id, u64 *val)
+/*
+ * Read RDT counter for given RMID and event ID
+ * val is set to the counter value on success
+ * Returns -EIO if error occurred
+ * Returns -EINVAL if data unavailable
+ */
+static int rdt_read_resctrl_value(u32 rmid, u32 event_id, u64 *val)
 {
     int err;
     
@@ -137,3 +102,15 @@ int rdt_read_resctrl_value(u32 rmid, u32 event_id, u64 *val)
         
     return 0;
 } 
+
+int rdt_read_llc_occupancy(u32 rmid, u64 *val) {
+    return rdt_read_resctrl_value(rmid, QOS_L3_OCCUP_EVENT_ID, val);
+}
+
+int rdt_read_mbm_total(u32 rmid, u64 *val) {
+    return rdt_read_resctrl_value(rmid, QOS_L3_MBM_TOTAL_EVENT_ID, val);
+}
+
+int rdt_read_mbm_local(u32 rmid, u64 *val) {
+    return rdt_read_resctrl_value(rmid, QOS_L3_MBM_LOCAL_EVENT_ID, val);
+}

@@ -32,6 +32,7 @@ static void assign_rmids_to_leaders(void);
 static void propagate_leader_rmids(void);
 static void reset_cpu_rmid(void *info);
 static int detect_and_init_rmid_allocator(void);
+static void rdt_timer_tick(struct rdt_state *rdt_state);
 
 struct cpu_state {
     struct hrtimer timer;
@@ -49,6 +50,49 @@ static struct work_struct __percpu *cpu_works;
 static struct workqueue_struct *collector_wq;
 
 static bool rdt_hardware_support = false;
+
+/*
+ * Read memory bandwidth counter for given RMID and output to trace
+ */
+static void rdt_timer_tick(struct rdt_state *rdt_state)
+{
+    int cpu = smp_processor_id();
+    u64 now = ktime_get_ns();
+    int llc_occupancy_err = 0;
+    u64 llc_occupancy_val = 0;
+    int mbm_total_err = 0;
+    u64 mbm_total_val = 0;
+    int mbm_local_err = 0;
+    u64 mbm_local_val = 0;
+
+    // for now, just output the first 4 RMID, on CPUs 0..3
+    if (cpu > 4) {
+        return;
+    }
+
+    // if we support cache, read it on this CPU
+    if (rdt_state->supports_llc_occupancy) {
+        llc_occupancy_err = rdt_read_llc_occupancy(cpu, &llc_occupancy_val);
+    } else {
+        llc_occupancy_err = -ENODEV;
+    }
+
+    // if we support mbm, read it on this CPU
+    if (rdt_state->supports_mbm_total) {
+        mbm_total_err = rdt_read_mbm_total(cpu, &mbm_total_val);
+    } else {
+        mbm_total_err = -ENODEV;
+    }
+
+    // if we support mbm local, read it on this CPU
+    if (rdt_state->supports_mbm_local) {
+        mbm_local_err = rdt_read_mbm_local(cpu, &mbm_local_val);
+    } else {
+        mbm_local_err = -ENODEV;
+    }
+
+    trace_memory_collector_resctrl(cpu, now, llc_occupancy_val, llc_occupancy_err, mbm_total_val, mbm_total_err, mbm_local_val, mbm_local_err);
+}
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
 {
