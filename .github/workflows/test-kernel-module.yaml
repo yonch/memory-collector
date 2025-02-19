@@ -12,6 +12,7 @@ on:
       - main
     paths:
       - module/**
+      - .github/workflows/test-kernel-module.yaml
 
 permissions:
   id-token: write # Required for requesting the JWT
