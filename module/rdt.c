@@ -10,8 +10,7 @@
 
 #include "rdt.h"
 #include "memory_collector_trace.h"
-
-#define LOG_PREFIX "Memory Collector: "
+#include "collector.h"
 
 #define RMID_VAL_ERROR BIT_ULL(63)
 #define RMID_VAL_UNAVAIL BIT_ULL(62)
