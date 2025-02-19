@@ -3,6 +3,10 @@
 #include "tracepoints.h"
 #include "collector.h"
 
+// Minimum time (in nanoseconds) an RMID must remain unused before reallocation
+// Set to 2ms to ensure no overlap during 1ms measurement intervals
+#define RMID_MINIMUM_FREE_TIME_NS (2 * NSEC_PER_MSEC)
+
 // forward declarations
 static u32 _rmid_alloc(const char *comm, pid_t tgid);
 
@@ -17,6 +21,7 @@ static u32 _rmid_alloc(const char *comm, pid_t tgid)
 {
     struct rmid_info *info;
     u32 rmid;
+    u64 now = ktime_get_ns();
 
     // Check if we have any free RMIDs
     if (list_empty(&rmid_allocator.free_list)) {
@@ -25,6 +30,12 @@ static u32 _rmid_alloc(const char *comm, pid_t tgid)
 
     // Get the RMID that was freed the longest time ago
     info = list_first_entry(&rmid_allocator.free_list, struct rmid_info, list);
+
+    // Check if enough time has passed since this RMID was freed
+    if (now - info->last_free_timestamp < RMID_MINIMUM_FREE_TIME_NS) {
+        return 0;  // No RMIDs available that have been free long enough
+    }
+
     list_del_init(&info->list);
 
     // Update RMID info
@@ -34,7 +45,7 @@ static u32 _rmid_alloc(const char *comm, pid_t tgid)
     rmid = info->rmid;
 
     // Emit tracepoint for RMID allocation while holding the lock
-    trace_memory_collector_rmid_alloc(rmid, comm, tgid, ktime_get_ns());
+    trace_memory_collector_rmid_alloc(rmid, comm, tgid, now);
 
     return rmid;
 }
@@ -127,6 +138,7 @@ int init_rmid_allocator(u32 max_rmid)
         INIT_LIST_HEAD(&rmid_allocator.rmids[i].list);
         rmid_allocator.rmids[i].rmid = i;
         rmid_allocator.rmids[i].tgid = 0;
+        rmid_allocator.rmids[i].last_free_timestamp = 0;  // Initialize to 0 to allow immediate allocation
         if (i != RMID_INVALID) {  // Don't add RMID 0 to free list
             list_add_tail(&rmid_allocator.rmids[i].list, &rmid_allocator.free_list);
         }
@@ -163,10 +175,11 @@ void rmid_free(u32 rmid)
 
     info = &rmid_allocator.rmids[rmid];
     info->tgid = 0;
+    info->last_free_timestamp = ktime_get_ns();  // Record free timestamp
     list_add_tail(&info->list, &rmid_allocator.free_list);
 
     // Emit tracepoint for RMID deallocation while holding the lock
-    trace_memory_collector_rmid_free(rmid, ktime_get_ns());
+    trace_memory_collector_rmid_free(rmid, info->last_free_timestamp);
 
     spin_unlock_irqrestore(&rmid_allocator.lock, flags);
 }
