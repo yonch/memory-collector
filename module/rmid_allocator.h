@@ -11,6 +11,7 @@ struct rmid_info {
     u32 rmid;
     char comm[TASK_COMM_LEN];  // Name of task leader
     pid_t tgid;  // Thread group ID (process ID)
+    u64 last_free_timestamp;  // Timestamp when RMID was last freed
 };
 
 struct rmid_alloc {
