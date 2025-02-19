@@ -100,20 +100,16 @@ SEC("tracepoint/memory_collector/memory_collector_rmid_alloc")
 int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
     struct rmid_metadata meta = {};
     struct rmid_metadata *existing;
+    int rmid = ctx->rmid;
     
-    if (!ctx) {
-        bpf_trace_printk("ctx is NULL\\n");
-        return 0;
-    }
-
     // Check RMID bounds
-    if (ctx->rmid >= MAX_RMID) {
-        bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
+    if (rmid >= MAX_RMID) {
+        bpf_printk("unvariance_collector: handle_rmid_alloc: RMID %u exceeds maximum allowed value %u\\n", rmid, MAX_RMID-1);
         return 0;
     }
     
     // Look up existing metadata
-    existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
+    existing = bpf_map_lookup_elem(&rmid_map, &rmid);
     
     // Only update if:
     // 1. No existing entry OR
@@ -128,7 +124,7 @@ int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
         meta.timestamp = ctx->timestamp;
         meta.valid = 1;
 
-        bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
+        bpf_map_update_elem(&rmid_map, &rmid, &meta, BPF_ANY);
     }
     return 0;
 }
@@ -138,20 +134,16 @@ SEC("tracepoint/memory_collector/memory_collector_rmid_free")
 int handle_rmid_free(struct rmid_free_args *ctx) {
     struct rmid_metadata *existing;
     struct rmid_metadata meta = {};
-    
-    if (!ctx) {
-        bpf_trace_printk("ctx is NULL\\n");
-        return 0;
-    }
+    int rmid = ctx->rmid;
     
     // Check RMID bounds
-    if (ctx->rmid >= MAX_RMID) {
-        bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
+    if (rmid >= MAX_RMID) {
+        bpf_printk("unvariance_collector: handle_rmid_free: RMID %u exceeds maximum allowed value %u\\n", rmid, MAX_RMID-1);
         return 0;
     }
     
     // Look up existing metadata
-    existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
+    existing = bpf_map_lookup_elem(&rmid_map, &rmid);
     
     // Only update if:
     // 1. No existing entry OR
@@ -160,7 +152,7 @@ int handle_rmid_free(struct rmid_free_args *ctx) {
         meta.timestamp = ctx->timestamp;
         meta.valid = 0;
 
-        bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
+        bpf_map_update_elem(&rmid_map, &rmid, &meta, BPF_ANY);
     }
     return 0;
 }
@@ -170,20 +162,15 @@ SEC("tracepoint/memory_collector/memory_collector_rmid_existing")
 int handle_rmid_existing(struct rmid_existing_args *ctx) {
     struct rmid_metadata meta = {};
     struct rmid_metadata *existing;
+    int rmid = ctx->rmid;
     
-    if (!ctx) {
-        bpf_trace_printk("ctx is NULL\\n");
-        return 0;
-    }
-    
-    // Check RMID bounds
-    if (ctx->rmid >= MAX_RMID) {
-        bpf_trace_printk("RMID %u exceeds maximum allowed value %u\\n", ctx->rmid, MAX_RMID-1);
+    if (rmid >= MAX_RMID) {
+        bpf_printk("unvariance_collector: handle_rmid_existing: RMID %u exceeds maximum allowed value %u\\n", rmid, MAX_RMID-1);
         return 0;
     }
     
     // Look up existing metadata
-    existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
+    existing = bpf_map_lookup_elem(&rmid_map, &rmid);
     
     // Only update if:
     // 1. No existing entry OR
@@ -198,7 +185,7 @@ int handle_rmid_existing(struct rmid_existing_args *ctx) {
         meta.timestamp = ctx->timestamp;
         meta.valid = 1;
 
-        bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
+        bpf_map_update_elem(&rmid_map, &rmid, &meta, BPF_ANY);
     }
     return 0;
 }
