@@ -2,6 +2,9 @@
 
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
+#include <linux/sched.h>
+
+#define TASK_COMM_LEN 16
 
 // Define the event structure that matches the Go side
 struct event {
@@ -10,6 +13,45 @@ struct event {
     __u64 instructions;
     __u64 llc_misses;
 };
+
+// Tracepoint event structs
+struct rmid_alloc_args {
+    struct trace_entry ent;
+    __u32 rmid;
+    char comm[TASK_COMM_LEN];
+    __u32 tgid;
+    __u64 timestamp;
+};
+
+struct rmid_free_args {
+    struct trace_entry ent;
+    __u32 rmid;
+    __u64 timestamp;
+};
+
+struct rmid_existing_args {
+    struct trace_entry ent;
+    __u32 rmid;
+    char comm[TASK_COMM_LEN];
+    __u32 tgid;
+    __u64 timestamp;
+};
+
+// Structure for RMID allocation metadata
+struct rmid_metadata {
+    char comm[TASK_COMM_LEN];
+    __u32 tgid;
+    __u64 timestamp;  // Single timestamp field for all events
+    bool valid;       // Whether this RMID is currently valid
+};
+
+// Declare maps for RMID tracking
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 512);
+    __type(key, __u32);  // RMID
+    __type(value, struct rmid_metadata);
+} rmid_map SEC(".maps");
 
 // Declare the perf event arrays
 struct {
@@ -50,6 +92,81 @@ void increase_count(void *ctx) {
     if (count) {
         __sync_fetch_and_add(count, 1);
     }
+}
+
+// Handler for RMID allocation events
+SEC("tracepoint/memory_collector/memory_collector_rmid_alloc")
+int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
+    struct rmid_metadata meta = {};
+    struct rmid_metadata *existing;
+    
+    // Look up existing metadata
+    existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
+    
+    // Only update if:
+    // 1. No existing entry OR
+    // 2. Existing entry is invalid (freed) OR
+    // 3. New timestamp is newer than existing timestamp
+    if (!existing || 
+        existing->timestamp < ctx->timestamp) {
+        
+        // Copy data from tracepoint
+        __builtin_memcpy(meta.comm, ctx->comm, TASK_COMM_LEN);
+        meta.tgid = ctx->tgid;
+        meta.timestamp = ctx->timestamp;
+        meta.valid = true;
+
+        bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
+    }
+    return 0;
+}
+
+// Handler for RMID deallocation events
+SEC("tracepoint/memory_collector/memory_collector_rmid_free")
+int handle_rmid_free(struct rmid_free_args *ctx) {
+    struct rmid_metadata *existing;
+    struct rmid_metadata meta = {};
+    
+    // Look up existing metadata
+    existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
+    
+    // Only update if:
+    // 1. No existing entry OR
+    // 2. New timestamp is newer than existing timestamp
+    if (!existing || existing->timestamp < ctx->timestamp) {
+        meta.timestamp = ctx->timestamp;
+        meta.valid = false;
+
+        bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
+    }
+    return 0;
+}
+
+// Handler for existing RMID dump events
+SEC("tracepoint/memory_collector/memory_collector_rmid_existing")
+int handle_rmid_existing(struct rmid_existing_args *ctx) {
+    struct rmid_metadata meta = {};
+    struct rmid_metadata *existing;
+    
+    // Look up existing metadata
+    existing = bpf_map_lookup_elem(&rmid_map, &ctx->rmid);
+    
+    // Only update if:
+    // 1. No existing entry OR
+    // 2. Existing entry is invalid (freed) OR
+    // 3. New timestamp is newer than existing timestamp
+    if (!existing || 
+        existing->timestamp < ctx->timestamp) {
+        
+        // Copy data from tracepoint
+        __builtin_memcpy(meta.comm, ctx->comm, TASK_COMM_LEN);
+        meta.tgid = ctx->tgid;
+        meta.timestamp = ctx->timestamp;
+        meta.valid = true;
+
+        bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
+    }
+    return 0;
 }
 
 SEC("tracepoint/memory_collector/memory_collector_sample")

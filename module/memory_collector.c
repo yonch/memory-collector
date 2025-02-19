@@ -11,6 +11,7 @@
 #include <linux/slab.h>
 #include "resctrl.h"
 #include <linux/workqueue.h>
+#include "procfs.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Memory Collector Project");
@@ -27,17 +28,22 @@ MODULE_VERSION("1.0");
 #define RMID_INVALID 0
 #define CLOSID_CATCHALL 0
 
-// RMID allocation structure
-struct rmid_info {
-    struct list_head list;  // For free list
+// Common metadata structure for RMIDs
+struct rmid_metadata {
     u32 rmid;
     char comm[TASK_COMM_LEN];  // Name of task leader
     pid_t tgid;  // Thread group ID (process ID)
-    ktime_t free_time;  // When was this RMID freed
+    bool valid;     // Whether this RMID is currently valid
+};
+
+// RMID allocation structure
+struct rmid_info {
+    struct list_head list;  // For free list
+    struct rmid_metadata meta;  // Common metadata
 };
 
 struct rmid_alloc {
-    spinlock_t lock;  // Protects all fields
+    seqlock_t lock;  // Protects all fields
     struct list_head free_list;  // List of free RMIDs
     u32 max_rmid;  // Minimum of max_rmid across all CPUs
     struct rmid_info *rmids;  // Array of RMID info, indexed by RMID
@@ -187,9 +193,8 @@ static void reset_all_task_rmids(void)
 static u32 _rmid_alloc(const char *comm, pid_t tgid)
 {
     struct rmid_info *info;
+    struct rmid_metadata *meta;
     u32 rmid;
-
-    // lockdep_assert_held(&rmid_allocator.lock);  // Uncomment if LOCKDEP is enabled
 
     // Check if we have any free RMIDs
     if (list_empty(&rmid_allocator.free_list)) {
@@ -199,12 +204,17 @@ static u32 _rmid_alloc(const char *comm, pid_t tgid)
     // Get the RMID that was freed the longest time ago
     info = list_first_entry(&rmid_allocator.free_list, struct rmid_info, list);
     list_del(&info->list);
+    meta = &info->meta;
 
     // Update RMID info
-    strncpy(info->comm, comm, TASK_COMM_LEN - 1);
-    info->comm[TASK_COMM_LEN - 1] = '\0';
-    info->tgid = tgid;
-    rmid = info->rmid;
+    strncpy(meta->comm, comm, TASK_COMM_LEN - 1);
+    meta->comm[TASK_COMM_LEN - 1] = '\0';
+    meta->tgid = tgid;
+    rmid = meta->rmid;
+    meta->valid = true;
+
+    // Emit tracepoint for RMID allocation
+    trace_memory_collector_rmid_alloc(rmid, comm, tgid, ktime_get_ns());
 
     return rmid;
 }
@@ -237,7 +247,7 @@ static void assign_rmid_to_task(struct task_struct *task)
         return;
 
     // No RMID assigned to leader, need to allocate one
-    spin_lock_irqsave(&rmid_allocator.lock, flags);
+    write_seqlock_irqsave(&rmid_allocator.lock, flags);
 
     // Recheck after acquiring lock
     if (!group_leader->rmid) {
@@ -247,7 +257,7 @@ static void assign_rmid_to_task(struct task_struct *task)
         // Note: if allocation fails, leader->rmid remains 0
     }
 
-    spin_unlock_irqrestore(&rmid_allocator.lock, flags);
+    write_sequnlock_irqrestore(&rmid_allocator.lock, flags);
 }
 
 // Tracepoint probes for process lifecycle events
@@ -338,6 +348,36 @@ static int init_tracepoints(void)
     return 0;
 }
 
+extern void dump_existing_rmids(void);
+
+// Make dump_existing_rmids available to procfs.c
+void dump_existing_rmids(void)
+{
+    unsigned seq;
+    u32 i;
+    struct rmid_metadata meta;
+    u64 timestamp;
+
+    for (i = 1; i <= rmid_allocator.max_rmid; i++) {
+        do {
+            seq = read_seqbegin(&rmid_allocator.lock);
+            // Copy the entire metadata struct
+            memcpy(&meta, &rmid_allocator.rmids[i].meta, sizeof(meta));
+            timestamp = ktime_get_ns();
+        } while (read_seqretry(&rmid_allocator.lock, seq));
+
+        // Only emit tracepoint if we got valid data
+        if (meta.valid) {
+            trace_memory_collector_rmid_existing(
+                meta.rmid,
+                meta.comm,
+                meta.tgid,
+                timestamp
+            );
+        }
+    }
+}
+
 static int __init memory_collector_init(void)
 {
     int ret;
@@ -354,13 +394,13 @@ static int __init memory_collector_init(void)
         pr_err(LOG_PREFIX "Failed to allocate per-CPU state\n");
         return -ENOMEM;
     }
+
     // Initialize the cpu_states so we can clean up safely if an error occurs
     for_each_possible_cpu(cpu) {
         struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
         hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
         state->timer.function = timer_fn;
     }
-
 
     // Create workqueue first
     collector_wq = alloc_workqueue("memory_collector_wq", 0, 0);
@@ -402,6 +442,13 @@ static int __init memory_collector_init(void)
         goto err_cleanup_rmid;
     }
 
+    // Initialize procfs interface
+    ret = init_procfs();
+    if (ret) {
+        pr_err(LOG_PREFIX "Failed to initialize procfs interface\n");
+        goto err_cleanup_tracepoints;
+    }
+
     // Two-phase RMID assignment
     assign_rmids_to_leaders();    // First assign RMIDs to group leaders
     propagate_leader_rmids();     // Then propagate to all threads
@@ -409,6 +456,8 @@ static int __init memory_collector_init(void)
     pr_info(LOG_PREFIX "module loaded\n");
     return 0;
 
+err_cleanup_tracepoints:
+    cleanup_tracepoints();
 err_cleanup_rmid:
     cleanup_rmid_allocator();
 err_cleanup_cpu_states:
@@ -428,6 +477,9 @@ static void __exit memory_collector_exit(void)
     int cpu;
 
     pr_info(LOG_PREFIX "unloading module\n");
+
+    // Clean up procfs interface
+    cleanup_procfs();
 
     // Clean up per-CPU resources
     for_each_possible_cpu(cpu) {
@@ -485,11 +537,10 @@ static int init_rmid_allocator(void)
     } else {
         rmid_allocator.hardware_support = true;
         pr_info(LOG_PREFIX "Using hardware RMIDs (max=%d)\n", min_max_rmid);
-
     }
 
-    // Initialize allocator structure
-    spin_lock_init(&rmid_allocator.lock);
+    // Initialize allocator structure with seqlock
+    seqlock_init(&rmid_allocator.lock);
     INIT_LIST_HEAD(&rmid_allocator.free_list);
     rmid_allocator.max_rmid = min_max_rmid;
 
@@ -502,9 +553,9 @@ static int init_rmid_allocator(void)
 
     // Initialize all RMIDs (skip RMID 0 as it's reserved)
     for (u32 i = 0; i <= min_max_rmid; i++) {
-        rmid_allocator.rmids[i].rmid = i;
-        rmid_allocator.rmids[i].tgid = 0;
-        rmid_allocator.rmids[i].free_time = ktime_get();
+        rmid_allocator.rmids[i].meta.rmid = i;
+        rmid_allocator.rmids[i].meta.tgid = 0;
+        rmid_allocator.rmids[i].meta.valid = false;
         if (i != RMID_INVALID) {  // Don't add RMID 0 to free list
             list_add_tail(&rmid_allocator.rmids[i].list, &rmid_allocator.free_list);
         }
@@ -527,14 +578,17 @@ static void rmid_free(u32 rmid)
     if (rmid == RMID_INVALID || rmid > rmid_allocator.max_rmid)
         return;
 
-    spin_lock_irqsave(&rmid_allocator.lock, flags);
+    write_seqlock_irqsave(&rmid_allocator.lock, flags);
 
     info = &rmid_allocator.rmids[rmid];
-    info->tgid = 0;
-    info->free_time = ktime_get();
+    info->meta.tgid = 0;
+    info->meta.valid = false;
     list_add_tail(&info->list, &rmid_allocator.free_list);
 
-    spin_unlock_irqrestore(&rmid_allocator.lock, flags);
+    // Emit tracepoint for RMID deallocation
+    trace_memory_collector_rmid_free(rmid, ktime_get_ns());
+
+    write_sequnlock_irqrestore(&rmid_allocator.lock, flags);
 }
 
 /*
