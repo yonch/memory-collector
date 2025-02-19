@@ -2,6 +2,7 @@
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include "procfs.h"
+#include "collector.h"
 
 #define PROC_ENTRY_NAME "unvariance_collector"
 
@@ -37,7 +38,7 @@ int init_procfs(void)
 {
     proc_entry = proc_create(PROC_ENTRY_NAME, 0220, NULL, &collector_proc_ops);
     if (!proc_entry) {
-        pr_err("Failed to create /proc/%s\n", PROC_ENTRY_NAME);
+        pr_err(LOG_PREFIX "Failed to create /proc/%s\n", PROC_ENTRY_NAME);
         return -ENOMEM;
     }
     return 0;

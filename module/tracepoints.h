@@ -122,7 +122,7 @@ TRACE_EVENT(memory_collector_rmid_existing,
 #undef TRACE_INCLUDE_PATH
 #define TRACE_INCLUDE_PATH .
 #undef TRACE_INCLUDE_FILE
-#define TRACE_INCLUDE_FILE memory_collector_trace
+#define TRACE_INCLUDE_FILE tracepoints
 
 /* This part must be outside protection */
 #include <trace/define_trace.h> 

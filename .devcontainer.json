@@ -9,7 +9,8 @@
                 "ms-vscode.cpptools",
                 "ms-vscode.makefile-tools",
                 "ms-azuretools.vscode-docker",
-                "ms-vscode.cmake-tools"
+                "ms-vscode.cmake-tools",
+                "golang.go"
             ]
         }
     },
