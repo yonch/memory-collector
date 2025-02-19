@@ -16,7 +16,7 @@ struct event {
 
 // Tracepoint event structs
 struct rmid_alloc_args {
-    struct trace_entry ent;
+    __u64 trace_entry;
     __u32 rmid;
     char comm[TASK_COMM_LEN];
     __u32 tgid;
@@ -24,13 +24,13 @@ struct rmid_alloc_args {
 };
 
 struct rmid_free_args {
-    struct trace_entry ent;
+    __u64 trace_entry;
     __u32 rmid;
     __u64 timestamp;
 };
 
 struct rmid_existing_args {
-    struct trace_entry ent;
+    __u64 trace_entry;
     __u32 rmid;
     char comm[TASK_COMM_LEN];
     __u32 tgid;
@@ -42,7 +42,7 @@ struct rmid_metadata {
     char comm[TASK_COMM_LEN];
     __u32 tgid;
     __u64 timestamp;  // Single timestamp field for all events
-    bool valid;       // Whether this RMID is currently valid
+    __u8 valid;       // Whether this RMID is currently valid
 };
 
 // Declare maps for RMID tracking
@@ -114,7 +114,7 @@ int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
         __builtin_memcpy(meta.comm, ctx->comm, TASK_COMM_LEN);
         meta.tgid = ctx->tgid;
         meta.timestamp = ctx->timestamp;
-        meta.valid = true;
+        meta.valid = 1;
 
         bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
     }
@@ -135,7 +135,7 @@ int handle_rmid_free(struct rmid_free_args *ctx) {
     // 2. New timestamp is newer than existing timestamp
     if (!existing || existing->timestamp < ctx->timestamp) {
         meta.timestamp = ctx->timestamp;
-        meta.valid = false;
+        meta.valid = 0;
 
         bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
     }
@@ -162,7 +162,7 @@ int handle_rmid_existing(struct rmid_existing_args *ctx) {
         __builtin_memcpy(meta.comm, ctx->comm, TASK_COMM_LEN);
         meta.tgid = ctx->tgid;
         meta.timestamp = ctx->timestamp;
-        meta.valid = true;
+        meta.valid = 1;
 
         bpf_map_update_elem(&rmid_map, &ctx->rmid, &meta, BPF_ANY);
     }
