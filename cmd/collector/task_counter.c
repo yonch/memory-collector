@@ -9,7 +9,7 @@
 
 // Define the event structure that matches the Go side
 struct event {
-    __u64 counter;
+    __u32 rmid;
     __u64 cycles_delta;
     __u64 instructions_delta;
     __u64 llc_misses_delta;
@@ -215,7 +215,15 @@ int handle_rmid_existing(struct rmid_existing_args *ctx) {
 SEC("tracepoint/memory_collector/memory_collector_sample")
 int count_events(void *ctx) {
     struct event e = {};
-    e.counter = 1;
+    
+    // Extract RMID from the tracepoint context
+    struct {
+        __u64 pad;  // Common fields in tracepoint
+        __u8 is_context_switch;
+        __u32 rmid;
+    } *args = ctx;
+    
+    e.rmid = args->rmid;
     
     // Get current timestamp
     __u64 now = bpf_ktime_get_ns();
