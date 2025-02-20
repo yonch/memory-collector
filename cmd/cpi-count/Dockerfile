@@ -14,10 +14,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the source code
-COPY . .
+COPY cmd/cpi-count/ cmd/cpi-count/
 
 # Build the application
-RUN go build -o cpi-count
+RUN go build -o cpi-count ./cmd/cpi-count
 
 # Stage 2: Create a lightweight production image
 FROM alpine:latest
