@@ -9,10 +9,19 @@
 
 // Define the event structure that matches the Go side
 struct event {
-    __u64 counter;
+    __u32 rmid;
+    __u64 cycles_delta;
+    __u64 instructions_delta;
+    __u64 llc_misses_delta;
+    __u64 time_delta_ns;
+};
+
+// Structure to store previous counter values per CPU
+struct prev_counters {
     __u64 cycles;
     __u64 instructions;
     __u64 llc_misses;
+    __u64 timestamp;
 };
 
 // Tracepoint event structs
@@ -54,6 +63,14 @@ struct {
     __type(value, struct rmid_metadata);
 } rmid_map SEC(".maps");
 
+// Per-CPU map to store previous counter values
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct prev_counters);
+} prev_counters_map SEC(".maps");
+
 // Declare the perf event arrays
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -93,6 +110,11 @@ void increase_count(void *ctx) {
     if (count) {
         __sync_fetch_and_add(count, 1);
     }
+}
+
+// Helper function to compute delta with wraparound handling
+static __u64 compute_delta(__u64 current, __u64 previous) {
+    return current - previous;
 }
 
 // Handler for RMID allocation events
@@ -193,28 +215,52 @@ int handle_rmid_existing(struct rmid_existing_args *ctx) {
 SEC("tracepoint/memory_collector/memory_collector_sample")
 int count_events(void *ctx) {
     struct event e = {};
-    e.counter = 1;
     
-    // Read cycles from perf event
+    // Extract RMID from the tracepoint context
+    struct {
+        __u64 pad;  // Common fields in tracepoint
+        __u8 is_context_switch;
+        __u32 rmid;
+    } *args = ctx;
+    
+    e.rmid = args->rmid;
+    
+    // Get current timestamp
+    __u64 now = bpf_ktime_get_ns();
+    
+    // Get previous counters
+    __u32 zero = 0;
+    struct prev_counters *prev = bpf_map_lookup_elem(&prev_counters_map, &zero);
+    if (!prev) {
+        return 0;  // Should never happen since it's a per-CPU array
+    }
+
+    // Read current counter values
     struct bpf_perf_event_value cycles_val = {};
+    struct bpf_perf_event_value instructions_val = {};
+    struct bpf_perf_event_value llc_misses_val = {};
+    
     int err = bpf_perf_event_read_value(&cycles, BPF_F_CURRENT_CPU, &cycles_val, sizeof(cycles_val));
     if (err == 0) {
-        e.cycles = cycles_val.counter;
+        e.cycles_delta = compute_delta(cycles_val.counter, prev->cycles);
+        prev->cycles = cycles_val.counter;
     }
 
-    // Read instructions from perf event
-    struct bpf_perf_event_value instructions_val = {};
     err = bpf_perf_event_read_value(&instructions, BPF_F_CURRENT_CPU, &instructions_val, sizeof(instructions_val));
     if (err == 0) {
-        e.instructions = instructions_val.counter;
+        e.instructions_delta = compute_delta(instructions_val.counter, prev->instructions);
+        prev->instructions = instructions_val.counter;
     }
 
-    // Read LLC misses from perf event
-    struct bpf_perf_event_value llc_misses_val = {};
     err = bpf_perf_event_read_value(&llc_misses, BPF_F_CURRENT_CPU, &llc_misses_val, sizeof(llc_misses_val));
     if (err == 0) {
-        e.llc_misses = llc_misses_val.counter;
+        e.llc_misses_delta = compute_delta(llc_misses_val.counter, prev->llc_misses);
+        prev->llc_misses = llc_misses_val.counter;
     }
+
+    // Compute time delta and update timestamp
+    e.time_delta_ns = compute_delta(now, prev->timestamp);
+    prev->timestamp = now;
 
     // Submit the event to the perf event array
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &e, sizeof(e));

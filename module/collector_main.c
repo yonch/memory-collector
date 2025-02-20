@@ -96,12 +96,9 @@ static void rdt_timer_tick(struct rdt_state *rdt_state)
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
 {
-    u64 timestamp = ktime_get_ns();
-    u32 cpu = smp_processor_id();
-    struct cpu_state *state = this_cpu_ptr(cpu_states);
-    
-    trace_memory_collector_sample(cpu, timestamp, current->comm, is_context_switch, current->rmid);
+    trace_memory_collector_sample(is_context_switch, current->rmid);
 
+    struct cpu_state *state = this_cpu_ptr(cpu_states);
     rdt_timer_tick(&state->rdt_state);
 }
 
@@ -111,12 +108,15 @@ static void probe_sched_switch(void *data,
                              struct task_struct *next,
                              unsigned int prev_state)
 {
-    // Collect sample for the outgoing task
-    collect_sample_on_current_cpu(true);
+    // Only collect sample if RMID is changing
+    if (prev->rmid != next->rmid) {
+        // Collect sample for the outgoing task
+        collect_sample_on_current_cpu(true);
 
-    // Update RMID if it's changing and we have hardware support
-    if (prev->rmid != next->rmid && rdt_hardware_support) {
-        rdt_write_rmid_closid(next->rmid, CLOSID_CATCHALL);
+        // Update RMID if we have hardware support
+        if (rdt_hardware_support) {
+            rdt_write_rmid_closid(next->rmid, CLOSID_CATCHALL);
+        }
     }
 }
 

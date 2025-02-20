@@ -43,7 +43,7 @@ func dumpRmidMap(objs *taskCounterObjects) {
 			}
 			// Convert comm to string, trimming null bytes
 			comm := string(bytes.TrimRight(commBytes, "\x00"))
-			log.Printf("%d\t%d\t%s\t%d\t%d\t%d\n", 
+			log.Printf("%d\t%d\t%s\t%d\t%d\t%d\n",
 				i, key, comm, metadata.Tgid, metadata.Timestamp, metadata.Valid)
 		}
 	}
@@ -203,7 +203,7 @@ func main() {
 
 			record, err := rd.Read()
 			if err != nil {
-				if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, perf.ErrFlushed) {					
+				if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, perf.ErrFlushed) {
 					break // make for loop check the select statement and set the deadline
 				} else if errors.Is(err, perf.ErrClosed) {
 					return
@@ -224,8 +224,8 @@ func main() {
 				continue
 			}
 
-			log.Printf("Event - CPU: %d, Cycles: %d, Instructions: %d, LLC Misses: %d", 
-				record.CPU, event.Cycles, event.Instructions, event.LlcMisses)
+			log.Printf("Event - CPU: %d, RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d",
+				record.CPU, event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta)
 			totalEvents++
 		}
 	}
