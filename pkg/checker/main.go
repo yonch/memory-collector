@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"encoding/json"
 
     "github.com/intel/goresctrl/pkg/rdt"
 )
@@ -132,6 +133,8 @@ func CheckResctrlSupport() {
 		os.Exit(1)
 	}
 	fmt.Printf("%+v\n", info)
+	jsonData, _ := json.MarshalIndent(info, "", "  ")
+	fmt.Println(string(jsonData))
     os.Exit(0)
 }
 
