@@ -14,10 +14,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the source code
-COPY . .
+COPY cmd/prometheus_metrics/ cmd/prometheus_metrics/
 
 # Build the application
-RUN go build -o prometheus-metrics
+RUN go build -o prometheus-metrics ./cmd/prometheus_metrics
 
 # Stage 2: Create a lightweight production image
 FROM alpine:latest
