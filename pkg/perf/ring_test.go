@@ -196,7 +196,10 @@ func TestWraparound(t *testing.T) {
 			t.Errorf("first chunk mismatch at index %d: expected %d, got %d", i, testData[i], readBuf[i])
 		}
 	}
-	ring.Pop()
+	err = ring.Pop()
+	if err != nil {
+		t.Fatalf("failed to pop first chunk: %v", err)
+	}
 
 	ring.FinishReadBatch()
 
@@ -221,7 +224,10 @@ func TestWraparound(t *testing.T) {
 			t.Errorf("second chunk mismatch at index %d: expected %d, got %d", i, testData[i], readBuf[i])
 		}
 	}
-	ring.Pop()
+	err = ring.Pop()
+	if err != nil {
+		t.Fatalf("failed to pop second chunk: %v", err)
+	}
 
 	// Read third chunk
 	err = ring.PeekCopy(readBuf, 0)
@@ -233,7 +239,10 @@ func TestWraparound(t *testing.T) {
 			t.Errorf("third chunk mismatch at index %d: expected %d, got %d", i, testData[i], readBuf[i])
 		}
 	}
-	ring.Pop()
+	err = ring.Pop()
+	if err != nil {
+		t.Fatalf("failed to pop third chunk: %v", err)
+	}
 
 	ring.FinishReadBatch()
 
