@@ -1,9 +1,26 @@
 package perf
 
 import (
-	"fmt"
+	"errors"
 	"sync/atomic"
 	"unsafe"
+)
+
+var (
+	// ErrInvalidBufferLength is returned when the buffer size is invalid (not power of 2 or too small)
+	ErrInvalidBufferLength = errors.New("buffer length must be a power of 2 and at least 8 bytes")
+	// ErrNilBuffer is returned when a nil buffer is provided
+	ErrNilBuffer = errors.New("data buffer cannot be nil")
+	// ErrNoSpace is returned when trying to write to a full ring buffer
+	ErrNoSpace = errors.New("buffer full")
+	// ErrBufferEmpty is returned when trying to read from an empty ring buffer
+	ErrBufferEmpty = errors.New("buffer empty")
+	// ErrCannotFit is returned when trying to write data larger than the buffer, this data can never fit in the buffer
+	ErrCannotFit = errors.New("data too large for buffer")
+	// ErrEmptyWrite is returned when trying to write empty data
+	ErrEmptyWrite = errors.New("cannot write empty data")
+	// ErrSizeExceeded is returned when trying to read too much data
+	ErrSizeExceeded = errors.New("requested read larger than data")
 )
 
 // PerfEventHeader represents the header of a perf event
@@ -43,12 +60,12 @@ type PerfEventMmapPage struct {
 // InitContiguous initializes a PerfRing using contiguous memory
 func InitContiguous(data []byte, nPages uint32, pageSize uint64) (*PerfRing, error) {
 	if data == nil {
-		return nil, fmt.Errorf("data buffer cannot be nil")
+		return nil, ErrNilBuffer
 	}
 
 	bufLen := uint64(nPages) * pageSize
 	if (bufLen&(bufLen-1)) != 0 || bufLen < 8 {
-		return nil, fmt.Errorf("buffer length must be a power of 2 and at least 8 bytes")
+		return nil, ErrInvalidBufferLength
 	}
 
 	// First page is metadata, rest is data
@@ -79,18 +96,18 @@ func (r *PerfRing) StartWriteBatch() {
 // Write writes data to the ring buffer with the given type
 func (r *PerfRing) Write(data []byte, eventType uint32) (int, error) {
 	if len(data) == 0 {
-		return 0, fmt.Errorf("cannot write empty data")
+		return 0, ErrEmptyWrite
 	}
 
 	// Calculate total size including header, aligned to 8 bytes
 	alignedLen := ((uint32(len(data)) + uint32(unsafe.Sizeof(PerfEventHeader{})) + 7) & ^uint32(7))
 	if alignedLen > uint32(r.bufMask) {
-		return 0, fmt.Errorf("data too large for buffer")
+		return 0, ErrCannotFit
 	}
 
 	// Check if there's enough space
 	if r.tail+uint64(alignedLen)-r.head > r.bufMask+1 {
-		return 0, fmt.Errorf("buffer full")
+		return 0, ErrNoSpace
 	}
 
 	// Write header
@@ -132,7 +149,7 @@ func (r *PerfRing) StartReadBatch() {
 // PeekSize returns the size of the next event in the ring buffer
 func (r *PerfRing) PeekSize() (int, error) {
 	if r.tail == r.head {
-		return 0, fmt.Errorf("buffer empty")
+		return 0, ErrBufferEmpty
 	}
 
 	header := (*PerfEventHeader)(unsafe.Pointer(&r.data[r.head&r.bufMask]))
@@ -153,7 +170,7 @@ func (r *PerfRing) PeekCopy(buf []byte, offset uint16) error {
 	}
 
 	if len(buf) > int(size) {
-		return fmt.Errorf("buffer too small")
+		return ErrSizeExceeded
 	}
 
 	startPos := (r.head + uint64(unsafe.Sizeof(PerfEventHeader{})) + uint64(offset)) & r.bufMask
@@ -175,7 +192,7 @@ func (r *PerfRing) PeekCopy(buf []byte, offset uint16) error {
 // Pop consumes the current event
 func (r *PerfRing) Pop() error {
 	if r.tail == r.head {
-		return fmt.Errorf("buffer empty")
+		return ErrBufferEmpty
 	}
 
 	header := (*PerfEventHeader)(unsafe.Pointer(&r.data[r.head&r.bufMask]))
