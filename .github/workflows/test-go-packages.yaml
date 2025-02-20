@@ -42,6 +42,16 @@ jobs:
         go test -c ./pkg/perf -race -o perf.test
         # Add CAP_PERFMON capability to the test binary
         sudo setcap cap_perfmon+ep perf.test
+        # Verfiy capability
+        getcap perf.test
+        
+        # Check if perf_event_paranoid is restricting access
+        cat /proc/sys/kernel/perf_event_paranoid
+        # Set perf_event_paranoid to 1
+        echo 1 | sudo tee /proc/sys/kernel/perf_event_paranoid
+        # Verify perf_event_paranoid
+        cat /proc/sys/kernel/perf_event_paranoid
+
         # Run the perf tests with the permissioned binary
         ./perf.test -test.v
 
