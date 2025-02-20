@@ -39,11 +39,11 @@ jobs:
     - name: Run perf package tests
       run: |
         # Compile the test binary
-        go test -c ./pkg/perf -o perf.test
+        go test -c ./pkg/perf -race -o perf.test
         # Add CAP_PERFMON capability to the test binary
         sudo setcap cap_perfmon+ep perf.test
         # Run the perf tests with the permissioned binary
-        ./perf.test -test.v -test.race
+        ./perf.test -test.v
 
     - name: Run other package tests
       run: |
