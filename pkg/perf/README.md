@@ -32,7 +32,67 @@ The main structure that represents a perf ring buffer. It contains:
 - `Pop`: Consume the current record
 - `BytesRemaining`: Get available bytes to read
 
-### Usage
+## Layer 2: Storage Layer
+
+The storage layer provides different implementations for managing the underlying memory of perf ring buffers. It focuses solely on memory management and perf event configuration.
+
+### RingStorage Interface
+
+The common interface implemented by all storage types:
+```go
+type RingStorage interface {
+    Data() []byte
+    NumDataPages() uint32
+    PageSize() uint64
+    Close() error
+    FileDescriptor() int
+}
+```
+
+### Memory-based Storage
+
+`MemoryRingStorage` provides a simple memory-based implementation useful for:
+- Testing
+- Inter-thread communication
+- Scenarios not requiring kernel interaction
+
+```go
+storage, err := NewMemoryRingStorage(nPages)
+```
+
+### Mmap-based Storage
+
+`MmapRingStorage` provides kernel integration through:
+- `perf_event_open` syscall
+- Memory mapping of ring buffer
+- Support for BPF program output
+- Configurable watermark settings
+
+```go
+// Create mmap-based storage with watermark configuration
+storage, err := NewMmapRingStorage(
+    cpu,           // CPU to monitor (-1 for any CPU)
+    nPages,        // Number of data pages
+    watermarkBytes // Bytes to accumulate before waking up (0 for every event)
+)
+```
+
+Features:
+- Configurable watermark for event batching
+- Proper cleanup with finalizers
+- Integration with BPF program output
+
+### Memory Layout
+
+The storage layer manages:
+1. Metadata page (perf event shared page)
+2. Data pages (ring buffer)
+3. Memory mapping and permissions
+4. Page size alignment
+
+## Usage
+
+### Basic Usage
 
 ```go
 // Initialize a ring buffer
@@ -56,20 +116,23 @@ ring.Pop()
 ring.FinishReadBatch()
 ```
 
-### Memory Layout
+### Using Mmap Storage
 
-The perf ring buffer consists of:
-1. A metadata page containing shared information
-2. A power-of-2 sized data buffer for the actual ring
+```go
+// Create mmap-based storage that wakes up after accumulating 4KB of data
+storage, err := NewMmapRingStorage(0, 8, 4096)
+if err != nil {
+    // Handle error
+}
+defer storage.Close()
 
-The data buffer is treated as a circular buffer where:
-- Writers append to the tail
-- Readers consume from the head
-- Buffer wrapping is handled automatically
-
-### Thread Safety
-
-The implementation uses proper memory barriers through the metadata page to ensure thread safety between kernel writers and userspace readers. The batched operations help minimize cache line bouncing between processors.
+// Or wake up on every event
+storage, err := NewMmapRingStorage(0, 8, 0)
+if err != nil {
+    // Handle error
+}
+defer storage.Close()
+```
 
 ## Testing
 
@@ -81,6 +144,6 @@ go test -v ./pkg/perf
 
 The test suite includes:
 - Basic initialization tests
-- Write and read operations
-- Buffer wraparound handling
-- Bytes remaining calculation 
+- Storage implementation tests
+- Watermark configuration tests
+- Error cases and cleanup 
