@@ -44,7 +44,7 @@ jobs:
         sudo setcap cap_perfmon+ep perf.test
         # Verfiy capability
         getcap perf.test
-        
+
         # Check if perf_event_paranoid is restricting access
         cat /proc/sys/kernel/perf_event_paranoid
         # Set perf_event_paranoid to 1
@@ -57,8 +57,10 @@ jobs:
 
     - name: Run other package tests
       run: |
-        # Run tests for all packages except perf
-        go test -v -race $(go list ./pkg/... | grep -v pkg/perf)
+        # Run tests for all packages except perf, only if there are other packages
+        if [ -n "$(go list ./pkg/... | grep -v pkg/perf)" ]; then
+          go test -v -race $(go list ./pkg/... | grep -v pkg/perf)
+        fi
 
     - name: Run linter
       uses: golangci/golangci-lint-action@v3
