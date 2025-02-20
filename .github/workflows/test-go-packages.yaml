@@ -32,10 +32,22 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
-    - name: Run tests
+    - name: Install libcap
+      run: sudo apt-get update && sudo apt-get install -y libcap2-bin
+
+    - name: Run perf package tests
       run: |
-        # Run tests for all packages under pkg/
-        go test -v -race ./pkg/...
+        # Compile the test binary
+        go test -c ./pkg/perf -o perf.test
+        # Add CAP_PERFMON capability to the test binary
+        sudo setcap cap_perfmon+ep perf.test
+        # Run the perf tests with the permissioned binary
+        ./perf.test -test.v -test.race
+
+    - name: Run other package tests
+      run: |
+        # Run tests for all packages except perf
+        go test -v -race $(go list ./pkg/... | grep -v pkg/perf)
 
     - name: Run linter
       uses: golangci/golangci-lint-action@v3
