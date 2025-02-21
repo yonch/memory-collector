@@ -232,8 +232,6 @@ func main() {
 					break
 				}
 
-				// print hex encoding of eventData
-				log.Printf("Event data: %x", eventData)
 				// print parsed event
 				log.Printf("Event - RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d",
 					event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta)
