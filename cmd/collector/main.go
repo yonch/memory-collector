@@ -12,6 +12,7 @@ import (
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
+	"github.com/unvariance/collector/pkg/aggregate"
 	ourperf "github.com/unvariance/collector/pkg/perf"
 	"github.com/unvariance/collector/pkg/perf_ebpf"
 	"golang.org/x/sys/unix"
@@ -183,19 +184,46 @@ func main() {
 
 	log.Println("Waiting for events...")
 
+	// Create aggregator with 100ms slots and 10 slots window
+	aggregatorConfig := aggregate.Config{
+		SlotLength: 100_000_000, // 100ms in nanoseconds
+		WindowSize: 10,          // Keep 10 slots (1 second total)
+		SlotOffset: 0,
+	}
+	aggregator, err := aggregate.NewAggregator(aggregatorConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Helper function to print completed time slots
+	printCompletedSlots := func(slots []*aggregate.TimeSlot) {
+		for _, slot := range slots {
+			log.Printf("Time slot [%d - %d]:", slot.StartTime, slot.EndTime)
+			for rmid, agg := range slot.Aggregations {
+				log.Printf("  RMID %d: Cycles=%d, Instructions=%d, LLC Misses=%d, Duration=%d ns",
+					rmid, agg.Cycles, agg.Instructions, agg.LLCMisses, agg.Duration)
+			}
+		}
+	}
+
 	for {
 		select {
 		case <-stopper:
 			log.Printf("Received interrupt, exiting... Total events: %d\n", totalEvents)
+			// Print any remaining slots before exiting
+			printCompletedSlots(aggregator.Reset())
 			dumpRmidMap(&objs) // Dump RMID map before exiting
 			return
 		case <-timeout:
 			log.Println("Finished counting after 5 seconds")
+			// Print any remaining slots before exiting
+			printCompletedSlots(aggregator.Reset())
 			dumpRmidMap(&objs) // Dump RMID map before exiting
 			return
 		case <-ticker.C:
 			// Get current monotonic timestamp before starting the batch
 			startTimestamp := uint64(nanotime())
+
 			log.Printf("Starting batch at timestamp: %d", startTimestamp)
 
 			if err := reader.Start(); err != nil {
@@ -253,11 +281,27 @@ func main() {
 					break
 				}
 
-				// print parsed event
-				log.Printf("Event - CPU: %d, RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d, Timestamp: %d",
-					cpuID, event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta, event.Timestamp)
-				totalEvents++
+				// Create measurement from event
+				measurement := &aggregate.Measurement{
+					RMID:         event.Rmid,
+					Cycles:       event.CyclesDelta,
+					Instructions: event.InstructionsDelta,
+					LLCMisses:    event.LlcMissesDelta,
+					Timestamp:    event.Timestamp,
+					Duration:     event.TimeDeltaNs,
+				}
 
+				// Advance window and print any completed slots
+				if completedSlots := aggregator.AdvanceWindow(event.Timestamp, event.TimeDeltaNs); len(completedSlots) > 0 {
+					printCompletedSlots(completedSlots)
+				}
+
+				// Update aggregator with the measurement
+				if err := aggregator.UpdateMeasurement(measurement); err != nil {
+					log.Printf("Error updating aggregator: %s", err)
+				}
+
+				totalEvents++
 				reader.Pop()
 			}
 
