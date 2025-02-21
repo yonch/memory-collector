@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/rlimit"
 )
 
 func TestNewPerfMapReader(t *testing.T) {
@@ -13,6 +14,11 @@ func TestNewPerfMapReader(t *testing.T) {
 		KeySize:    4,
 		ValueSize:  4,
 		MaxEntries: 4, // Support 4 CPUs for testing
+	}
+
+	// remove memlock limit
+	if err := rlimit.RemoveMemlock(); err != nil {
+		t.Fatalf("failed to remove memlock: %v", err)
 	}
 
 	array, err := ebpf.NewMap(mapSpec)
