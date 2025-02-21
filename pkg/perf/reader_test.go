@@ -41,7 +41,9 @@ func TestReader(t *testing.T) {
 	if err := reader.AddRing(ring1); err != ErrAlreadyActive {
 		t.Errorf("expected ErrAlreadyActive, got %v", err)
 	}
-	reader.Finish()
+	if err := reader.Finish(); err != nil {
+		t.Fatalf("failed to finish reader: %v", err)
+	}
 
 	// Test operations before Start should fail
 	if !reader.Empty() {
@@ -67,7 +69,9 @@ func TestReader(t *testing.T) {
 		t.Error("expected reader to be empty")
 	}
 
-	reader.Finish()
+	if err := reader.Finish(); err != nil {
+		t.Fatalf("failed to finish reader: %v", err)
+	}
 
 	// Create events with timestamps
 	event1 := make([]byte, 16)                     // 8 bytes for timestamp + "event1"
@@ -257,7 +261,9 @@ func TestReaderLostRecords(t *testing.T) {
 		t.Errorf("failed to pop event: %v", err)
 	}
 
-	reader.Finish()
+	if err := reader.Finish(); err != nil {
+		t.Errorf("failed to finish reader: %v", err)
+	}
 
 	// Test 2: Show that lost events from one ring are processed before normal events from another ring
 	// Ring1: Normal event with timestamp 100
