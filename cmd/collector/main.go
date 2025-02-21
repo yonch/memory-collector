@@ -220,8 +220,8 @@ func main() {
 					break
 				}
 
-				eventData := make([]byte, size)
-				if err := ring.PeekCopy(eventData, 0); err != nil {
+				eventData := make([]byte, size-4)
+				if err := ring.PeekCopy(eventData, 4); err != nil {
 					log.Printf("Error copying event data: %s", err)
 					break
 				}
@@ -232,6 +232,9 @@ func main() {
 					break
 				}
 
+				// print hex encoding of eventData
+				log.Printf("Event data: %x", eventData)
+				// print parsed event
 				log.Printf("Event - RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d",
 					event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta)
 				totalEvents++

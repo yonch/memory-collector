@@ -132,8 +132,15 @@ func TestReader(t *testing.T) {
 		if err != nil {
 			t.Errorf("failed to peek size: %v", err)
 		}
-		ringData := make([]byte, size)
-		if err := ring.PeekCopy(ringData, 0); err != nil {
+
+		// size should be len(expectedRingData[i]) + sizeof(uint32) rounded up to 8
+		expectedSize := uint32(len(expectedRingData[i])+4+7) & ^uint32(7)
+		if uint32(size) != expectedSize {
+			t.Errorf("expected size %d, got %d", expectedSize, size)
+		}
+
+		ringData := make([]byte, len(expectedRingData[i]))
+		if err := ring.PeekCopy(ringData, 4); err != nil {
 			t.Errorf("failed to peek copy ring data: %v", err)
 		}
 		fmt.Printf("ring data: %x\n", ringData)

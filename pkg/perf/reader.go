@@ -206,7 +206,7 @@ func (r *Reader) maintainHeapEntry(idx int) {
 		// Sample records have an 8-byte timestamp after the header
 		// Skip the first 8 bytes (sample record) and read the timestamp
 		buf := make([]byte, 8)
-		if err := ring.PeekCopy(buf, 0); err == nil {
+		if err := ring.PeekCopy(buf, 4); err == nil {
 			timestamp = *(*uint64)(unsafe.Pointer(&buf[0]))
 		}
 	}

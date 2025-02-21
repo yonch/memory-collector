@@ -99,8 +99,14 @@ func (r *PerfRing) Write(data []byte, eventType uint32) (int, error) {
 		return 0, ErrEmptyWrite
 	}
 
+	unalignedLen := uint32(len(data)) + uint32(unsafe.Sizeof(PerfEventHeader{}))
+
+	if eventType == PERF_RECORD_SAMPLE {
+		unalignedLen += 4 // add the u32 size field
+	}
+
 	// Calculate total size including header, aligned to 8 bytes
-	alignedLen := ((uint32(len(data)) + uint32(unsafe.Sizeof(PerfEventHeader{})) + 7) & ^uint32(7))
+	alignedLen := ((unalignedLen + 7) & ^uint32(7))
 	if alignedLen > uint32(r.bufMask) {
 		return 0, ErrCannotFit
 	}
@@ -120,6 +126,11 @@ func (r *PerfRing) Write(data []byte, eventType uint32) (int, error) {
 
 	// Write data
 	dataPos := (r.tail + uint64(unsafe.Sizeof(header))) & r.bufMask
+	if eventType == PERF_RECORD_SAMPLE {
+		// write the u32 size field
+		(*(*uint32)(unsafe.Pointer(&r.data[dataPos]))) = uint32(len(data)+4+7) & ^uint32(7)
+		dataPos = (dataPos + 4) & r.bufMask
+	}
 	if dataPos+uint64(len(data)) <= uint64(len(r.data)) {
 		// Data fits without wrapping
 		copy(r.data[dataPos:], data)
