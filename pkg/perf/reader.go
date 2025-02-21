@@ -141,16 +141,16 @@ func (r *Reader) PeekTimestamp() (uint64, error) {
 	return r.heap.entries[0].timestamp, nil
 }
 
-// CurrentRing returns the ring containing the next event
-func (r *Reader) CurrentRing() (*PerfRing, error) {
+// CurrentRing returns the ring containing the next event and its index
+func (r *Reader) CurrentRing() (*PerfRing, int, error) {
 	if !r.active {
-		return nil, ErrNotActive
+		return nil, 0, ErrNotActive
 	}
 	if r.heap.size == 0 {
-		return nil, ErrBufferEmpty
+		return nil, 0, ErrBufferEmpty
 	}
 	entry := r.heap.entries[0]
-	return r.rings[entry.ringIndex], nil
+	return r.rings[entry.ringIndex], entry.ringIndex, nil
 }
 
 // Pop consumes the current event and updates the heap

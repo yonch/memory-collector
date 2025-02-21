@@ -150,7 +150,10 @@ defer reader.Close()
 
 // Read events in timestamp order
 for !reader.Empty() {
-    ring := reader.CurrentRing()
+    ring, ringIndex, err := reader.CurrentRing()
+    if err != nil {
+        // Handle error
+    }
     // Process event from ring
     reader.Pop()
 }
@@ -190,7 +193,7 @@ defer reader.Close()
 
 // Read events in timestamp order
 for !reader.Empty() {
-    ring := reader.CurrentRing()
+    ring, _, _ := reader.CurrentRing()
     size, _ := ring.PeekSize()
     buf := make([]byte, size)
     ring.PeekCopy(buf, 0)

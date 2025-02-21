@@ -195,7 +195,7 @@ func main() {
 
 			// Process all available events
 			for !reader.Empty() {
-				ring, err := reader.CurrentRing()
+				ring, cpuID, err := reader.CurrentRing()
 				if err != nil {
 					log.Printf("Error getting current ring: %s", err)
 					break
@@ -207,7 +207,7 @@ func main() {
 					if err := ring.PeekCopy((*[8]byte)(unsafe.Pointer(&lostCount))[:], 8); err != nil {
 						log.Printf("Error reading lost count: %s", err)
 					} else {
-						log.Printf("Lost %d samples", lostCount)
+						log.Printf("Lost %d samples on CPU %d", lostCount, cpuID)
 					}
 					reader.Pop()
 					continue
@@ -233,8 +233,8 @@ func main() {
 				}
 
 				// print parsed event
-				log.Printf("Event - RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d",
-					event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta)
+				log.Printf("Event - CPU: %d, RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d",
+					cpuID, event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta)
 				totalEvents++
 
 				reader.Pop()

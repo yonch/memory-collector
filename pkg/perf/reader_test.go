@@ -52,7 +52,7 @@ func TestReader(t *testing.T) {
 	if _, err := reader.PeekTimestamp(); err != ErrNotActive {
 		t.Errorf("expected ErrNotActive, got %v", err)
 	}
-	if _, err := reader.CurrentRing(); err != ErrNotActive {
+	if _, _, err := reader.CurrentRing(); err != ErrNotActive {
 		t.Errorf("expected ErrNotActive, got %v", err)
 	}
 	if err := reader.Pop(); err != ErrNotActive {
@@ -119,12 +119,15 @@ func TestReader(t *testing.T) {
 		}
 
 		// Get current ring and verify it's not nil
-		ring, err := reader.CurrentRing()
+		ring, idx, err := reader.CurrentRing()
 		if err != nil {
 			t.Errorf("failed to get current ring: %v", err)
 		}
 		if ring == nil {
 			t.Error("expected non-nil current ring")
+		}
+		if idx < 0 || idx >= len(reader.rings) {
+			t.Errorf("ring index %d out of bounds [0, %d)", idx, len(reader.rings))
 		}
 
 		// Copy the ring's data into a new buffer
@@ -171,7 +174,7 @@ func TestReader(t *testing.T) {
 	if _, err := reader.PeekTimestamp(); err != ErrNotActive {
 		t.Errorf("expected ErrNotActive, got %v", err)
 	}
-	if _, err := reader.CurrentRing(); err != ErrNotActive {
+	if _, _, err := reader.CurrentRing(); err != ErrNotActive {
 		t.Errorf("expected ErrNotActive, got %v", err)
 	}
 	if err := reader.Pop(); err != ErrNotActive {
@@ -237,9 +240,15 @@ func TestReaderLostRecords(t *testing.T) {
 		t.Errorf("expected timestamp 100, got %d", ts)
 	}
 
-	ring, err := reader.CurrentRing()
+	ring, idx, err := reader.CurrentRing()
 	if err != nil {
 		t.Errorf("failed to get current ring: %v", err)
+	}
+	if ring != ring1 {
+		t.Error("expected event from ring1")
+	}
+	if idx != 0 {
+		t.Errorf("expected ring index 0, got %d", idx)
 	}
 	if typ := ring.PeekType(); typ != PERF_RECORD_SAMPLE {
 		t.Errorf("expected PERF_RECORD_SAMPLE, got %d", typ)
@@ -257,9 +266,15 @@ func TestReaderLostRecords(t *testing.T) {
 		t.Errorf("expected timestamp 0 for lost event, got %d", ts)
 	}
 
-	ring, err = reader.CurrentRing()
+	ring, idx, err = reader.CurrentRing()
 	if err != nil {
 		t.Errorf("failed to get current ring: %v", err)
+	}
+	if ring != ring1 {
+		t.Error("expected lost event from ring1")
+	}
+	if idx != 0 {
+		t.Errorf("expected ring index 0, got %d", idx)
 	}
 	if typ := ring.PeekType(); typ != PERF_RECORD_LOST {
 		t.Errorf("expected PERF_RECORD_LOST, got %d", typ)
@@ -308,12 +323,15 @@ func TestReaderLostRecords(t *testing.T) {
 		t.Errorf("expected timestamp 0 for lost event, got %d", ts)
 	}
 
-	ring, err = reader.CurrentRing()
+	ring, idx, err = reader.CurrentRing()
 	if err != nil {
 		t.Errorf("failed to get current ring: %v", err)
 	}
 	if ring != ring2 {
 		t.Error("expected lost event from ring2")
+	}
+	if idx != 1 {
+		t.Errorf("expected ring index 1, got %d", idx)
 	}
 	if typ := ring.PeekType(); typ != PERF_RECORD_LOST {
 		t.Errorf("expected PERF_RECORD_LOST, got %d", typ)
@@ -331,12 +349,15 @@ func TestReaderLostRecords(t *testing.T) {
 		t.Errorf("expected timestamp 100 for normal event, got %d", ts)
 	}
 
-	ring, err = reader.CurrentRing()
+	ring, idx, err = reader.CurrentRing()
 	if err != nil {
 		t.Errorf("failed to get current ring: %v", err)
 	}
 	if ring != ring1 {
 		t.Error("expected normal event from ring1")
+	}
+	if idx != 0 {
+		t.Errorf("expected ring index 0, got %d", idx)
 	}
 	if typ := ring.PeekType(); typ != PERF_RECORD_SAMPLE {
 		t.Errorf("expected PERF_RECORD_SAMPLE, got %d", typ)
