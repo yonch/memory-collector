@@ -95,7 +95,7 @@ func (pmr *PerfMapReader) Reader() *perf.Reader {
 // Close releases all resources
 func (pmr *PerfMapReader) Close() error {
 	if pmr.reader != nil {
-		pmr.reader.Finish()
+		_ = pmr.reader.Finish()
 	}
 
 	for _, storage := range pmr.storage {
