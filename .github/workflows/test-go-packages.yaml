@@ -40,11 +40,13 @@ jobs:
     - name: Run perf-related package tests
       run: |
         # Compile the test binaries for perf and perf_ebpf packages
-        go test -c ./pkg/perf ./pkg/perf_ebpf -race -o perf_tests.test
+        go test -c ./pkg/perf ./pkg/perf_ebpf -race -o .
         # Add CAP_PERFMON capability to the test binary
-        sudo setcap cap_perfmon+ep perf_tests.test
+        sudo setcap cap_perfmon+ep perf.test
+        sudo setcap cap_perfmon+ep perf_ebpf.test
         # Verify capability
-        getcap perf_tests.test
+        getcap perf.test
+        getcap perf_ebpf.test
 
         # Check if perf_event_paranoid is restricting access
         cat /proc/sys/kernel/perf_event_paranoid
@@ -54,7 +56,8 @@ jobs:
         cat /proc/sys/kernel/perf_event_paranoid
 
         # Run the perf tests with the permissioned binary
-        ./perf_tests.test -test.v
+        ./perf.test -test.v
+        ./perf_ebpf.test -test.v
 
     - name: Run other package tests
       run: |
