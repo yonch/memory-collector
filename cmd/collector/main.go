@@ -186,8 +186,8 @@ func main() {
 
 	// Create aggregator with 100ms slots and 10 slots window
 	aggregatorConfig := aggregate.Config{
-		SlotLength: 100_000_000, // 100ms in nanoseconds
-		WindowSize: 10,          // Keep 10 slots (1 second total)
+		SlotLength: 10_000_000, // 10ms in nanoseconds
+		WindowSize: 10,         // Keep 10 slots (100ms total)
 		SlotOffset: 0,
 	}
 	aggregator, err := aggregate.NewAggregator(aggregatorConfig)
