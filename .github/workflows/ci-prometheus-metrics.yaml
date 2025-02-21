@@ -44,7 +44,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.docker-metadata.outputs.tags }}
           labels: ${{ steps.docker-metadata.outputs.labels }}
-          context: cmd/prometheus_metrics
+          context: .
           file: cmd/prometheus_metrics/Dockerfile
           platforms: linux/amd64,linux/arm64
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/prometheus-metrics:cache
