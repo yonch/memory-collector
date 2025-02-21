@@ -68,7 +68,7 @@ func NewPerfMapReader(array *ebpf.Map, opts Options) (*PerfMapReader, error) {
 		pmr.rings = append(pmr.rings, ring)
 
 		// Store the file descriptor in the eBPF map
-		if err := array.Put(uint32(cpu), storage.FileDescriptor()); err != nil {
+		if err := array.Put(uint32(cpu), uint32(storage.FileDescriptor())); err != nil {
 			pmr.Close()
 			return nil, fmt.Errorf("failed to update map for CPU %d: %w", cpu, err)
 		}
