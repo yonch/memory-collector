@@ -90,51 +90,124 @@ The storage layer manages:
 3. Memory mapping and permissions
 4. Page size alignment
 
-## Usage
+## Layer 3: Reader Layer
 
-### Basic Usage
+The reader layer provides functionality for reading from multiple CPU rings and sorting events by timestamp. This layer is particularly useful when dealing with multi-CPU systems where events need to be processed in chronological order.
+
+### Record Format Requirements
+
+For `PERF_RECORD_SAMPLE` records, each record must include a timestamp as its first 8 bytes in the form of a uint64. This timestamp is used by the reader to maintain chronological order when reading from multiple rings. The timestamp should be placed immediately after the perf event header in the record data.
+
+For example:
+```
+[perf_event_header]  // Standard perf event header
+[uint64 timestamp]   // 8-byte timestamp required for ordering
+[remaining data...]  // Rest of the record data
+```
+
+The reader handles the following special cases:
+- Non-sample records (e.g., `PERF_RECORD_LOST`): Assigned timestamp 0 to ensure immediate processing
+- Malformed sample records (less than 8 bytes): Assigned timestamp 0 to ensure immediate processing
+- Failed timestamp reads: Assigned timestamp 0 to ensure immediate processing
+
+It is the responsibility of the user of the reader to:
+- Ensure proper timestamp placement in sample records
+- Handle malformed records appropriately when encountered
+- Process non-sample records (like `PERF_RECORD_LOST`) as needed
+- Handle records with timestamp 0 according to their application logic
+
+### Key Components
+
+#### RingContainer
+
+Manages multiple CPU rings:
+- Maintains a heap of entries sorted by timestamp
+- Dynamically grows as rings are added
+- Provides efficient timestamp-based access
 
 ```go
-// Initialize a ring buffer
-data := make([]byte, pageSize*(1+nPages)) // 1 meta page + n data pages
-ring, err := perf.InitContiguous(data, nPages, pageSize)
+container := NewRingContainer()
+
+// Add ring for CPU 0
+container.AddRing(ring0)
+```
+
+#### Reader
+
+Provides sorted access to events:
+- Reads events in timestamp order
+- Supports maximum timestamp cutoff
+- Maintains proper cleanup of resources
+
+```go
+// Create reader with max timestamp
+maxTimestamp := uint64(time.Now().UnixNano())
+reader, err := NewReader(container, maxTimestamp)
 if err != nil {
     // Handle error
 }
+defer reader.Close()
 
-// Write data
-ring.StartWriteBatch()
-offset, err := ring.Write(data, eventType)
-ring.FinishWriteBatch()
-
-// Read data
-ring.StartReadBatch()
-size, _ := ring.PeekSize()
-buf := make([]byte, size)
-ring.PeekCopy(buf, 0, uint16(size))
-ring.Pop()
-ring.FinishReadBatch()
+// Read events in timestamp order
+for !reader.Empty() {
+    ring := reader.CurrentRing()
+    // Process event from ring
+    reader.Pop()
+}
 ```
 
-### Using Mmap Storage
+
+## Usage
+
+### Complete Example
 
 ```go
-// Create mmap-based storage that wakes up after accumulating 4KB of data
+// Create storage
 storage, err := NewMmapRingStorage(0, 8, 4096)
 if err != nil {
     // Handle error
 }
 defer storage.Close()
 
-// Or wake up on every event
-storage, err := NewMmapRingStorage(0, 8, 0)
+// Initialize ring
+ring, err := InitContiguous(storage.Data(), storage.NumDataPages(), storage.PageSize())
 if err != nil {
     // Handle error
 }
-defer storage.Close()
+
+// Create container and add ring
+container := NewRingContainer()
+if err := container.AddRing(ring); err != nil {
+    // Handle error
+}
+
+// Create reader
+reader, err := NewReader(container, maxTimestamp)
+if err != nil {
+    // Handle error
+}
+defer reader.Close()
+
+// Read events in timestamp order
+for !reader.Empty() {
+    ring := reader.CurrentRing()
+    size, _ := ring.PeekSize()
+    buf := make([]byte, size)
+    ring.PeekCopy(buf, 0)
+    // Process event
+    reader.Pop()
+}
 ```
 
 ## Testing
+
+The test suite includes:
+- Basic ring buffer operations
+- Storage implementation tests
+- Multi-CPU ring container tests
+- Reader timestamp ordering tests
+- Error cases and cleanup
+- Watermark configuration tests
 
 Run the tests with:
 
@@ -142,8 +215,4 @@ Run the tests with:
 go test -v ./pkg/perf
 ```
 
-The test suite includes:
-- Basic initialization tests
-- Storage implementation tests
-- Watermark configuration tests
-- Error cases and cleanup 
+Note: Some tests require root privileges or appropriate capabilities (CAP_PERFMON) to run perf_event_open syscalls. 
