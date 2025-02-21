@@ -25,13 +25,13 @@ import (
 
 // MetricsRecord represents a single row in our parquet file
 type MetricsRecord struct {
-	StartTime    uint64 `parquet:"name=start_time, type=INT64"`
-	EndTime      uint64 `parquet:"name=end_time, type=INT64"`
-	RMID         uint32 `parquet:"name=rmid, type=INT32"`
-	Cycles       uint64 `parquet:"name=cycles, type=INT64"`
-	Instructions uint64 `parquet:"name=instructions, type=INT64"`
-	LLCMisses    uint64 `parquet:"name=llc_misses, type=INT64"`
-	Duration     uint64 `parquet:"name=duration, type=INT64"`
+	StartTime    int64 `parquet:"name=start_time, type=INT64"`
+	EndTime      int64 `parquet:"name=end_time, type=INT64"`
+	RMID         int32 `parquet:"name=rmid, type=INT32"`
+	Cycles       int64 `parquet:"name=cycles, type=INT64"`
+	Instructions int64 `parquet:"name=instructions, type=INT64"`
+	LLCMisses    int64 `parquet:"name=llc_misses, type=INT64"`
+	Duration     int64 `parquet:"name=duration, type=INT64"`
 }
 
 // parquetWriter wraps parquet file writing functionality
@@ -68,13 +68,13 @@ func (pw *parquetWriter) writeTimeSlots(slots []*aggregate.TimeSlot) error {
 	for _, slot := range slots {
 		for rmid, agg := range slot.Aggregations {
 			record := &MetricsRecord{
-				StartTime:    slot.StartTime,
-				EndTime:      slot.EndTime,
-				RMID:         rmid,
-				Cycles:       agg.Cycles,
-				Instructions: agg.Instructions,
-				LLCMisses:    agg.LLCMisses,
-				Duration:     agg.Duration,
+				StartTime:    int64(slot.StartTime),
+				EndTime:      int64(slot.EndTime),
+				RMID:         int32(rmid),
+				Cycles:       int64(agg.Cycles),
+				Instructions: int64(agg.Instructions),
+				LLCMisses:    int64(agg.LLCMisses),
+				Duration:     int64(agg.Duration),
 			}
 			if err := pw.writer.Write(record); err != nil {
 				return fmt.Errorf("failed to write record: %w", err)
