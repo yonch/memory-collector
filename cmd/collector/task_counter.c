@@ -226,8 +226,7 @@ int count_events(void *ctx) {
     
     e.rmid = args->rmid;
     
-    // Get current timestamp
-    __u64 now = bpf_ktime_get_ns();
+    __u64 now;
     
     // Get previous counters
     __u32 zero = 0;
@@ -260,13 +259,17 @@ int count_events(void *ctx) {
     }
 
     // Compute time delta and update timestamp
-    e.time_delta_ns = compute_delta(now, prev->timestamp);
+    now = bpf_ktime_get_ns();
+    // if prev->timestamp is 0, this is the first event. We did not have the counter and timestamp values,
+    // so do not emit this event -- only use it to initialize the counters
+    if (prev->timestamp != 0) {
+        e.time_delta_ns = compute_delta(now, prev->timestamp);
+        e.timestamp = now;
+        // Submit the event to the perf event array
+        bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &e, sizeof(e));
+    }
     prev->timestamp = now;
-
-    // Submit the event to the perf event array
-    e.timestamp = now;
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &e, sizeof(e));
-
+    
     increase_count(ctx);
     
     return 0;
