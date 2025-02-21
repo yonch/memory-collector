@@ -343,5 +343,7 @@ func TestReaderLostRecords(t *testing.T) {
 		t.Error("expected reader to be empty after reading all events")
 	}
 
-	reader.Finish()
+	if err := reader.Finish(); err != nil {
+		t.Errorf("failed to finish reader: %v", err)
+	}
 }
