@@ -3,16 +3,17 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"time"
+	"unsafe"
 
 	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/perf"
 	"github.com/cilium/ebpf/rlimit"
+	ourperf "github.com/unvariance/collector/pkg/perf"
+	"github.com/unvariance/collector/pkg/perf_ebpf"
 	"golang.org/x/sys/unix"
 )
 
@@ -92,12 +93,13 @@ func main() {
 
 	// Create a ReaderOptions with a large Watermark
 	perCPUBufferSize := 16 * os.Getpagesize()
-	opts := perf.ReaderOptions{
-		Watermark: perCPUBufferSize / 2,
+	opts := perf_ebpf.Options{
+		BufferSize:     perCPUBufferSize,
+		WatermarkBytes: uint32(perCPUBufferSize / 2),
 	}
 
-	// Open a perf reader from userspace
-	rd, err := perf.NewReaderWithOptions(objs.Events, perCPUBufferSize, opts)
+	// Create our perf map reader
+	rd, err := perf_ebpf.NewPerfMapReader(objs.Events, opts)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -165,15 +167,16 @@ func main() {
 	signal.Notify(stopper, os.Interrupt)
 
 	timeout := time.After(5 * time.Second)
-
-	// set deadline in the past for rd, so it will not block
-	nextDeadline := time.Now().Add(time.Second)
-	rd.SetDeadline(nextDeadline)
-
-	log.Println("Waiting for events...")
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 
 	// Counter to maintain in userspace
 	var totalEvents uint64 = 0
+
+	// Start the reader
+	reader := rd.Reader()
+
+	log.Println("Waiting for events...")
 
 	for {
 		select {
@@ -185,48 +188,68 @@ func main() {
 			log.Println("Finished counting after 5 seconds")
 			dumpRmidMap(&objs) // Dump RMID map before exiting
 			return
-		default:
+		case <-ticker.C:
+			if err := reader.Start(); err != nil {
+				log.Fatal(err)
+			}
 
-			// if the deadline is in the past, set it to the next deadline
-			if time.Now().After(nextDeadline) {
-				nextDeadline = nextDeadline.Add(time.Second)
-				rd.SetDeadline(nextDeadline)
-
-				// output counts
-				var count uint64
-				var key uint32 = 0
-				if err := objs.EventCount.Lookup(&key, &count); err != nil {
-					log.Fatal(err)
+			// Process all available events
+			for !reader.Empty() {
+				ring, err := reader.CurrentRing()
+				if err != nil {
+					log.Printf("Error getting current ring: %s", err)
+					break
 				}
-				log.Printf("Event count: userspace %d, eBPF %d\n", totalEvents, count)
-			}
 
-			record, err := rd.Read()
-			if err != nil {
-				if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, perf.ErrFlushed) {
-					break // make for loop check the select statement and set the deadline
-				} else if errors.Is(err, perf.ErrClosed) {
-					return
+				// Check for lost samples
+				if ring.PeekType() == ourperf.PERF_RECORD_LOST {
+					var lostCount uint64
+					if err := ring.PeekCopy((*[8]byte)(unsafe.Pointer(&lostCount))[:], 8); err != nil {
+						log.Printf("Error reading lost count: %s", err)
+					} else {
+						log.Printf("Lost %d samples", lostCount)
+					}
+					reader.Pop()
+					continue
 				}
-				log.Printf("Reading from perf event reader: %s", err)
-				continue
+
+				// Parse the raw event
+				size, err := ring.PeekSize()
+				if err != nil {
+					log.Printf("Error getting event size: %s", err)
+					break
+				}
+
+				eventData := make([]byte, size)
+				if err := ring.PeekCopy(eventData, 0); err != nil {
+					log.Printf("Error copying event data: %s", err)
+					break
+				}
+
+				var event taskCounterEvent
+				if err := binary.Read(bytes.NewReader(eventData), binary.LittleEndian, &event); err != nil {
+					log.Printf("Failed to parse perf event: %s", err)
+					break
+				}
+
+				log.Printf("Event - RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d",
+					event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta)
+				totalEvents++
+
+				reader.Pop()
 			}
 
-			if record.LostSamples != 0 {
-				log.Printf("Lost %d samples", record.LostSamples)
-				continue
+			if err := reader.Finish(); err != nil {
+				log.Printf("Error finishing reader: %s", err)
 			}
 
-			// Parse the raw bytes into our Event struct
-			var event taskCounterEvent
-			if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
-				log.Printf("Failed to parse perf event: %s", err)
-				continue
+			// Output counts every second
+			var count uint64
+			var key uint32 = 0
+			if err := objs.EventCount.Lookup(&key, &count); err != nil {
+				log.Fatal(err)
 			}
-
-			log.Printf("Event - CPU: %d, RMID: %d, Time Delta: %d ns, Cycles Delta: %d, Instructions Delta: %d, LLC Misses Delta: %d",
-				record.CPU, event.Rmid, event.TimeDeltaNs, event.CyclesDelta, event.InstructionsDelta, event.LlcMissesDelta)
-			totalEvents++
+			log.Printf("Event count: userspace %d, eBPF %d\n", totalEvents, count)
 		}
 	}
 }

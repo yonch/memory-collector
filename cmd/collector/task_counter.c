@@ -9,6 +9,7 @@
 
 // Define the event structure that matches the Go side
 struct event {
+    __u64 timestamp;  // Add timestamp as first field
     __u32 rmid;
     __u64 cycles_delta;
     __u64 instructions_delta;
@@ -263,6 +264,7 @@ int count_events(void *ctx) {
     prev->timestamp = now;
 
     // Submit the event to the perf event array
+    e.timestamp = now;
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &e, sizeof(e));
 
     increase_count(ctx);
