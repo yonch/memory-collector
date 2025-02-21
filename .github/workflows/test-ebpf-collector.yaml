@@ -79,8 +79,16 @@ jobs:
           sudo find /etc/apt/sources.list /etc/apt/sources.list.d/ -type f -exec sed -i 's/http:/https:/g' {} +
           sudo apt-get update
           sudo apt-get install -y build-essential linux-headers-$(uname -r) \
-            golang-go llvm clang libbpf-dev git vim curl kmod
-          
+            golang-go llvm clang libbpf-dev git vim curl kmod unzip
+
+      - name: Install pqrs
+        run: |
+          # Download latest pqrs release
+          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
+          unzip pqrs.zip
+          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
+          rm pqrs.zip
+
       - name: Build kernel module
         working-directory: module
         run: |
@@ -143,6 +151,26 @@ jobs:
         working-directory: cmd/collector
         run: |
           sudo ./collector
+
+      - name: Verify parquet output
+        working-directory: cmd/collector
+        run: |
+          # Print parquet file contents as CSV
+          echo "Parquet file contents:"
+          pqrs cat --csv metrics.parquet
+          
+          # Verify file exists and has content
+          if [ ! -s metrics.parquet ]; then
+            echo "Error: metrics.parquet is empty or does not exist"
+            exit 1
+          fi
+
+      - name: Upload parquet file
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-parquet
+          path: cmd/collector/metrics.parquet
+          if-no-files-found: error
 
       - name: Unload kernel module
         working-directory: module
