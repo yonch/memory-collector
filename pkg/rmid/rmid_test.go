@@ -44,7 +44,8 @@ func TestTracker_FutureEvents(t *testing.T) {
 	// Add events
 	tracker.Alloc(1, "test1", 100, 1000)
 	tracker.Free(1, 2000)
-	tracker.Alloc(2, "test2", 200, 3000) // Future event
+	tracker.Alloc(1, "override1", 200, 3000) // Future event
+	tracker.Alloc(2, "test2", 300, 4000)     // Future event
 
 	// Try to advance to timestamp before future event
 	tracker.Advance(2500)
@@ -56,6 +57,12 @@ func TestTracker_FutureEvents(t *testing.T) {
 	}
 	if meta.Valid {
 		t.Error("Expected RMID 1 to be invalid")
+	}
+	if meta.Comm != "test1" {
+		t.Errorf("Expected comm 'test1', got '%s'", meta.Comm)
+	}
+	if meta.Tgid != 100 {
+		t.Errorf("Expected tgid 100, got %d", meta.Tgid)
 	}
 
 	// Check that RMID 2 was not processed
