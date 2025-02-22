@@ -16,11 +16,18 @@ import (
 	"github.com/unvariance/collector/pkg/aggregate"
 	ourperf "github.com/unvariance/collector/pkg/perf"
 	"github.com/unvariance/collector/pkg/perf_ebpf"
+	"github.com/unvariance/collector/pkg/rmid"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
 	"golang.org/x/sys/unix"
+)
+
+const (
+	MSG_TYPE_PERF       = taskCounterMsgTypeMSG_TYPE_PERF
+	MSG_TYPE_RMID_ALLOC = taskCounterMsgTypeMSG_TYPE_RMID_ALLOC
+	MSG_TYPE_RMID_FREE  = taskCounterMsgTypeMSG_TYPE_RMID_FREE
 )
 
 // MetricsRecord represents a single row in our parquet file
@@ -63,22 +70,34 @@ func newParquetWriter(filename string) (*parquetWriter, error) {
 	}, nil
 }
 
-// writeTimeSlots writes the completed time slots to the parquet file
-func (pw *parquetWriter) writeTimeSlots(slots []*aggregate.TimeSlot) error {
+// writeTimeSlot writes a single time slot to the parquet file
+func (pw *parquetWriter) writeTimeSlot(slot *aggregate.TimeSlot, rmidTracker *rmid.Tracker) error {
+	// Write measurements for this slot
+	for rmid, agg := range slot.Aggregations {
+		record := &MetricsRecord{
+			StartTime:    int64(slot.StartTime),
+			EndTime:      int64(slot.EndTime),
+			RMID:         int32(rmid),
+			Cycles:       int64(agg.Cycles),
+			Instructions: int64(agg.Instructions),
+			LLCMisses:    int64(agg.LLCMisses),
+			Duration:     int64(agg.Duration),
+		}
+		if err := pw.writer.Write(record); err != nil {
+			return fmt.Errorf("failed to write record: %w", err)
+		}
+	}
+	return nil
+}
+
+// writeCompletedSlots writes completed time slots to parquet
+func writeCompletedSlots(pw *parquetWriter, slots []*aggregate.TimeSlot, rmidTracker *rmid.Tracker) error {
 	for _, slot := range slots {
-		for rmid, agg := range slot.Aggregations {
-			record := &MetricsRecord{
-				StartTime:    int64(slot.StartTime),
-				EndTime:      int64(slot.EndTime),
-				RMID:         int32(rmid),
-				Cycles:       int64(agg.Cycles),
-				Instructions: int64(agg.Instructions),
-				LLCMisses:    int64(agg.LLCMisses),
-				Duration:     int64(agg.Duration),
-			}
-			if err := pw.writer.Write(record); err != nil {
-				return fmt.Errorf("failed to write record: %w", err)
-			}
+		// Advance RMID tracker to match this slot's end time
+		rmidTracker.Advance(slot.EndTime)
+
+		if err := pw.writeTimeSlot(slot, rmidTracker); err != nil {
+			return fmt.Errorf("failed to write time slot: %w", err)
 		}
 	}
 	return nil
@@ -101,33 +120,21 @@ func (pw *parquetWriter) close() error {
 //go:linkname nanotime runtime.nanotime
 func nanotime() int64
 
-// dumpRmidMap dumps all valid RMIDs and their metadata
-func dumpRmidMap(objs *taskCounterObjects) {
-	var key uint32
-	var metadata taskCounterRmidMetadata
+// dumpRmidTracker dumps all RMIDs and their metadata from the tracker
+func dumpRmidTracker(tracker *rmid.Tracker) {
+	log.Println("Dumping RMID tracker state:")
+	log.Println("RMID\tComm\tTgid\tValid")
+	log.Println("----\t----\t----\t-----")
 
-	log.Println("Dumping RMID map contents:")
-	log.Println("Index\tRMID\tComm\tTgid\tTimestamp\tValid")
-	log.Println("-----\t----\t----\t----\t---------\t-----")
-
-	for i := uint32(0); i < 512; i++ { // max_entries is 512 from task_counter.c
-		key = i
-		err := objs.RmidMap.Lookup(&key, &metadata)
-		if err != nil {
-			continue // Skip if error looking up this RMID
+	// Iterate through RMIDs 0 to 511 (512 max RMIDs)
+	for rmid := uint32(0); rmid < 512; rmid++ {
+		meta, exists := tracker.GetMetadata(rmid)
+		if !exists {
+			continue
 		}
 
-		if metadata.Valid == 1 {
-			// Convert []int8 to []byte for the comm field
-			commBytes := make([]byte, len(metadata.Comm))
-			for i, b := range metadata.Comm {
-				commBytes[i] = byte(b)
-			}
-			// Convert comm to string, trimming null bytes
-			comm := string(bytes.TrimRight(commBytes, "\x00"))
-			log.Printf("%d\t%d\t%s\t%d\t%d\t%d\n",
-				i, key, comm, metadata.Tgid, metadata.Timestamp, metadata.Valid)
-		}
+		log.Printf("%d\t%s\t%d\t%v\n",
+			rmid, meta.Comm, meta.Tgid, meta.Valid)
 	}
 	log.Println("") // Add blank line after dump
 }
@@ -155,6 +162,9 @@ func main() {
 		log.Fatal(err)
 	}
 	defer objs.Close()
+
+	// Create RMID tracker
+	rmidTracker := rmid.NewTracker()
 
 	// Attach the tracepoint programs
 	tp, err := link.Tracepoint("memory_collector", "memory_collector_sample", objs.CountEvents, nil)
@@ -251,9 +261,6 @@ func main() {
 	}
 	log.Println("Closed RMID existing tracepoint")
 
-	// Dump RMID map after initial dump
-	dumpRmidMap(&objs)
-
 	// Catch CTRL+C
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt)
@@ -281,26 +288,25 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Helper function to write completed time slots to parquet
-	writeCompletedSlots := func(slots []*aggregate.TimeSlot) {
-		if err := pw.writeTimeSlots(slots); err != nil {
-			log.Printf("Error writing time slots to parquet: %v", err)
-		}
-	}
-
 	for {
 		select {
 		case <-stopper:
 			log.Printf("Received interrupt, exiting... Total events: %d\n", totalEvents)
 			// Write any remaining slots before exiting
-			writeCompletedSlots(aggregator.Reset())
-			dumpRmidMap(&objs) // Dump RMID map before exiting
+			if err := writeCompletedSlots(pw, aggregator.Reset(), rmidTracker); err != nil {
+				log.Printf("Error writing final time slots: %v", err)
+			}
+			// Dump final RMID state
+			dumpRmidTracker(rmidTracker)
 			return
 		case <-timeout:
 			log.Println("Finished counting after 5 seconds")
 			// Write any remaining slots before exiting
-			writeCompletedSlots(aggregator.Reset())
-			dumpRmidMap(&objs) // Dump RMID map before exiting
+			if err := writeCompletedSlots(pw, aggregator.Reset(), rmidTracker); err != nil {
+				log.Printf("Error writing final time slots: %v", err)
+			}
+			// Dump final RMID state
+			dumpRmidTracker(rmidTracker)
 			return
 		case <-ticker.C:
 			// Get current monotonic timestamp before starting the batch
@@ -357,33 +363,71 @@ func main() {
 					break
 				}
 
-				var event taskCounterEvent
-				if err := binary.Read(bytes.NewReader(eventData), binary.LittleEndian, &event); err != nil {
-					log.Printf("Failed to parse perf event: %s", err)
+				// Read message type
+				var msgType uint32
+				if err := binary.Read(bytes.NewReader(eventData[8:12]), binary.LittleEndian, &msgType); err != nil {
+					log.Printf("Failed to parse message type: %s", err)
 					break
 				}
 
-				// Create measurement from event
-				measurement := &aggregate.Measurement{
-					RMID:         event.Rmid,
-					Cycles:       event.CyclesDelta,
-					Instructions: event.InstructionsDelta,
-					LLCMisses:    event.LlcMissesDelta,
-					Timestamp:    event.Timestamp,
-					Duration:     event.TimeDeltaNs,
+				switch taskCounterMsgType(msgType) {
+				case MSG_TYPE_PERF: // MSG_TYPE_PERF
+					var event taskCounterEvent
+					if err := binary.Read(bytes.NewReader(eventData), binary.LittleEndian, &event); err != nil {
+						log.Printf("Failed to parse perf event: %s", err)
+						break
+					}
+
+					// Create measurement from event
+					measurement := &aggregate.Measurement{
+						RMID:         event.Rmid,
+						Cycles:       event.CyclesDelta,
+						Instructions: event.InstructionsDelta,
+						LLCMisses:    event.LlcMissesDelta,
+						Timestamp:    event.Timestamp,
+						Duration:     event.TimeDeltaNs,
+					}
+
+					// Advance window and write any completed slots
+					if completedSlots := aggregator.AdvanceWindow(event.Timestamp, event.TimeDeltaNs); len(completedSlots) > 0 {
+						if err := writeCompletedSlots(pw, completedSlots, rmidTracker); err != nil {
+							log.Printf("Error writing completed time slots: %v", err)
+						}
+					}
+
+					// Update aggregator with the measurement
+					if err := aggregator.UpdateMeasurement(measurement); err != nil {
+						log.Printf("Error updating aggregator: %s", err)
+					}
+
+					totalEvents++
+
+				case MSG_TYPE_RMID_ALLOC:
+					var msg taskCounterRmidAllocMsg
+					if err := binary.Read(bytes.NewReader(eventData), binary.LittleEndian, &msg); err != nil {
+						log.Printf("Failed to parse alloc message: %s", err)
+						break
+					}
+					// Convert comm to string
+					commBytes := make([]byte, len(msg.Comm))
+					for i, b := range msg.Comm {
+						commBytes[i] = byte(b)
+					}
+					comm := string(bytes.TrimRight(commBytes, "\x00"))
+					rmidTracker.Alloc(msg.Rmid, comm, msg.Tgid, msg.Timestamp)
+
+				case MSG_TYPE_RMID_FREE:
+					var msg taskCounterRmidFreeMsg
+					if err := binary.Read(bytes.NewReader(eventData), binary.LittleEndian, &msg); err != nil {
+						log.Printf("Failed to parse free message: %s", err)
+						break
+					}
+					rmidTracker.Free(msg.Rmid, msg.Timestamp)
+
+				default:
+					log.Printf("Unknown message type: %d", msgType)
 				}
 
-				// Advance window and write any completed slots
-				if completedSlots := aggregator.AdvanceWindow(event.Timestamp, event.TimeDeltaNs); len(completedSlots) > 0 {
-					writeCompletedSlots(completedSlots)
-				}
-
-				// Update aggregator with the measurement
-				if err := aggregator.UpdateMeasurement(measurement); err != nil {
-					log.Printf("Error updating aggregator: %s", err)
-				}
-
-				totalEvents++
 				reader.Pop()
 			}
 
