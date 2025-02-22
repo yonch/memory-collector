@@ -6,7 +6,7 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(memory_collector_sample,
+TRACE_EVENT(measure_perf_counters,
     TP_PROTO(bool is_context_switch, u32 rmid),
     
     TP_ARGS(is_context_switch, rmid),
@@ -25,7 +25,7 @@ TRACE_EVENT(memory_collector_sample,
         __entry->is_context_switch, __entry->rmid)
 );
 
-TRACE_EVENT(memory_collector_resctrl,
+TRACE_EVENT(rdt_sample,
     TP_PROTO(u32 rmid, u64 timestamp, u64 llc_occupancy_val, int llc_occupancy_err, u64 mbm_total_val, int mbm_total_err, u64 mbm_local_val, int mbm_local_err),
     TP_ARGS(rmid, timestamp, llc_occupancy_val, llc_occupancy_err, mbm_total_val, mbm_total_err, mbm_local_val, mbm_local_err),
     TP_STRUCT__entry(
@@ -54,8 +54,7 @@ TRACE_EVENT(memory_collector_resctrl,
         __entry->rmid, __entry->timestamp, __entry->llc_occupancy_val, __entry->llc_occupancy_err, __entry->mbm_total_val, __entry->mbm_total_err, __entry->mbm_local_val, __entry->mbm_local_err)
 );
 
-// New tracepoint for RMID allocation
-TRACE_EVENT(memory_collector_rmid_alloc,
+TRACE_EVENT(rmid_alloc,
     TP_PROTO(u32 rmid, const char *comm, pid_t tgid, u64 timestamp),
     TP_ARGS(rmid, comm, tgid, timestamp),
     TP_STRUCT__entry(
@@ -74,8 +73,7 @@ TRACE_EVENT(memory_collector_rmid_alloc,
         __entry->rmid, __entry->comm, __entry->tgid, __entry->timestamp)
 );
 
-// New tracepoint for RMID deallocation
-TRACE_EVENT(memory_collector_rmid_free,
+TRACE_EVENT(rmid_free,
     TP_PROTO(u32 rmid, u64 timestamp),
     TP_ARGS(rmid, timestamp),
     TP_STRUCT__entry(
@@ -90,8 +88,7 @@ TRACE_EVENT(memory_collector_rmid_free,
         __entry->rmid, __entry->timestamp)
 );
 
-// New tracepoint for existing RMID dump
-TRACE_EVENT(memory_collector_rmid_existing,
+TRACE_EVENT(rmid_existing,
     TP_PROTO(u32 rmid, const char *comm, pid_t tgid, u64 timestamp),
     TP_ARGS(rmid, comm, tgid, timestamp),
     TP_STRUCT__entry(

@@ -154,27 +154,27 @@ static void send_rmid_free(void *ctx, __u32 rmid, __u64 timestamp) {
 }
 
 // Handler for RMID allocation events
-SEC("tracepoint/memory_collector/memory_collector_rmid_alloc")
+SEC("tracepoint/memory_collector/rmid_alloc")
 int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
     send_rmid_alloc(ctx, ctx->rmid, ctx->comm, ctx->tgid, ctx->timestamp);
     return 0;
 }
 
 // Handler for RMID deallocation events
-SEC("tracepoint/memory_collector/memory_collector_rmid_free")
+SEC("tracepoint/memory_collector/rmid_free")
 int handle_rmid_free(struct rmid_free_args *ctx) {
     send_rmid_free(ctx, ctx->rmid, ctx->timestamp);
     return 0;
 }
 
 // Handler for existing RMID dump events
-SEC("tracepoint/memory_collector/memory_collector_rmid_existing")
+SEC("tracepoint/memory_collector/rmid_existing")
 int handle_rmid_existing(struct rmid_existing_args *ctx) {
     send_rmid_alloc(ctx, ctx->rmid, ctx->comm, ctx->tgid, ctx->timestamp);
     return 0;
 }
 
-SEC("tracepoint/memory_collector/memory_collector_sample")
+SEC("tracepoint/memory_collector/measure_perf_counters")
 int measure_perf(void *ctx) {
     struct perf_measurement_msg e = {
         .type = MSG_TYPE_PERF,

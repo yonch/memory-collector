@@ -250,21 +250,21 @@ func main() {
 	rmidTracker := rmid.NewTracker()
 
 	// Attach RMID free tracepoint first, so we don't get dangling RMIDs
-	rmidFreeTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_free", objs.HandleRmidFree, nil)
+	rmidFreeTp, err := link.Tracepoint("memory_collector", "rmid_free", objs.HandleRmidFree, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer rmidFreeTp.Close()
 
 	// Attach RMID allocation tracepoint
-	rmidAllocTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_alloc", objs.HandleRmidAlloc, nil)
+	rmidAllocTp, err := link.Tracepoint("memory_collector", "rmid_alloc", objs.HandleRmidAlloc, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer rmidAllocTp.Close()
 
 	// Attach RMID existing tracepoint
-	rmidExistingTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_existing", objs.HandleRmidExisting, nil)
+	rmidExistingTp, err := link.Tracepoint("memory_collector", "rmid_existing", objs.HandleRmidExisting, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func main() {
 	reader := rd.Reader()
 
 	// Attach the perf-counter measurement program
-	tp, err := link.Tracepoint("memory_collector", "memory_collector_sample", objs.MeasurePerf, nil)
+	tp, err := link.Tracepoint("memory_collector", "measure_perf_counters", objs.MeasurePerf, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

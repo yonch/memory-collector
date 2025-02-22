@@ -16,7 +16,7 @@ lsmod | grep collector || {
 }
 
 echo "Setting up tracing..."
-sudo trace-cmd start -e memory_collector_sample -e memory_collector_resctrl
+sudo trace-cmd start -e measure_perf_counters -e rdt_sample
 
 echo "Collecting samples for 1 second..."
 sleep 1
@@ -43,11 +43,11 @@ echo "Head of is_context_switch=1:"
 grep "is_context_switch=1" "$TRACE_OUTPUT" | head
 
 echo "Head of resctrl:"
-grep "memory_collector_resctrl:" "$TRACE_OUTPUT" | head -n 20
+grep "rdt_sample:" "$TRACE_OUTPUT" | head -n 20
 
 echo "Validating output..."
 # Check if we have any trace entries
-SAMPLE_COUNT=$(grep "memory_collector_sample:" "$TRACE_OUTPUT" | wc -l)
+SAMPLE_COUNT=$(grep "measure_perf_counters:" "$TRACE_OUTPUT" | wc -l)
 CPU_COUNT=$(nproc)
 EXPECTED_MIN=$((900 * CPU_COUNT))
 

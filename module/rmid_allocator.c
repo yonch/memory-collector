@@ -45,7 +45,7 @@ static u32 _rmid_alloc(const char *comm, pid_t tgid)
     rmid = info->rmid;
 
     // Emit tracepoint for RMID allocation while holding the lock
-    trace_memory_collector_rmid_alloc(rmid, comm, tgid, now);
+    trace_rmid_alloc(rmid, comm, tgid, now);
 
     return rmid;
 }
@@ -106,7 +106,7 @@ void dump_existing_rmids(void)
 
         // Only emit tracepoint if RMID is in use (not on free list)
         if (list_empty(&info->list)) {
-            trace_memory_collector_rmid_existing(
+            trace_rmid_existing(
                 info->rmid,
                 info->comm,
                 info->tgid,
@@ -179,7 +179,7 @@ void rmid_free(u32 rmid)
     list_add_tail(&info->list, &rmid_allocator.free_list);
 
     // Emit tracepoint for RMID deallocation while holding the lock
-    trace_memory_collector_rmid_free(rmid, info->last_free_timestamp);
+    trace_rmid_free(rmid, info->last_free_timestamp);
 
     spin_unlock_irqrestore(&rmid_allocator.lock, flags);
 }
