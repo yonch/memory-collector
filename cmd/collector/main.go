@@ -36,7 +36,7 @@ type MetricsRecord struct {
 	EndTime      int64  `parquet:"name=end_time, type=INT64"`
 	RMID         int32  `parquet:"name=rmid, type=INT32"`
 	TGID         int32  `parquet:"name=tgid, type=INT32, encoding=DELTA_BINARY_PACKED"`
-	ProcessName  string `parquet:"name=process_name, type=BYTE_ARRAY, encoding=PLAIN_DICTIONARY"`
+	ProcessName  string `parquet:"name=process_name, type=BYTE_ARRAY, convertedType=UTF8, encoding=PLAIN_DICTIONARY"`
 	Cycles       int64  `parquet:"name=cycles, type=INT64"`
 	Instructions int64  `parquet:"name=instructions, type=INT64"`
 	LLCMisses    int64  `parquet:"name=llc_misses, type=INT64"`
