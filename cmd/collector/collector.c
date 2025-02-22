@@ -15,7 +15,7 @@ enum msg_type {
 const enum msg_type *unused_bpf2go_generate_msg_type __attribute__((unused)); // force golang generation of the enum
 
 // Define the event structure that matches the Go side
-struct event {
+struct perf_measurement_msg {
     __u64 timestamp;  // Must be first field for ring buffer ordering
     __u32 type;      // MSG_TYPE_PERF
     __u32 rmid;
@@ -24,7 +24,7 @@ struct event {
     __u64 llc_misses_delta;
     __u64 time_delta_ns;
 };
-const struct event *unused_bpf2go_generate_event __attribute__((unused)); // force golang generation of the struct
+const struct perf_measurement_msg *unused_bpf2go_generate_perf_measurement_msg __attribute__((unused)); // force golang generation of the struct
 
 // Structure for RMID allocation messages
 struct rmid_alloc_msg {
@@ -176,7 +176,7 @@ int handle_rmid_existing(struct rmid_existing_args *ctx) {
 
 SEC("tracepoint/memory_collector/memory_collector_sample")
 int count_events(void *ctx) {
-    struct event e = {
+    struct perf_measurement_msg e = {
         .type = MSG_TYPE_PERF,
     };
     
