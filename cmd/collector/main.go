@@ -178,36 +178,7 @@ func main() {
 	}
 	defer objs.Close()
 
-	// Create RMID tracker
-	rmidTracker := rmid.NewTracker()
-
-	// Attach the tracepoint programs
-	tp, err := link.Tracepoint("memory_collector", "memory_collector_sample", objs.CountEvents, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer tp.Close()
-
-	// Attach RMID free tracepoint first, so we don't get dangling RMIDs
-	rmidFreeTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_free", objs.HandleRmidFree, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rmidFreeTp.Close()
-
-	// Attach RMID allocation tracepoint
-	rmidAllocTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_alloc", objs.HandleRmidAlloc, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rmidAllocTp.Close()
-
-	// Attach RMID existing tracepoint
-	rmidExistingTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_existing", objs.HandleRmidExisting, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	// -- Set up perf rings for ebpf -> userspace --
 	// Create a ReaderOptions with a large Watermark
 	perCPUBufferSize := 16 * os.Getpagesize()
 	opts := perf_ebpf.Options{
@@ -222,7 +193,7 @@ func main() {
 	}
 	defer rd.Close()
 
-	// Create the event openers for hardware counters
+	// -- Create the perf events for ebpf to read hardware counters --
 	commonOpts := unix.PerfEventAttr{
 		Sample:      0,
 		Sample_type: 0,
@@ -264,6 +235,40 @@ func main() {
 	}
 	defer llcOpener.Close()
 
+	// -- Create the aggregator for the hardware counters --
+	aggregatorConfig := aggregate.Config{
+		SlotLength: 1_000_000, // 1ms in nanoseconds
+		WindowSize: 4,         // Keep 4 slots (4ms total)
+		SlotOffset: 0,
+	}
+	aggregator, err := aggregate.NewAggregator(aggregatorConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// -- Track RMIDs --
+	rmidTracker := rmid.NewTracker()
+
+	// Attach RMID free tracepoint first, so we don't get dangling RMIDs
+	rmidFreeTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_free", objs.HandleRmidFree, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rmidFreeTp.Close()
+
+	// Attach RMID allocation tracepoint
+	rmidAllocTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_alloc", objs.HandleRmidAlloc, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rmidAllocTp.Close()
+
+	// Attach RMID existing tracepoint
+	rmidExistingTp, err := link.Tracepoint("memory_collector", "memory_collector_rmid_existing", objs.HandleRmidExisting, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Trigger RMID dump via procfs
 	if err := ioutil.WriteFile("/proc/unvariance_collector", []byte("dump"), 0644); err != nil {
 		log.Fatal(err)
@@ -290,18 +295,14 @@ func main() {
 	// Start the reader
 	reader := rd.Reader()
 
-	log.Println("Waiting for events...")
-
-	// Create aggregator with 100ms slots and 10 slots window
-	aggregatorConfig := aggregate.Config{
-		SlotLength: 1_000_000, // 1ms in nanoseconds
-		WindowSize: 4,         // Keep 4 slots (4ms total)
-		SlotOffset: 0,
-	}
-	aggregator, err := aggregate.NewAggregator(aggregatorConfig)
+	// Attach the perf-counter measurement program
+	tp, err := link.Tracepoint("memory_collector", "memory_collector_sample", objs.CountEvents, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer tp.Close()
+
+	log.Println("Waiting for events...")
 
 	for {
 		select {
