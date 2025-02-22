@@ -175,7 +175,7 @@ int handle_rmid_existing(struct rmid_existing_args *ctx) {
 }
 
 SEC("tracepoint/memory_collector/memory_collector_sample")
-int count_events(void *ctx) {
+int measure_perf(void *ctx) {
     struct perf_measurement_msg e = {
         .type = MSG_TYPE_PERF,
     };

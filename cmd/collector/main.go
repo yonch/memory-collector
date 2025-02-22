@@ -296,7 +296,7 @@ func main() {
 	reader := rd.Reader()
 
 	// Attach the perf-counter measurement program
-	tp, err := link.Tracepoint("memory_collector", "memory_collector_sample", objs.CountEvents, nil)
+	tp, err := link.Tracepoint("memory_collector", "memory_collector_sample", objs.MeasurePerf, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
