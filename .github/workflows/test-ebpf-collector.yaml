@@ -152,6 +152,13 @@ jobs:
         run: |
           sudo ./collector
 
+      - name: Upload parquet file
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-parquet
+          path: cmd/collector/metrics.parquet
+          if-no-files-found: error
+
       - name: Verify parquet output
         working-directory: cmd/collector
         run: |
@@ -164,13 +171,6 @@ jobs:
             echo "Error: metrics.parquet is empty or does not exist"
             exit 1
           fi
-
-      - name: Upload parquet file
-        uses: actions/upload-artifact@v4
-        with:
-          name: metrics-parquet
-          path: cmd/collector/metrics.parquet
-          if-no-files-found: error
 
       - name: Unload kernel module
         working-directory: module
