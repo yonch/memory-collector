@@ -32,13 +32,15 @@ const (
 
 // MetricsRecord represents a single row in our parquet file
 type MetricsRecord struct {
-	StartTime    int64 `parquet:"name=start_time, type=INT64"`
-	EndTime      int64 `parquet:"name=end_time, type=INT64"`
-	RMID         int32 `parquet:"name=rmid, type=INT32"`
-	Cycles       int64 `parquet:"name=cycles, type=INT64"`
-	Instructions int64 `parquet:"name=instructions, type=INT64"`
-	LLCMisses    int64 `parquet:"name=llc_misses, type=INT64"`
-	Duration     int64 `parquet:"name=duration, type=INT64"`
+	StartTime    int64  `parquet:"name=start_time, type=INT64"`
+	EndTime      int64  `parquet:"name=end_time, type=INT64"`
+	RMID         int32  `parquet:"name=rmid, type=INT32"`
+	TGID         int32  `parquet:"name=tgid, type=INT32, encoding=DELTA_BINARY_PACKED"`
+	ProcessName  string `parquet:"name=process_name, type=BYTE_ARRAY, encoding=PLAIN_DICTIONARY"`
+	Cycles       int64  `parquet:"name=cycles, type=INT64"`
+	Instructions int64  `parquet:"name=instructions, type=INT64"`
+	LLCMisses    int64  `parquet:"name=llc_misses, type=INT64"`
+	Duration     int64  `parquet:"name=duration, type=INT64"`
 }
 
 // parquetWriter wraps parquet file writing functionality
@@ -74,10 +76,23 @@ func newParquetWriter(filename string) (*parquetWriter, error) {
 func (pw *parquetWriter) writeTimeSlot(slot *aggregate.TimeSlot, rmidTracker *rmid.Tracker) error {
 	// Write measurements for this slot
 	for rmid, agg := range slot.Aggregations {
+		// Look up metadata for this RMID
+		meta, exists := rmidTracker.GetMetadata(uint32(rmid))
+
+		// Default values if metadata doesn't exist
+		tgid := int32(0)
+		processName := ""
+		if exists {
+			tgid = int32(meta.Tgid)
+			processName = meta.Comm
+		}
+
 		record := &MetricsRecord{
 			StartTime:    int64(slot.StartTime),
 			EndTime:      int64(slot.EndTime),
 			RMID:         int32(rmid),
+			TGID:         tgid,
+			ProcessName:  processName,
 			Cycles:       int64(agg.Cycles),
 			Instructions: int64(agg.Instructions),
 			LLCMisses:    int64(agg.LLCMisses),
