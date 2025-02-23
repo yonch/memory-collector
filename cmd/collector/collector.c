@@ -15,7 +15,7 @@ enum msg_type {
 const enum msg_type *unused_bpf2go_generate_msg_type __attribute__((unused)); // force golang generation of the enum
 
 // Define the event structure that matches the Go side
-struct event {
+struct perf_measurement_msg {
     __u64 timestamp;  // Must be first field for ring buffer ordering
     __u32 type;      // MSG_TYPE_PERF
     __u32 rmid;
@@ -24,7 +24,7 @@ struct event {
     __u64 llc_misses_delta;
     __u64 time_delta_ns;
 };
-const struct event *unused_bpf2go_generate_event __attribute__((unused)); // force golang generation of the struct
+const struct perf_measurement_msg *unused_bpf2go_generate_perf_measurement_msg __attribute__((unused)); // force golang generation of the struct
 
 // Structure for RMID allocation messages
 struct rmid_alloc_msg {
@@ -154,29 +154,29 @@ static void send_rmid_free(void *ctx, __u32 rmid, __u64 timestamp) {
 }
 
 // Handler for RMID allocation events
-SEC("tracepoint/memory_collector/memory_collector_rmid_alloc")
+SEC("tracepoint/memory_collector/rmid_alloc")
 int handle_rmid_alloc(struct rmid_alloc_args *ctx) {
     send_rmid_alloc(ctx, ctx->rmid, ctx->comm, ctx->tgid, ctx->timestamp);
     return 0;
 }
 
 // Handler for RMID deallocation events
-SEC("tracepoint/memory_collector/memory_collector_rmid_free")
+SEC("tracepoint/memory_collector/rmid_free")
 int handle_rmid_free(struct rmid_free_args *ctx) {
     send_rmid_free(ctx, ctx->rmid, ctx->timestamp);
     return 0;
 }
 
 // Handler for existing RMID dump events
-SEC("tracepoint/memory_collector/memory_collector_rmid_existing")
+SEC("tracepoint/memory_collector/rmid_existing")
 int handle_rmid_existing(struct rmid_existing_args *ctx) {
     send_rmid_alloc(ctx, ctx->rmid, ctx->comm, ctx->tgid, ctx->timestamp);
     return 0;
 }
 
-SEC("tracepoint/memory_collector/memory_collector_sample")
-int count_events(void *ctx) {
-    struct event e = {
+SEC("tracepoint/memory_collector/measure_perf_counters")
+int measure_perf(void *ctx) {
+    struct perf_measurement_msg e = {
         .type = MSG_TYPE_PERF,
     };
     

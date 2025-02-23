@@ -91,12 +91,12 @@ static void rdt_timer_tick(struct rdt_state *rdt_state)
         mbm_local_err = -ENODEV;
     }
 
-    trace_memory_collector_resctrl(cpu, now, llc_occupancy_val, llc_occupancy_err, mbm_total_val, mbm_total_err, mbm_local_val, mbm_local_err);
+    trace_rdt_sample(cpu, now, llc_occupancy_val, llc_occupancy_err, mbm_total_val, mbm_total_err, mbm_local_val, mbm_local_err);
 }
 
 static void collect_sample_on_current_cpu(bool is_context_switch)
 {
-    trace_memory_collector_sample(is_context_switch, current->rmid);
+    trace_measure_perf_counters(is_context_switch, current->rmid);
 
     struct cpu_state *state = this_cpu_ptr(cpu_states);
     rdt_timer_tick(&state->rdt_state);
