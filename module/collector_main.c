@@ -13,6 +13,7 @@
 #include <linux/workqueue.h>
 #include "procfs.h"
 #include "rmid_allocator.h"
+#include "sync_timer.h"
 #include "collector.h"
 
 MODULE_LICENSE("GPL");
@@ -46,14 +47,13 @@ static struct procfs_data collector_procfs = {
 };
 
 struct cpu_state {
-    struct hrtimer timer;
-    ktime_t next_expected;
     struct rdt_state rdt_state;
 };
 
 static struct cpu_state __percpu *cpu_states;
+static struct sync_timer collector_timer;
 
-static void cleanup_cpu(int cpu);
+// Forward declare timer callback
 static enum hrtimer_restart timer_fn(struct hrtimer *timer);
 
 // Add global cpu_works declaration after other global variables
@@ -211,7 +211,6 @@ static void init_cpu_state(struct work_struct *work)
     int cpu = smp_processor_id();
     struct work_struct *expected_work = per_cpu_ptr(cpu_works, cpu);
     struct cpu_state *state;
-    ktime_t now;
 
     // Verify this work matches the expected work for this CPU
     if (work != expected_work) {
@@ -228,45 +227,20 @@ static void init_cpu_state(struct work_struct *work)
         pr_err(LOG_PREFIX "Failed to initialize RDT state for CPU %d: error %d\n", cpu, ret);
         return;
     }
-
-    // Initialize and start the timer
-    hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
-    state->timer.function = timer_fn;
-    
-    now = ktime_get();
-    state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
-    state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
-                     (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
-                     NSEC_PER_MSEC * NSEC_PER_MSEC);
-    
-    hrtimer_start(&state->timer, state->next_expected, HRTIMER_MODE_ABS_PINNED);
 }
 
 static void cleanup_cpu(int cpu)
 {
-    struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-
     pr_debug(LOG_PREFIX "cleanup_cpu for CPU %d\n", cpu);
-
-    hrtimer_cancel(&state->timer);
 }
 
 static enum hrtimer_restart timer_fn(struct hrtimer *timer)
 {
-    struct cpu_state *state = container_of(timer, struct cpu_state, timer);
-    ktime_t now = ktime_get();
-    
     // Collect the sample
     collect_sample_on_current_cpu(false);
     
-    // Schedule next timer
-    state->next_expected = ktime_add_ns(now, NSEC_PER_MSEC);
-    state->next_expected = ktime_set(ktime_to_ns(state->next_expected) / NSEC_PER_SEC,
-                     (ktime_to_ns(state->next_expected) % NSEC_PER_SEC) /
-                     NSEC_PER_MSEC * NSEC_PER_MSEC);
-    
-    hrtimer_set_expires(timer, state->next_expected);
-    return HRTIMER_RESTART;
+    // Let the sync timer module handle the restart
+    return sync_timer_restart(timer, &collector_timer);
 }
 
 // Add this function after the other RMID-related functions
@@ -398,13 +372,6 @@ static int __init memory_collector_init(void)
         return -ENOMEM;
     }
 
-    // Initialize the cpu_states so we can clean up safely if an error occurs
-    for_each_possible_cpu(cpu) {
-        struct cpu_state *state = per_cpu_ptr(cpu_states, cpu);
-        hrtimer_init(&state->timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
-        state->timer.function = timer_fn;
-    }
-
     // Create workqueue first
     collector_wq = alloc_workqueue("memory_collector_wq", 0, 0);
     if (!collector_wq) {
@@ -428,14 +395,14 @@ static int __init memory_collector_init(void)
         queue_work_on(cpu, collector_wq, work);
     }
 
-    // Wait for all CPU initialization to complete
+    // Wait for all initialization work to complete
     flush_workqueue(collector_wq);
 
     // Initialize RMID allocator after all CPUs are initialized
     ret = detect_and_init_rmid_allocator();
     if (ret) {
         pr_err(LOG_PREFIX "Failed to initialize RMID allocator\n");
-        goto err_cleanup_cpu_states;
+        goto err_free_works;
     }
 
     // Initialize tracepoints
@@ -456,17 +423,23 @@ static int __init memory_collector_init(void)
     assign_rmids_to_leaders();    // First assign RMIDs to group leaders
     propagate_leader_rmids();     // Then propagate to all threads
 
+    // Initialize sync timer last
+    ret = sync_timer_init(&collector_timer, timer_fn, NSEC_PER_MSEC);
+    if (ret) {
+        pr_err(LOG_PREFIX "Failed to initialize sync timer: %d\n", ret);
+        goto err_cleanup_procfs;
+    }
+
     pr_info(LOG_PREFIX "module loaded\n");
     return 0;
 
+err_cleanup_procfs:
+    procfs_cleanup(&collector_procfs);
 err_cleanup_tracepoints:
     cleanup_tracepoints();
 err_cleanup_rmid:
     cleanup_rmid_allocator(&rmid_allocator);
-err_cleanup_cpu_states:
-    for_each_possible_cpu(cpu) {
-        cleanup_cpu(cpu);
-    }
+err_free_works:
     free_percpu(cpu_works);
 err_destroy_workqueue:
     destroy_workqueue(collector_wq);
@@ -480,6 +453,9 @@ static void __exit memory_collector_exit(void)
     int cpu;
 
     pr_info(LOG_PREFIX "unloading module\n");
+
+    // Clean up sync timer first
+    sync_timer_destroy(&collector_timer);
 
     // Clean up procfs interface
     procfs_cleanup(&collector_procfs);

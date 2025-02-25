@@ -36,7 +36,60 @@ cd module
 make
 ```
 
-This will create `build/collector.ko` and `build/rmid_allocator_test_module.ko`.
+This will create:
+- `build/collector.ko` - Main collector module
+- `build/rmid_allocator_test_module.ko` - RMID allocator test module
+- `build/procfs_test_module.ko` - procfs test module
+- `build/sync_timer_test_module.ko` - Sync timer test module
+- `build/sync_timer_benchmark_module.ko` - Sync timer benchmark module
+
+## Components
+
+### Sync Timer Module
+
+The sync timer module provides synchronized high-resolution timers across all CPUs. Key features:
+
+- Synchronized timer ticks at regular intervals on all CPUs
+- Configurable interval with nanosecond precision
+- Automatic alignment to interval boundaries
+- Comprehensively benchmarked
+
+Usage example:
+
+```c
+#include "sync_timer.h"
+
+struct sync_timer timer;
+
+static enum hrtimer_restart timer_callback(struct hrtimer *timer)
+{
+    // Handle timer tick
+    return sync_timer_restart(timer, &timer);
+}
+
+// Initialize timers
+sync_timer_init(&timer, timer_callback, NSEC_PER_MSEC);  // 1ms interval
+
+// Clean up
+sync_timer_destroy(&timer);
+```
+
+### RMID Allocator
+
+The RMID allocator manages Resource Monitoring IDs for Intel RDT. Features:
+
+- Dynamic RMID allocation and freeing
+- Minimum free time enforcement
+- Per-RMID tracking of process info
+- Tracepoint integration
+
+### Procfs Interface
+
+The procfs module provides a simple interface for triggering data dumps:
+
+- Write-only procfs entries
+- Configurable dump callback
+- Simple command parsing
 
 ## Testing
 
@@ -44,24 +97,28 @@ The module includes several test components:
 
 ### Unit Tests
 
-The RMID allocator has a dedicated test module (`rmid_allocator_test_module.ko`) that verifies:
-- Initialization and cleanup
-- RMID allocation and exhaustion
-- RMID freeing and minimum free time enforcement
-- RMID info retrieval and status checking
+1. **RMID Allocator Tests** (`rmid_allocator_test_module.ko`)
+   - Initialization and cleanup
+   - RMID allocation and exhaustion
+   - RMID freeing and minimum free time enforcement
+   - RMID info retrieval and status checking
 
-To run the unit tests:
+2. **Procfs Tests** (`procfs_test_module.ko`)
+   - Entry creation and removal
+   - Command parsing
+   - Callback invocation
+
+3. **Sync Timer Tests** (`sync_timer_test.ko`)
+   - Timer initialization and cleanup
+   - Synchronized tick verification
+   - Missed tick detection
+   - Cross-CPU synchronization
+
+To run all unit tests:
 
 ```bash
 make test
 ```
-
-The test script:
-1. Builds the test module
-2. Loads it using `insmod`
-3. Collects and parses test results from kernel logs
-4. Provides a summary of passed/failed tests
-5. Unloads the module
 
 ### Integration Tests
 
@@ -70,6 +127,7 @@ The main module includes integration tests that verify:
 2. RDT capability detection
 3. RMID allocation to processes
 4. Memory monitoring data collection
+5. Timer synchronization
 
 To run integration tests:
 
@@ -77,14 +135,56 @@ To run integration tests:
 ./test_module.sh
 ```
 
+### Timer Benchmarks
+
+The sync timer module includes comprehensive benchmarking capabilities to measure timer precision under various system loads:
+
+1. **Basic Benchmarking**
+   ```bash
+   cd module
+   ./benchmark_sync_timer.sh
+   ```
+   This outputs JSON-formatted results including:
+   - Total samples collected
+   - Minimum/maximum/mean timer deltas
+   - Standard deviation of timer deltas
+   - Number of missed ticks
+
+2. **Stress Testing**
+   ```bash
+   cd module
+   ./benchmark_sync_timer_stress.sh
+   ```
+   This runs benchmarks under various stress conditions:
+   - CPU and scheduler stress (matrix multiplication)
+   - Memory and cache contention (75% memory usage)
+   - Interrupt generation (1000Hz timer interrupts)
+   - I/O and system call pressure
+   - Lock contention (bus locks and mutexes)
+
+   Results are output in CSV format with columns:
+   - Test name
+   - Sample count
+   - Min/max/mean timer deltas (ns)
+   - Standard deviation (ns)
+   - Missed ticks
+
+3. **CI/CD Integration**
+   The GitHub Actions workflow includes benchmark support:
+   - Triggered manually with `run-benchmarks` input
+   - Runs full stress test suite
+   - Uploads results as artifacts
+   - Configurable instance type for testing
+
 ### CI/CD Testing
 
 The module is automatically tested on push to main branch and on pull requests using GitHub Actions. The workflow:
 - Runs in a privileged Ubuntu 22.04 container
 - Installs necessary build tools and kernel headers
-- Builds both modules
-- Runs unit tests via `test_rmid_allocator.sh`
-- Runs integration tests via `test_module.sh`
+- Builds all modules
+- Runs unit tests for each component
+- Runs integration tests
+- Optionally runs timer benchmarks
 - Checks kernel logs for errors and warnings
 - Fails if any tests fail or if critical errors are found
 

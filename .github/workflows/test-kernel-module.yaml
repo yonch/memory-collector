@@ -7,6 +7,11 @@ on:
         required: false
         default: 'm7i.metal-24xl'
         type: string
+      run-benchmarks:
+        description: 'Run sync timer benchmarks'
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -58,7 +63,7 @@ jobs:
   test-module:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
-    timeout-minutes: 2  # Add timeout in case system hangs
+    timeout-minutes: ${{ inputs.run-benchmarks == true && 5 || 2 }}  # Add timeout in case system hangs
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -160,6 +165,46 @@ jobs:
             exit 1
           fi
 
+      - name: Run sync timer tests
+        id: sync-timer-test
+        continue-on-error: true
+        working-directory: module
+        run: |
+          echo "Running sync timer unit tests..."
+          chmod +x test_sync_timer.sh
+          ./test_sync_timer.sh
+          
+          # Check test results from dmesg
+          echo "Test output from dmesg:"
+          dmesg | grep "sync_timer_test" || true
+          dmesg | grep "test_result:" || true
+
+          # Fail if any test failed
+          if dmesg | grep -q "test_result:.*:fail"; then
+            echo "sync timer tests failed"
+            exit 1
+          fi
+
+      - name: Install stress tools
+        if: ${{ inputs.run-benchmarks }}
+        run: |
+          sudo apt-get install -y stress-ng jq
+
+      - name: Run benchmarks
+        if: ${{ inputs.run-benchmarks }}
+        working-directory: module
+        run: |
+          ./benchmark_sync_timer_stress.sh > benchmark_results.csv
+          echo "Benchmark results:"
+          cat benchmark_results.csv
+
+      - name: Upload benchmark results
+        if: ${{ inputs.run-benchmarks }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: module/benchmark_results.csv
+
       - name: Check dmesg on RMID test failure
         if: steps.rmid-allocator-test.outcome == 'failure'
         run: |
@@ -171,6 +216,13 @@ jobs:
         if: steps.procfs-test.outcome == 'failure'
         run: |
           echo "procfs tests failed, showing last kernel messages:"
+          sudo dmesg | tail -n 100
+          exit 1
+
+      - name: Check dmesg on sync timer test failure
+        if: steps.sync-timer-test.outcome == 'failure'
+        run: |
+          echo "sync timer tests failed, showing last kernel messages:"
           sudo dmesg | tail -n 100
           exit 1
 
@@ -199,16 +251,12 @@ jobs:
 
           echo "CPU RDT features (head):"
           grep -E "cat_l3|cdp_l3|cqm_occup_llc|cqm_mbm_total|cqm_mbm_local" /proc/cpuinfo | head || true
-          
-          # we do not unmount, maybe mounting affects the intel_cqm checks below
-          #sudo umount /sys/fs/resctrl || true           
       
       - name: Load and test module
         id: load-and-test-module
         continue-on-error: true
         working-directory: module
         run: |
-
           # Check undefined symbols
           sudo modinfo -F depends build/collector.ko
           sudo objdump -d build/collector.ko | grep undefined || true
