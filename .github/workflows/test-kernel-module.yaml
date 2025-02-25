@@ -63,7 +63,7 @@ jobs:
   test-module:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
-    timeout-minutes: 2  # Add timeout in case system hangs
+    timeout-minutes: ${{ inputs.run_benchmarks == true && 5 || 2 }}  # Add timeout in case system hangs
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -188,7 +188,7 @@ jobs:
       - name: Install stress tools
         if: ${{ inputs.run-benchmarks }}
         run: |
-          sudo apt-get install -y stress-ng
+          sudo apt-get install -y stress-ng jq
 
       - name: Run benchmarks
         if: ${{ inputs.run-benchmarks }}
