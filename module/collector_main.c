@@ -27,6 +27,12 @@ MODULE_VERSION("1.0");
 #define EMULATED_MAX_RMID 512
 #define CLOSID_CATCHALL 0
 
+// Global RMID allocator and lock
+static struct rmid_alloc rmid_allocator;
+static spinlock_t rmid_lock;
+
+extern void dump_existing_rmids(void);
+
 // Forward declarations of new functions
 static void assign_rmids_to_leaders(void);
 static void propagate_leader_rmids(void);
@@ -50,6 +56,80 @@ static struct work_struct __percpu *cpu_works;
 static struct workqueue_struct *collector_wq;
 
 static bool rdt_hardware_support = false;
+
+/*
+ * Assign RMID to a task
+ * If task is a thread group leader, allocates a new RMID if needed
+ * If task is a thread, copies RMID from group leader
+ */
+static void assign_rmid_to_task(struct task_struct *task)
+{
+    struct task_struct *group_leader;
+    u32 rmid;
+    unsigned long flags;
+
+    if (!task)
+        return;
+
+    group_leader = task->group_leader;
+    if (!group_leader)
+        return;
+
+    // If this is not the group leader, just copy the leader's RMID
+    if (task != group_leader) {
+        task->rmid = group_leader->rmid;
+        return;
+    }
+
+    // First check without lock
+    if (group_leader->rmid)
+        return;  // Leader already has an RMID
+
+    // We do not assign RMIDs to kernel threads
+    if ((group_leader->mm == NULL) || (group_leader->flags & PF_KTHREAD))
+        return;
+
+    // No RMID assigned to leader, need to allocate one
+    spin_lock_irqsave(&rmid_lock, flags);
+
+    // Recheck after acquiring lock
+    if (!group_leader->rmid) {
+        // Allocate new RMID for the process
+        rmid = rmid_alloc(&rmid_allocator, group_leader->comm, group_leader->tgid, ktime_get_ns());
+        group_leader->rmid = rmid;
+        // Note: if allocation fails, leader->rmid remains 0
+    }
+
+    spin_unlock_irqrestore(&rmid_lock, flags);
+}
+
+/*
+ * Dump information about all allocated RMIDs
+ * Called from procfs write handler
+ */
+void dump_existing_rmids(void)
+{
+    unsigned long flags;
+    u32 i;
+    struct rmid_info *info;
+
+    for (i = 1; i <= rmid_allocator.max_rmid; i++) {
+        // Lock for each element to avoid starving the write path
+        spin_lock_irqsave(&rmid_lock, flags);
+        
+        info = rmid_get_info(&rmid_allocator, i);
+        if (info && rmid_is_allocated(&rmid_allocator, i)) {
+            trace_rmid_existing(
+                info->rmid,
+                info->comm,
+                info->tgid,
+                ktime_get_ns()
+            );
+        }
+        
+        spin_unlock_irqrestore(&rmid_lock, flags);
+    }
+}
 
 /*
  * Read memory bandwidth counter for given RMID and output to trace
@@ -211,14 +291,20 @@ static void probe_sched_process_fork(void *data, struct task_struct *parent, str
 static void probe_sched_process_free(void *data, struct task_struct *task)
 {
     struct task_struct *leader = task->group_leader;
+    unsigned long flags;
     u32 rmid;
 
     if (!leader || task != leader)
         return;  // Only free RMID when group leader is freed
 
     rmid = leader->rmid;
-    if (rmid)
-        rmid_free(rmid);
+    if (rmid) {
+        spin_lock_irqsave(&rmid_lock, flags);
+
+        rmid_free(&rmid_allocator, rmid, ktime_get_ns());
+
+        spin_unlock_irqrestore(&rmid_lock, flags);
+    }
 }
 
 // Tracepoint probe registration structures
@@ -371,7 +457,7 @@ static int __init memory_collector_init(void)
 err_cleanup_tracepoints:
     cleanup_tracepoints();
 err_cleanup_rmid:
-    cleanup_rmid_allocator();
+    cleanup_rmid_allocator(&rmid_allocator);
 err_cleanup_cpu_states:
     for_each_possible_cpu(cpu) {
         cleanup_cpu(cpu);
@@ -417,7 +503,7 @@ static void __exit memory_collector_exit(void)
     }
 
     // Clean up RMID allocator
-    cleanup_rmid_allocator();
+    cleanup_rmid_allocator(&rmid_allocator);
 
     // Free per-CPU state
     free_percpu(cpu_states);
@@ -432,8 +518,12 @@ static void __exit memory_collector_exit(void)
 static int detect_and_init_rmid_allocator(void)
 {
     int cpu;
+    int ret;
     u32 min_max_rmid = U32_MAX;
     struct cpu_state *state;
+
+    // Initialize RMID lock
+    spin_lock_init(&rmid_lock);
 
     // Find minimum max_rmid across all CPUs
     for_each_possible_cpu(cpu) {
@@ -452,7 +542,13 @@ static int detect_and_init_rmid_allocator(void)
     }
 
     // Initialize allocator structure with spinlock
-    return init_rmid_allocator(min_max_rmid);
+    ret = init_rmid_allocator(&rmid_allocator, min_max_rmid, 2 * NSEC_PER_MSEC);
+    if (ret) {
+        pr_err(LOG_PREFIX "Failed to initialize RMID allocator\n");
+        return ret;
+    }
+
+    return 0;
 }
 
 /*

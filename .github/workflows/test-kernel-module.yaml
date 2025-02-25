@@ -120,6 +120,33 @@ jobs:
 
           ls -l build/collector.ko
 
+      - name: Run RMID allocator tests
+        id: rmid-allocator-test
+        continue-on-error: true
+        working-directory: module
+        run: |
+          echo "Running RMID allocator unit tests..."
+          chmod +x test_rmid_allocator.sh
+          ./test_rmid_allocator.sh
+          
+          # Check test results from dmesg
+          echo "Test output from dmesg:"
+          dmesg | grep "rmid_allocator_test" || true
+          dmesg | grep "test_result:" || true
+
+          # Fail if any test failed
+          if dmesg | grep -q "test_result:.*:fail"; then
+            echo "RMID allocator tests failed"
+            exit 1
+          fi
+
+      - name: Check dmesg on RMID test failure
+        if: steps.rmid-allocator-test.outcome == 'failure'
+        run: |
+          echo "RMID allocator tests failed, showing last kernel messages:"
+          sudo dmesg | tail -n 100
+          exit 1
+
       - name: Check RDT Capabilities
         run: |
           sudo mkdir -p /sys/fs/resctrl || true
