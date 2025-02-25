@@ -15,7 +15,7 @@ run_benchmark() {
     
     if [ -n "$stress_cmd" ]; then
         log "Starting stress: $stress_cmd"
-        eval "$stress_cmd" &
+        $stress_cmd &
         stress_pid=$!
         sleep 2  # Let the stress command ramp up
     fi
@@ -27,7 +27,8 @@ run_benchmark() {
 
     # Kill stress if it was started
     if [ -n "$stress_pid" ]; then
-        kill $stress_pid 2>/dev/null
+        pkill -TERM -P $stress_pid 2>/dev/null
+        kill -9 $stress_pid 2>/dev/null
         wait $stress_pid 2>/dev/null
     fi
 
