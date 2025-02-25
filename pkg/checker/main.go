@@ -417,12 +417,6 @@ func readFileString(path string) (string, error) {
 func mountResctrl() bool {
 	if !isIntelRdtMounted() {
 		fmt.Println("Resctrl not mounted, hence mounting it")
-		// mount -t resctrl resctrl /sys/fs/resctrl
-		// Below steps not needed now
-		// if err := os.MkdirAll("/sys/fs/resctrl", 0755); err != nil {
-		// 	fmt.Println("Error occured while creating /sys/fs/resctrl directory")
-		//     return false
-		// }
 		if err := exec.Command("mount", "-t", "resctrl", "resctrl", "/sys/fs/resctrl").Run(); err != nil {
 			return false
 		}
