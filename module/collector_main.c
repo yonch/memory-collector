@@ -31,14 +31,19 @@ MODULE_VERSION("1.0");
 static struct rmid_alloc rmid_allocator;
 static spinlock_t rmid_lock;
 
-extern void dump_existing_rmids(void);
-
 // Forward declarations of new functions
 static void assign_rmids_to_leaders(void);
 static void propagate_leader_rmids(void);
 static void reset_cpu_rmid(void *info);
 static int detect_and_init_rmid_allocator(void);
 static void rdt_timer_tick(struct rdt_state *rdt_state);
+static void dump_existing_rmids(void);
+
+// Global procfs data
+static struct procfs_data collector_procfs = {
+    .name = "unvariance_collector",
+    .dump_callback = dump_existing_rmids,
+};
 
 struct cpu_state {
     struct hrtimer timer;
@@ -441,7 +446,7 @@ static int __init memory_collector_init(void)
     }
 
     // Initialize procfs interface
-    ret = init_procfs();
+    ret = procfs_init(&collector_procfs);
     if (ret) {
         pr_err(LOG_PREFIX "Failed to initialize procfs interface\n");
         goto err_cleanup_tracepoints;
@@ -477,7 +482,7 @@ static void __exit memory_collector_exit(void)
     pr_info(LOG_PREFIX "unloading module\n");
 
     // Clean up procfs interface
-    cleanup_procfs();
+    procfs_cleanup(&collector_procfs);
 
     // Clean up per-CPU resources
     for_each_possible_cpu(cpu) {

@@ -140,10 +140,37 @@ jobs:
             exit 1
           fi
 
+      - name: Run procfs tests
+        id: procfs-test
+        continue-on-error: true
+        working-directory: module
+        run: |
+          echo "Running procfs unit tests..."
+          chmod +x test_procfs.sh
+          ./test_procfs.sh
+          
+          # Check test results from dmesg
+          echo "Test output from dmesg:"
+          dmesg | grep "procfs_test" || true
+          dmesg | grep "test_result:" || true
+
+          # Fail if any test failed
+          if dmesg | grep -q "test_result:.*:fail"; then
+            echo "procfs tests failed"
+            exit 1
+          fi
+
       - name: Check dmesg on RMID test failure
         if: steps.rmid-allocator-test.outcome == 'failure'
         run: |
           echo "RMID allocator tests failed, showing last kernel messages:"
+          sudo dmesg | tail -n 100
+          exit 1
+
+      - name: Check dmesg on procfs test failure
+        if: steps.procfs-test.outcome == 'failure'
+        run: |
+          echo "procfs tests failed, showing last kernel messages:"
           sudo dmesg | tail -n 100
           exit 1
 
