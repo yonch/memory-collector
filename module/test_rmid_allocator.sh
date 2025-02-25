@@ -28,7 +28,7 @@ trap cleanup EXIT
 
 echo "Building test module..."
 make clean
-make rmid_allocator_test_module.ko
+make rmid_allocator_test
 
 echo "Loading test module..."
 sudo dmesg -c > /dev/null  # Clear dmesg buffer

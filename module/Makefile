@@ -44,6 +44,13 @@ all: | $(BUILD_DIR)
 		CROSS_COMPILE=$(CROSS_COMPILE) \
 		modules
 
+rmid_allocator_test: | $(BUILD_DIR)
+	@echo "Building only RMID allocator test module"
+	$(MAKE) -C $(KDIR) M=$(BUILD_DIR) src=$(PWD) \
+		ARCH=$(ARCH) \
+		CROSS_COMPILE=$(CROSS_COMPILE) \
+		rmid_allocator_test_module.ko
+
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
