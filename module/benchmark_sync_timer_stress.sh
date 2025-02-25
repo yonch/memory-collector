@@ -69,4 +69,9 @@ run_benchmark "syscall_stress" "stress-ng --syscall 4"
 
 # Lock contention
 run_benchmark "lock_stress" "stress-ng --lockbus 4"
-run_benchmark "mutex_stress" "stress-ng --mutex 8" 
+
+# Mutex stress
+# only run if `stress-ng --help` shows --mutex
+if stress-ng --help | grep -q -- "--mutex"; then
+    run_benchmark "mutex_stress" "stress-ng --mutex 8" 
+fi
