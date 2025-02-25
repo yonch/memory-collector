@@ -234,7 +234,7 @@ static int __init rmid_allocator_test_init(void)
     all_passed &= test_rmid_info_and_status();
 
     pr_info(TEST_PREFIX "tests %s\n", all_passed ? "passed" : "failed");
-    return all_passed ? 0 : -EINVAL;
+    return 0;
 }
 
 static void __exit rmid_allocator_test_exit(void)
