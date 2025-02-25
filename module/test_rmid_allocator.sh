@@ -35,43 +35,53 @@ sudo dmesg -c > /dev/null  # Clear dmesg buffer
 sudo insmod build/rmid_allocator_test_module.ko
 
 echo "Collecting test results..."
-dmesg_output=$(sudo dmesg)
+# Get all test results from dmesg and save to file
+dmesg_output="/tmp/rmid_test_$$.txt"
+sudo dmesg > "$dmesg_output"
+
+# Extract just the test results to another file
+test_results="/tmp/rmid_test_results_$$.txt"
+grep "test_result:" "$dmesg_output" > "$test_results"
 
 echo "Unloading test module..."
 sudo rmmod rmid_allocator_test_module || true
 
 # Parse test results
-total_tests=0
-passed_tests=0
-failed_tests=0
+declare -i total_tests=0
+declare -i passed_tests=0
+declare -i failed_tests=0
 
 echo -e "\nTest Results:"
 echo "============="
 
+# Read test results line by line
 while IFS= read -r line; do
-    if [[ $line =~ "test_result:"([^:]+):([^:]+)(:(.*))? ]]; then
-        test_name="${BASH_REMATCH[1]}"
-        result="${BASH_REMATCH[2]}"
-        message="${BASH_REMATCH[4]}"
-        
-        ((total_tests++))
-        
-        if [ "$result" == "pass" ]; then
-            ((passed_tests++))
-            print_color $GREEN "✓ $test_name"
-        else
-            ((failed_tests++))
-            print_color $RED "✗ $test_name"
-            [ ! -z "$message" ] && echo "  Error: $message"
-        fi
+    # Extract test name and result using cut instead of regex
+    test_name=$(echo "$line" | cut -d':' -f2)
+    result=$(echo "$line" | cut -d':' -f3)
+    
+    if [ "$result" = "pass" ]; then
+        print_color $GREEN "✓ $test_name"
+        let passed_tests+=1
+    else
+        message=$(echo "$line" | cut -d':' -f4-)
+        print_color $RED "✗ $test_name"
+        [ ! -z "$message" ] && echo "  Error: $message"
+        let failed_tests+=1
     fi
-done <<< "$dmesg_output"
+    let total_tests+=1
+done < "$test_results"
+
+# Clean up temporary files
+rm -f "$dmesg_output" "$test_results"
 
 echo -e "\nSummary:"
 echo "========"
 echo "Total tests: $total_tests"
 print_color $GREEN "Passed: $passed_tests"
-print_color $RED "Failed: $failed_tests"
+if [ $failed_tests -gt 0 ]; then
+    print_color $RED "Failed: $failed_tests"
+fi
 
 # Exit with failure if any tests failed
 [ $failed_tests -eq 0 ] || exit 1 
