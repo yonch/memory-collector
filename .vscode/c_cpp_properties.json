@@ -1,0 +1,39 @@
+{
+    "configurations": [
+        {
+            "name": "Linux (Container)",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/module",
+                "/usr/src/linux-headers-6.8.0-52-generic/include",
+                "/usr/src/linux-headers-6.8.0-52-generic/arch/x86/include",
+                "/usr/src/linux-headers-6.8.0-52-generic/arch/x86/include/generated",
+                "/usr/src/linux-headers-6.8.0-52-generic/arch/x86/include/uapi",
+                "/usr/src/linux-headers-6.8.0-52-generic/arch/x86/include/generated/uapi",
+                "/usr/src/linux-headers-6.8.0-52-generic"
+            ],
+            "defines": ["__KERNEL__", "MODULE", "CONFIG_X86_CPU_RESCTRL"],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "intelliSenseMode": "linux-gcc-x64"
+        },
+        {
+            "name": "Linux (Host)",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/module",
+                "/usr/src/linux-headers-$(uname -r)/include",
+                "/usr/src/linux-headers-$(uname -r)/arch/x86/include",
+                "/usr/src/linux-headers-$(uname -r)/arch/x86/include/generated",
+                "/usr/src/linux-headers-$(uname -r)/arch/x86/include/uapi",
+                "/usr/src/linux-headers-$(uname -r)/arch/x86/include/generated/uapi",
+                "/usr/src/linux-headers-$(uname -r)"
+            ],
+            "defines": ["__KERNEL__", "MODULE", "CONFIG_X86_CPU_RESCTRL"],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

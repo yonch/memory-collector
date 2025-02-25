@@ -1,8 +1,10 @@
 EXTRA_CFLAGS += -I$(src)
 
 # Define the module name and its source files
-obj-m := collector.o
-collector-objs := memory_collector.o resctrl.o
+obj-m := collector.o rmid_allocator_test_module.o procfs_test_module.o
+collector-objs := collector_main.o rdt.o procfs.o rmid_allocator.o
+rmid_allocator_test_module-objs := rmid_allocator_test.o rmid_allocator.o
+procfs_test_module-objs := procfs_test.o procfs.o
 
 # Always set architecture to x86_64 (not just x86)
 ARCH := x86_64
@@ -43,6 +45,20 @@ all: | $(BUILD_DIR)
 		CROSS_COMPILE=$(CROSS_COMPILE) \
 		modules
 
+rmid_allocator_test: | $(BUILD_DIR)
+	@echo "Building only RMID allocator test module"
+	$(MAKE) -C $(KDIR) M=$(BUILD_DIR) src=$(PWD) \
+		ARCH=$(ARCH) \
+		CROSS_COMPILE=$(CROSS_COMPILE) \
+		rmid_allocator_test_module.ko
+
+procfs_test: | $(BUILD_DIR)
+	@echo "Building only procfs test module"
+	$(MAKE) -C $(KDIR) M=$(BUILD_DIR) src=$(PWD) \
+		ARCH=$(ARCH) \
+		CROSS_COMPILE=$(CROSS_COMPILE) \
+		procfs_test_module.ko
+
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
@@ -54,4 +70,10 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -f Module.symvers Module.markers modules.order
 
-.PHONY: all clean
+test: all
+	@echo "Running RMID allocator tests..."
+	./test_rmid_allocator.sh
+	@echo "Running procfs tests..."
+	./test_procfs.sh
+
+.PHONY: all clean test rmid_allocator_test procfs_test

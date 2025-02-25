@@ -12,6 +12,7 @@ on:
       - main
     paths:
       - module/**
+      - .github/workflows/test-kernel-module.yaml
 
 permissions:
   id-token: write # Required for requesting the JWT
@@ -38,7 +39,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
-          ec2-instance-type: ${{ inputs.instance-type || 'm7i.metal-24xl' }}
+          ec2-instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}  # m7i.metal-24xl for RDT, c5.9xlarge for perf support
           market-type: spot
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
@@ -118,6 +119,60 @@ jobs:
           make
 
           ls -l build/collector.ko
+
+      - name: Run RMID allocator tests
+        id: rmid-allocator-test
+        continue-on-error: true
+        working-directory: module
+        run: |
+          echo "Running RMID allocator unit tests..."
+          chmod +x test_rmid_allocator.sh
+          ./test_rmid_allocator.sh
+          
+          # Check test results from dmesg
+          echo "Test output from dmesg:"
+          dmesg | grep "rmid_allocator_test" || true
+          dmesg | grep "test_result:" || true
+
+          # Fail if any test failed
+          if dmesg | grep -q "test_result:.*:fail"; then
+            echo "RMID allocator tests failed"
+            exit 1
+          fi
+
+      - name: Run procfs tests
+        id: procfs-test
+        continue-on-error: true
+        working-directory: module
+        run: |
+          echo "Running procfs unit tests..."
+          chmod +x test_procfs.sh
+          ./test_procfs.sh
+          
+          # Check test results from dmesg
+          echo "Test output from dmesg:"
+          dmesg | grep "procfs_test" || true
+          dmesg | grep "test_result:" || true
+
+          # Fail if any test failed
+          if dmesg | grep -q "test_result:.*:fail"; then
+            echo "procfs tests failed"
+            exit 1
+          fi
+
+      - name: Check dmesg on RMID test failure
+        if: steps.rmid-allocator-test.outcome == 'failure'
+        run: |
+          echo "RMID allocator tests failed, showing last kernel messages:"
+          sudo dmesg | tail -n 100
+          exit 1
+
+      - name: Check dmesg on procfs test failure
+        if: steps.procfs-test.outcome == 'failure'
+        run: |
+          echo "procfs tests failed, showing last kernel messages:"
+          sudo dmesg | tail -n 100
+          exit 1
 
       - name: Check RDT Capabilities
         run: |
