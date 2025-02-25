@@ -69,7 +69,11 @@ static bool test_rmid_allocation(void)
     const pid_t test_tgid = 1234;
     u64 now = 1000000;  // Start at 1ms
 
-    init_rmid_allocator(&test_allocator, TEST_MAX_RMID, TEST_MIN_FREE_TIME);
+    int result = init_rmid_allocator(&test_allocator, TEST_MAX_RMID, TEST_MIN_FREE_TIME);
+    if (result) {
+        pr_err(TEST_PREFIX "init_rmid_allocator failed: %d\n", result);
+        return false;
+    }
 
     spin_lock_irqsave(&test_lock, flags);
 
