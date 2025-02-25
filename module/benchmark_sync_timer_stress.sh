@@ -15,7 +15,7 @@ run_benchmark() {
     
     if [ -n "$stress_cmd" ]; then
         log "Starting stress: $stress_cmd"
-        $stress_cmd &
+        $stress_cmd 1>&2 2>&2 &
         stress_pid=$!
         sleep 2  # Let the stress command ramp up
     fi
