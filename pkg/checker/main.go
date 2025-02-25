@@ -135,7 +135,7 @@ func CheckResctrlSupport() {
 
 	// Checking for resctrl path
 	fmt.Println("************* RESCTRL INFORMATION *************")
-	fmt.Println("Resctrl Path: %s", info.resctrlPath)
+	fmt.Println("Resctrl Path: ", info.resctrlPath)
 
 	// Checking for CAT info
 	if info.cat != nil {
