@@ -131,7 +131,7 @@ enum hrtimer_restart sync_timer_restart(struct hrtimer *timer,
     struct sync_timer_cpu *cpu_timer;
     ktime_t now;
 
-    if (!timer_data || !timer_data->initialized)
+    if (!timer_data)
         return HRTIMER_NORESTART;
 
     cpu_timer = container_of(timer, struct sync_timer_cpu, timer);
