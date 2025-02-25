@@ -1,8 +1,9 @@
 EXTRA_CFLAGS += -I$(src)
 
 # Define the module name and its source files
-obj-m := collector.o
+obj-m := collector.o rmid_allocator_test_module.o
 collector-objs := collector_main.o rdt.o procfs.o rmid_allocator.o
+rmid_allocator_test_module-objs := rmid_allocator_test.o rmid_allocator.o
 
 # Always set architecture to x86_64 (not just x86)
 ARCH := x86_64
@@ -54,4 +55,8 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -f Module.symvers Module.markers modules.order
 
-.PHONY: all clean
+test: all
+	@echo "Running RMID allocator tests..."
+	./test_rmid_allocator.sh
+
+.PHONY: all clean test
