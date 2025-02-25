@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"reflect"
 
     "github.com/intel/goresctrl/pkg/rdt"
 )
@@ -132,7 +131,7 @@ func CheckResctrlSupport() {
 		fmt.Println("Error occured while fetching RDT info:", err)
 		os.Exit(1)
 	}
-	fmt.Println("%+v\n", info)
+	fmt.Printf("%+v\n", info)
 
 	// Checking for resctrl path
 	fmt.Println("************* RESCTRL INFORMATION *************")
@@ -144,29 +143,29 @@ func CheckResctrlSupport() {
 		if ok {
 			fmt.Println("L2 CAT: Available")
 			fmt.Println("L2 CAT Details:")
-			fmt.Println("%+v\n", l2CatValue)
+			fmt.Printf("%+v\n", l2CatValue)
 		}
 	
 		l3CatValue, ok := info.cat["L3"]
 		if ok {
 			fmt.Println("L3 CAT: Available")
 			fmt.Println("L3 CAT Details:")
-			fmt.Println("%+v\n", l3CatValue)
+			fmt.Printf("%+v\n", l3CatValue)
 		}
 	} else {
 		fmt.Println("CAT feature is unavailable")
 	}
 
 	// Checking for MON
-	if reflect.DeepEqual(info.l3mon, l3MonInfo{}) {
+	if len(info.l3mon.monFeatures) > 0 {
 		fmt.Println("L3 MON feature available: ", info.l3mon.monFeatures)
 	} else {
 		fmt.Println("L3 Monitioring is not available")
 	}
 
 	// Checking for MBA
-	if reflect.DeepEqual(info.mb, mbInfo{}) {
-		fmt.Println("MBA features: ", info.mb)
+	if len(info.mb.cacheIds) > 0 {
+		fmt.Printf("MBA features: %+v\n", info.mb)
 	} else {
 		fmt.Println("MBA features are unavailable")
 	}
