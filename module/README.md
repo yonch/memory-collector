@@ -36,31 +36,57 @@ cd module
 make
 ```
 
-This will create `build/collector.ko`.
+This will create `build/collector.ko` and `build/rmid_allocator_test_module.ko`.
 
 ## Testing
 
-The module includes automated tests that verify its functionality:
+The module includes several test components:
+
+### Unit Tests
+
+The RMID allocator has a dedicated test module (`rmid_allocator_test_module.ko`) that verifies:
+- Initialization and cleanup
+- RMID allocation and exhaustion
+- RMID freeing and minimum free time enforcement
+- RMID info retrieval and status checking
+
+To run the unit tests:
+
+```bash
+make test
+```
+
+The test script:
+1. Builds the test module
+2. Loads it using `insmod`
+3. Collects and parses test results from kernel logs
+4. Provides a summary of passed/failed tests
+5. Unloads the module
+
+### Integration Tests
+
+The main module includes integration tests that verify:
+1. Proper loading and initialization
+2. RDT capability detection
+3. RMID allocation to processes
+4. Memory monitoring data collection
+
+To run integration tests:
 
 ```bash
 ./test_module.sh
 ```
 
-The test script:
-1. Loads the module using `insmod`
-2. Verifies proper loading
-3. Collects trace data using `trace-cmd`
-4. Validates the collected samples
-5. Unloads the module
-
 ### CI/CD Testing
 
-The module is automatically tested on push to main branch using GitHub Actions. The workflow:
-- Runs on bare metal EC2 instances (default: m7i.xlarge)
-- Supports optional RDT testing on m7i.metal-24xl instances
-- Performs multiple load/unload cycles
-- Validates trace data collection
-- Checks RDT capabilities when available
+The module is automatically tested on push to main branch and on pull requests using GitHub Actions. The workflow:
+- Runs in a privileged Ubuntu 22.04 container
+- Installs necessary build tools and kernel headers
+- Builds both modules
+- Runs unit tests via `test_rmid_allocator.sh`
+- Runs integration tests via `test_module.sh`
+- Checks kernel logs for errors and warnings
+- Fails if any tests fail or if critical errors are found
 
 ## Manual Testing
 
