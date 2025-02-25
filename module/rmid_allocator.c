@@ -98,7 +98,7 @@ int init_rmid_allocator(struct rmid_alloc *allocator, u32 max_rmid, u64 min_free
         INIT_LIST_HEAD(&allocator->rmids[i].list);
         allocator->rmids[i].rmid = i;
         allocator->rmids[i].tgid = 0;
-        allocator->rmids[i].last_free_timestamp = 0;  // Initialize to 0 to allow immediate allocation
+        allocator->rmids[i].last_free_timestamp = -min_free_time_ns;  // Initialize to -min_free_time_ns to allow immediate allocation
         if (i != RMID_INVALID) {  // Don't add RMID 0 to free list
             list_add_tail(&allocator->rmids[i].list, &allocator->free_list);
         }
