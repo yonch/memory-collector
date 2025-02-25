@@ -7,7 +7,7 @@ RUNTIME=10  # Runtime in seconds
 
 # Function to extract numeric value from a line
 extract_value() {
-    echo "$1" | grep -o '[0-9]\+' | head -1
+    sed 's/.*: \([0-9]\+\).*/\1/'
 }
 
 # Function to log to stderr
@@ -64,9 +64,6 @@ EOF
 
 # Clean up
 rm -f benchmark_raw.log
-
-log "Results written to benchmark_results.csv"
-log "Raw log available in benchmark_raw.log"
 
 # Print summary
 log
