@@ -27,7 +27,6 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Building test module..."
-make clean
 make rmid_allocator_test
 
 echo "Loading test module..."
