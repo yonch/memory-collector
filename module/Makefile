@@ -1,10 +1,12 @@
 EXTRA_CFLAGS += -I$(src)
 
 # Define the module name and its source files
-obj-m := collector.o rmid_allocator_test_module.o procfs_test_module.o
-collector-objs := collector_main.o rdt.o procfs.o rmid_allocator.o
+obj-m := collector.o rmid_allocator_test_module.o procfs_test_module.o sync_timer_test_module.o sync_timer_benchmark_module.o
+collector-objs := collector_main.o rdt.o procfs.o rmid_allocator.o sync_timer.o
 rmid_allocator_test_module-objs := rmid_allocator_test.o rmid_allocator.o
 procfs_test_module-objs := procfs_test.o procfs.o
+sync_timer_test_module-objs := sync_timer_test.o sync_timer.o
+sync_timer_benchmark_module-objs := sync_timer_benchmark.o sync_timer.o
 
 # Always set architecture to x86_64 (not just x86)
 ARCH := x86_64
@@ -59,6 +61,20 @@ procfs_test: | $(BUILD_DIR)
 		CROSS_COMPILE=$(CROSS_COMPILE) \
 		procfs_test_module.ko
 
+sync_timer_test: | $(BUILD_DIR)
+	@echo "Building only sync timer test module"
+	$(MAKE) -C $(KDIR) M=$(BUILD_DIR) src=$(PWD) \
+		ARCH=$(ARCH) \
+		CROSS_COMPILE=$(CROSS_COMPILE) \
+		sync_timer_test_module.ko
+
+sync_timer_benchmark: | $(BUILD_DIR)
+	@echo "Building only sync timer benchmark module"
+	$(MAKE) -C $(KDIR) M=$(BUILD_DIR) src=$(PWD) \
+		ARCH=$(ARCH) \
+		CROSS_COMPILE=$(CROSS_COMPILE) \
+		sync_timer_benchmark_module.ko
+
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
@@ -75,5 +91,11 @@ test: all
 	./test_rmid_allocator.sh
 	@echo "Running procfs tests..."
 	./test_procfs.sh
+	@echo "Running sync timer tests..."
+	./test_sync_timer.sh
 
-.PHONY: all clean test rmid_allocator_test procfs_test
+benchmark: sync_timer_benchmark
+	@echo "Running sync timer benchmark..."
+	./benchmark_sync_timer.sh
+
+.PHONY: all clean test rmid_allocator_test procfs_test sync_timer_test sync_timer_benchmark benchmark
