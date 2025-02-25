@@ -23,8 +23,6 @@ static void init_cpu_timer(struct work_struct *work)
     ktime_t now;
     int cpu = smp_processor_id();
 
-    pr_debug(LOG_PREFIX "Initializing timer on CPU %d\n", cpu);
-
     cpu_timer = per_cpu_ptr(timer->cpu_timers, cpu);
     
     /* Initialize HR timer */
@@ -34,9 +32,9 @@ static void init_cpu_timer(struct work_struct *work)
     /* Calculate next interval boundary */
     now = ktime_get();
     cpu_timer->next_expected = ktime_add_ns(now, timer->interval_ns);
-    cpu_timer->next_expected = ktime_set(
-        ktime_to_ns(cpu_timer->next_expected) / timer->interval_ns * timer->interval_ns,
-        0);
+    cpu_timer->next_expected = ktime_sub_ns(cpu_timer->next_expected, ktime_to_ns(cpu_timer->next_expected) % timer->interval_ns);
+
+    pr_debug(LOG_PREFIX "Initializing timer on CPU %d, interval: %llu ns, now: %lld ns, next_expected: %lld ns\n", cpu, timer->interval_ns, ktime_to_ns(now), ktime_to_ns(cpu_timer->next_expected));
 
     /* Start the timer */
     hrtimer_start(&cpu_timer->timer, cpu_timer->next_expected, HRTIMER_MODE_ABS_PINNED);
@@ -141,9 +139,7 @@ enum hrtimer_restart sync_timer_restart(struct hrtimer *timer,
 
     /* Calculate next interval boundary */
     cpu_timer->next_expected = ktime_add_ns(now, timer_data->interval_ns);
-    cpu_timer->next_expected = ktime_set(
-        ktime_to_ns(cpu_timer->next_expected) / timer_data->interval_ns * timer_data->interval_ns,
-        0);
+    cpu_timer->next_expected = ktime_sub_ns(cpu_timer->next_expected, ktime_to_ns(cpu_timer->next_expected) % timer_data->interval_ns);
 
     /* Set next expiration time */
     hrtimer_set_expires(timer, cpu_timer->next_expected);
