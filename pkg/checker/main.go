@@ -1,19 +1,18 @@
 package main
 
 import (
-    "fmt"
-    "os"
-    "sync"
-    "strings"
-    "os/exec"
-    "bufio"
+	"bufio"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
+	"sync"
 
-    "github.com/intel/goresctrl/pkg/rdt"
+	"github.com/intel/goresctrl/pkg/rdt"
 )
-
 
 type bitmask uint64
 
@@ -118,13 +117,13 @@ func (i catInfoAll) minCbmBits() uint64 {
 
 func CheckResctrlSupport() {
 	fmt.Println("CheckResctrlSupport invoked")
-    if !mountResctrl(){
-        err := rdt.Initialize("resctrl")
-        if err != nil {
-            fmt.Println("Error:", err)
-            os.Exit(1)
-        } 
-    }
+	if !mountResctrl() {
+		err := rdt.Initialize("resctrl")
+		if err != nil {
+			fmt.Println("Error:", err)
+			os.Exit(1)
+		}
+	}
 	fmt.Println("goresctrl is operational")
 	info, err := getRdtInfo()
 	if err != nil {
@@ -145,7 +144,7 @@ func CheckResctrlSupport() {
 			fmt.Println("L2 CAT Details:")
 			fmt.Printf("%+v\n", l2CatValue)
 		}
-	
+
 		l3CatValue, ok := info.cat["L3"]
 		if ok {
 			fmt.Println("L3 CAT: Available")
@@ -169,7 +168,7 @@ func CheckResctrlSupport() {
 	} else {
 		fmt.Println("MBA features are unavailable")
 	}
-    os.Exit(0)
+	os.Exit(0)
 }
 
 func getRdtInfo() (*resctrlInfo, error) {
@@ -413,23 +412,23 @@ func readFileBitmask(path string) (bitmask, error) {
 func readFileString(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	return strings.TrimSpace(string(data)), err
-} 
+}
 
 func mountResctrl() bool {
-    if !isIntelRdtMounted(){
+	if !isIntelRdtMounted() {
 		fmt.Println("Resctrl not mounted, hence mounting it")
-        // mount -t resctrl resctrl /sys/fs/resctrl
+		// mount -t resctrl resctrl /sys/fs/resctrl
 		// Below steps not needed now
-        // if err := os.MkdirAll("/sys/fs/resctrl", 0755); err != nil {
+		// if err := os.MkdirAll("/sys/fs/resctrl", 0755); err != nil {
 		// 	fmt.Println("Error occured while creating /sys/fs/resctrl directory")
-        //     return false
-        // }
-        if err := exec.Command("mount", "-t", "resctrl", "resctrl", "/sys/fs/resctrl").Run(); err != nil {
-            return false
-        }
-        return true
-    }
-    return true
+		//     return false
+		// }
+		if err := exec.Command("mount", "-t", "resctrl", "resctrl", "/sys/fs/resctrl").Run(); err != nil {
+			return false
+		}
+		return true
+	}
+	return true
 }
 
 // IsIntelRdtMounted give true/false of RDT mounted or not
@@ -500,9 +499,7 @@ func findIntelRdtMountpointDir() (string, error) {
 	return "", NewNotFoundError("Intel RDT")
 }
 
-
-
-func main(){
+func main() {
 	fmt.Println("Initializing goresctrl")
-	CheckResctrlSupport();
+	CheckResctrlSupport()
 }
