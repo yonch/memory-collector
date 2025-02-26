@@ -73,12 +73,12 @@ jobs:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
     timeout-minutes: |
-    ${{ 
-      inputs.run-benchmarks == false && 2 ||
-      inputs.benchmark-duration == '1' && 5 ||
-      inputs.benchmark-duration == '10' && 7 ||
-      inputs.benchmark-duration == '100' && 20 || 7
-    }}  # 5 min base + 0.15 × duration
+      ${{ 
+        inputs.run-benchmarks == false && 2 ||
+        inputs.benchmark-duration == '1' && 5 ||
+        inputs.benchmark-duration == '10' && 7 ||
+        inputs.benchmark-duration == '100' && 20 || 7
+      }}  # 5 min base + 0.15 × duration
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
