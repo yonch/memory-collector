@@ -75,8 +75,6 @@ sleep "$DURATION"
 # Stop benchmark and tracing
 log "Stopping trace..."
 sudo trace-cmd stop
-log "Unloading module..."
-sudo rmmod sync_timer_benchmark_module
 
 # Kill stress if it was started
 if [ -n "$STRESS_PID" ]; then
@@ -88,6 +86,9 @@ fi
 # Extract trace data
 log "Extracting trace data..."
 sudo trace-cmd extract -o "$TRACE_FILE"
+
+log "Unloading module..."
+sudo rmmod sync_timer_benchmark_module
 
 # Process trace data
 log "Processing trace data..."
