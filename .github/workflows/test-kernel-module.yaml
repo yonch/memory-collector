@@ -192,13 +192,13 @@ jobs:
             stress-ng \
             trace-cmd
 
-      - name: Set up home directory
-        run: |
-          # Create home directory if it doesn't exist
-          sudo mkdir -p /home/runner
-          sudo chmod 777 /home/runner
-          # Set HOME environment variable
-          echo "HOME=/home/runner" >> $GITHUB_ENV
+      # - name: Set up home directory
+      #   run: |
+      #     # Create home directory if it doesn't exist
+      #     sudo mkdir -p /home/runner
+      #     sudo chmod 777 /home/runner
+      #     # Set HOME environment variable
+      #     echo "HOME=/home/runner" >> $GITHUB_ENV
 
       # - name: Set up R
       #   if: ${{ inputs.run-benchmarks }}
@@ -218,21 +218,12 @@ jobs:
           echo "Benchmark results (head -n 35):"
           head -n 35 benchmark_results.csv
 
-      - name: Visualize benchmark results
-        if: ${{ inputs.run-benchmarks }}
-        uses: docker://rocker/tidyverse:latest
-        with:
-          entrypoint: sh
-          args: -c "cd /github/workspace/module && Rscript ./visualize_benchmark.R -I 'benchmark_results.csv' -o 'benchmark_results.pdf'"
-
       - name: Upload benchmark results
         if: ${{ inputs.run-benchmarks }}
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
-          path: |
-            module/benchmark_results.csv
-            module/benchmark_results.pdf
+          path: module/benchmark_results.csv
 
       - name: Check dmesg on RMID test failure
         if: steps.rmid-allocator-test.outcome == 'failure'
@@ -337,7 +328,30 @@ jobs:
             echo "*** Run $i:"
             ./test_module.sh
           done
-
+  
+  plot-benchmark:
+    needs: [test-module]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ inputs.run-benchmarks }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results
+          path: module/benchmark_results.csv
+      - name: Visualize benchmark results
+        uses: docker://rocker/tidyverse:latest
+        with:
+          entrypoint: sh
+          args: -c "cd /github/workspace/module && Rscript ./visualize_benchmark.R -I 'benchmark_results.csv' -o 'benchmark_results.pdf'"
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-pdf
+          path: module/benchmark_results.pdf
 
   stop-runner:
     name: Stop EC2 runner
