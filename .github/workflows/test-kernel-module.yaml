@@ -339,12 +339,12 @@ jobs:
         uses: docker://rocker/tidyverse:latest
         with:
           entrypoint: sh
-          args: -c "cd /github/workspace/module && Rscript ./visualize_benchmark.R -i 'results/benchmark_results.csv' -o 'benchmark_results.pdf'"
+          args: -c "cd /github/workspace/module && mkdir -p plots && Rscript ./visualize_benchmark.R -i 'results/benchmark_results.csv' -p 'plots/benchmark_${{ inputs.benchmark-duration }}_${{ inputs.instance-type }}_'"
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-plots
-          path: module/plots/benchmark_*.pdf
+          path: module/plots/*.pdf
           if-no-files-found: error
 
   stop-runner:
