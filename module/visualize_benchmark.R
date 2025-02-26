@@ -48,12 +48,10 @@ data <- data %>%
 # Common theme settings
 base_theme <- theme_minimal() +
     theme(
-        legend.position="right",
         panel.grid.minor=element_blank(),
         strip.text=element_text(size=12, face="bold"),
         plot.title=element_text(size=14, face="bold"),
-        plot.subtitle=element_text(size=10),
-        aspect.ratio=9/16
+        plot.subtitle=element_text(size=10)
     )
 
 # Color palette
@@ -71,7 +69,13 @@ p_vertical <- ggplot(data, aes(x=relative_time)) +
          subtitle="Points show mean delay, bands show min-max range") +
     base_theme +
     experiment_colors +
-    experiment_fills
+    experiment_fills +
+    theme(
+        legend.position="none",
+        panel.spacing=unit(1, "lines"),
+        strip.text.x=element_text(margin=margin(b=10)),
+        plot.margin=margin(t=10, r=10, b=10, l=10)
+    )
 
 ggsave(paste0(opt$prefix, "_vertical.pdf"), p_vertical, width=opt$width, height=opt$height)
 
@@ -86,7 +90,13 @@ p_horizontal <- ggplot(data, aes(x=relative_time)) +
          subtitle="Points show mean delay, bands show min-max range") +
     base_theme +
     experiment_colors +
-    experiment_fills
+    experiment_fills +
+    theme(
+        legend.position="none",
+        panel.spacing=unit(1, "lines"),
+        strip.text.x=element_text(margin=margin(b=10)),
+        plot.margin=margin(t=10, r=10, b=10, l=10)
+    )
 
 ggsave(paste0(opt$prefix, "_horizontal.pdf"), p_horizontal, width=opt$width, height=opt$height)
 
@@ -105,7 +115,13 @@ p_short_vertical <- ggplot(data_short, aes(x=relative_time)) +
          subtitle="Points show mean delay, bands show min-max range") +
     base_theme +
     experiment_colors +
-    experiment_fills
+    experiment_fills +
+    theme(
+        legend.position="none",
+        panel.spacing=unit(1, "lines"),
+        strip.text.x=element_text(margin=margin(b=10)),
+        plot.margin=margin(t=10, r=10, b=10, l=10)
+    )
 
 ggsave(paste0(opt$prefix, "_short_vertical.pdf"), p_short_vertical, width=opt$width, height=opt$height)
 
@@ -120,7 +136,13 @@ p_short_horizontal <- ggplot(data_short, aes(x=relative_time)) +
          subtitle="Points show mean delay, bands show min-max range") +
     base_theme +
     experiment_colors +
-    experiment_fills
+    experiment_fills +
+    theme(
+        legend.position="none",
+        panel.spacing=unit(1, "lines"),
+        strip.text.x=element_text(margin=margin(b=10)),
+        plot.margin=margin(t=10, r=10, b=10, l=10)
+    )
 
 ggsave(paste0(opt$prefix, "_short_horizontal.pdf"), p_short_horizontal, width=opt$width, height=opt$height)
 
@@ -137,17 +159,22 @@ metric_labels <- c(
     range_us = "Delay Range Distribution"
 )
 
-p_density <- ggplot(density_data, aes(x=value, y=experiment, fill=experiment)) +
-    geom_density_ridges(alpha=0.6, scale=2) +
-    facet_wrap(~metric, scales="free_x", ncol=1, 
+p_density <- ggplot(density_data, aes(x=value, color=experiment)) +
+    geom_density(linewidth=1) +
+    facet_wrap(~metric, nrow=1, scales="fixed", 
                labeller=labeller(metric=metric_labels)) +
+    scale_x_continuous(limits=c(0, 500)) +
     labs(x="Delay (μs)",
-         y="Experiment",
+         y="Density",
          title="Sync Timer Delay Distributions",
-         subtitle="Density plots showing delay characteristics across experiments") +
+         subtitle="Probability density functions for different delay metrics") +
     base_theme +
-    experiment_fills +
-    theme(legend.position="none")
+    experiment_colors +
+    theme(
+        panel.spacing=unit(2, "lines"),
+        strip.text.x=element_text(margin=margin(b=10)),
+        plot.margin=margin(t=10, r=10, b=10, l=10)
+    )
 
 ggsave(paste0(opt$prefix, "_density.pdf"), p_density, width=opt$width, height=opt$height)
 
