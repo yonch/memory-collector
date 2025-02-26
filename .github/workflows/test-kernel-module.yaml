@@ -5,12 +5,12 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'm7i.metal-24xl'
+        default: 'm7i.xlarge'
         type: string
       run-benchmarks:
         description: 'Run sync timer benchmarks'
-        required: false
-        default: false
+        required: true
+        default: true
         type: boolean
   push:
     branches:
