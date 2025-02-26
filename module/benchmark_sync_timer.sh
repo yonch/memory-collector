@@ -78,7 +78,7 @@ sudo trace-cmd stop
 
 # Kill stress if it was started
 if [ -n "$STRESS_PID" ]; then
-    pkill -TERM -P "$STRESS_PID" 2>/dev/null
+    pkill -TERM -P "$STRESS_PID" 2>/dev/null || true
     kill -9 "$STRESS_PID" 2>/dev/null || true
     wait "$STRESS_PID" 2>/dev/null || true
 fi
