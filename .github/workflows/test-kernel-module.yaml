@@ -185,10 +185,17 @@ jobs:
             exit 1
           fi
 
-      - name: Install stress tools
+      - name: Install benchmark dependencies
         if: ${{ inputs.run-benchmarks }}
         run: |
-          sudo apt-get install -y stress-ng jq
+          sudo apt-get install -y \
+            stress-ng \
+            trace-cmd \
+            r-base \
+            r-cran-ggplot2 \
+            r-cran-dplyr \
+            r-cran-tidyr \
+            r-cran-optparse
 
       - name: Run benchmarks
         if: ${{ inputs.run-benchmarks }}

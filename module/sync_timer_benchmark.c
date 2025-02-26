@@ -4,8 +4,14 @@
 #include <linux/smp.h>
 #include <linux/percpu.h>
 #include <linux/math64.h>
+#include <linux/tracepoint.h>
 #include "sync_timer.h"
 #include "collector.h"
+#include "sync_timer_benchmark.h"
+
+/* Define tracepoint for benchmark statistics */
+#define CREATE_TRACE_POINTS
+#include "sync_timer_benchmark.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Memory Collector Project");
@@ -14,6 +20,14 @@ MODULE_VERSION("1.0");
 
 #define BENCH_PREFIX "sync_timer_bench: "
 #define BENCH_INTERVAL_NS (NSEC_PER_MSEC)  // 1ms interval
+#define BUFFER_SIZE 128  // Size of circular buffer
+#define STATS_LAG 100   // Process stats 100 ticks behind to ensure all CPUs have written
+#define STATS_CPU 0     // CPU responsible for computing statistics
+
+struct sample_entry {
+    u64 delta;          /* Time delta from expected */
+    bool valid;         /* Whether this entry contains valid data */
+};
 
 struct timer_stats {
     u64 min_delta;           /* Minimum time delta from expected */
@@ -22,13 +36,62 @@ struct timer_stats {
     u64 sum_delta_squared;   /* Sum of squared deltas for std dev */
     u64 sample_count;        /* Number of samples collected */
     u64 missed_ticks;        /* Number of missed ticks */
-    u64 last_tick;           /* Last tick number */
+    u64 last_tick;          /* Last tick number */
+    struct sample_entry samples[BUFFER_SIZE];  /* Circular buffer of samples */
 };
 
 static struct sync_timer bench_timer;
 static struct timer_stats __percpu *cpu_stats;
 
-static void report_stats(void)
+/* Compute statistics for a given tick across all CPUs */
+static void compute_tick_stats(u64 tick_number)
+{
+    int cpu;
+    u64 min_delta = U64_MAX;
+    u64 max_delta = 0;
+    u64 sum_delta = 0;
+    u64 sum_delta_squared = 0;
+    u32 sample_count = 0;
+    u32 missing_count = 0;
+    u64 mean, variance, stddev;
+    u64 now = ktime_get_ns();
+    int buf_idx = tick_number % BUFFER_SIZE;
+
+    /* Collect statistics across all CPUs */
+    for_each_online_cpu(cpu) {
+        struct timer_stats *stats = per_cpu_ptr(cpu_stats, cpu);
+        struct sample_entry *entry = &stats->samples[buf_idx];
+
+        if (entry->valid) {
+            u64 delta = entry->delta;
+            min_delta = min(min_delta, delta);
+            max_delta = max(max_delta, delta);
+            sum_delta += delta;
+            sum_delta_squared += delta * delta;
+            sample_count++;
+            
+            /* Clear the entry after processing */
+            entry->valid = false;
+        } else {
+            missing_count++;
+        }
+
+        /* Clear the entry after processing */
+        entry->valid = false;
+    }
+
+    /* Only emit tracepoint if we have samples */
+    if (sample_count > 0) {
+        mean = div64_u64(sum_delta, sample_count);
+        variance = div64_u64(sum_delta_squared, sample_count) - (mean * mean);
+        stddev = int_sqrt64(variance);
+
+        trace_sync_timer_stats(now, tick_number, min_delta, max_delta,
+                             mean, stddev, sample_count, missing_count);
+    }
+}
+
+static void report_final_stats(void)
 {
     int cpu;
     u64 total_samples = 0;
@@ -81,11 +144,11 @@ static enum hrtimer_restart bench_timer_fn(struct hrtimer *timer)
 {
     struct timer_stats *stats;
     u64 now, expected_tick, actual_tick, delta;
-    // get measurement first so as to not introduce further jitter
+    int cpu, buf_idx;
+    
+    /* Get measurement first to minimize jitter */
     now = ktime_get_ns();
-
-    int cpu = smp_processor_id();
-
+    cpu = smp_processor_id();
     stats = per_cpu_ptr(cpu_stats, cpu);
     
     /* Calculate expected and actual tick numbers */
@@ -109,6 +172,16 @@ static enum hrtimer_restart bench_timer_fn(struct hrtimer *timer)
     stats->sum_delta_squared += delta * delta;
     stats->sample_count++;
 
+    /* Store sample in circular buffer */
+    buf_idx = actual_tick % BUFFER_SIZE;
+    stats->samples[buf_idx].delta = delta;
+    stats->samples[buf_idx].valid = true;
+
+    /* If we're on the stats CPU, process an old tick */
+    if (cpu == STATS_CPU && actual_tick > STATS_LAG) {
+        compute_tick_stats(actual_tick - STATS_LAG);
+    }
+
     return sync_timer_restart(timer, &bench_timer);
 }
 
@@ -128,6 +201,8 @@ static int __init sync_timer_bench_init(void)
     /* Initialize stats */
     for_each_possible_cpu(cpu) {
         struct timer_stats *stats = per_cpu_ptr(cpu_stats, cpu);
+        int i;
+
         stats->min_delta = U64_MAX;
         stats->max_delta = 0;
         stats->sum_delta = 0;
@@ -135,6 +210,11 @@ static int __init sync_timer_bench_init(void)
         stats->sample_count = 0;
         stats->missed_ticks = 0;
         stats->last_tick = div64_u64(ktime_get_ns(), BENCH_INTERVAL_NS);
+
+        /* Initialize circular buffer */
+        for (i = 0; i < BUFFER_SIZE; i++) {
+            stats->samples[i].valid = false;
+        }
     }
 
     /* Initialize timer */
@@ -151,7 +231,7 @@ static int __init sync_timer_bench_init(void)
 static void __exit sync_timer_bench_exit(void)
 {
     sync_timer_destroy(&bench_timer);
-    report_stats();
+    report_final_stats();
     free_percpu(cpu_stats);
     pr_info(BENCH_PREFIX "benchmark complete\n");
 }
