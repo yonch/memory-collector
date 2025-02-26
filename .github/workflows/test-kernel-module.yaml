@@ -68,7 +68,7 @@ jobs:
   test-module:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
-    timeout-minutes: ${{ inputs.run-benchmarks == true && (2 + 3 + ((fromJSON(inputs.benchmark-duration) * 9) / 60)) || 2 }}  # Base 2 min + benchmark time
+    timeout-minutes: ${{ inputs.run-benchmarks == true && fromJSON(inputs.benchmark-duration) * 0.15 + 5 || 2 }}  # 5 min base + 0.15 × duration
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
