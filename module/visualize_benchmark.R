@@ -22,7 +22,7 @@ option_list = list(
                 help="Plot height in inches [default= %default]", metavar="number")
 )
 
-opt_parser = OptionParser(option_list=option_list)
+opt_parser = OptionParser(option_list=option_list, add_help_option=FALSE)
 opt = parse_args(opt_parser)
 
 if (is.null(opt$input)) {
