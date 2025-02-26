@@ -346,7 +346,7 @@ jobs:
         uses: docker://rocker/tidyverse:latest
         with:
           entrypoint: sh
-          args: -c "cd /github/workspace/module && Rscript ./visualize_benchmark.R -I 'benchmark_results.csv' -o 'benchmark_results.pdf'"
+          args: -c "cd /github/workspace/module && Rscript ./visualize_benchmark.R -i 'benchmark_results.csv' -o 'benchmark_results.pdf'"
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
