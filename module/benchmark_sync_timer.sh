@@ -1,76 +1,100 @@
 #!/bin/bash
-
-# Constants
-MODULE_NAME="sync_timer_benchmark_module"
-DMESG_PREFIX="sync_timer_bench:"
-RUNTIME=10  # Runtime in seconds
-
-# Function to extract numeric value from a line
-extract_value() {
-    sed 's/.*: \([0-9]\+\).*/\1/'
-}
+set -e
 
 # Function to log to stderr
 log() {
     echo "$@" >&2
 }
 
-# Clear dmesg
-sudo dmesg -C
-
-# Load the module
-log "Loading benchmark module..."
-sudo insmod "build/${MODULE_NAME}.ko"
-if [ $? -ne 0 ]; then
-    log "Failed to load module"
+# Function to print usage
+usage() {
+    echo "Usage: $0 [-n <name>] [-s <stress_command>] [-d <duration>] [-o <output_csv>]"
+    echo
+    echo "Run sync timer benchmark with optional stress test"
+    echo
+    echo "Options:"
+    echo "  -n <name>           Name of the experiment (default: benchmark)"
+    echo "  -s <stress_command> Optional stress command to run during benchmark"
+    echo "  -d <duration>       Duration in seconds (default: 10)"
+    echo "  -o <output_csv>     Output CSV file (default: benchmark_results.csv)"
+    echo "  -h                  Show this help message"
     exit 1
-fi
-
-# Wait for specified runtime
-log "Running benchmark for ${RUNTIME} seconds..."
-sleep ${RUNTIME}
-
-# Unload the module
-log "Unloading module..."
-sudo rmmod "${MODULE_NAME}"
-if [ $? -ne 0 ]; then
-    log "Failed to unload module"
-    exit 1
-fi
-
-# Process dmesg output
-log "Processing results..."
-dmesg | grep "${DMESG_PREFIX}" > benchmark_raw.log
-
-# Extract global statistics
-TOTAL_SAMPLES=$(grep "Total samples:" benchmark_raw.log | extract_value)
-MIN_DELTA=$(grep "Global min delta:" benchmark_raw.log | extract_value)
-MAX_DELTA=$(grep "Global max delta:" benchmark_raw.log | extract_value)
-MEAN_DELTA=$(grep "Global mean delta:" benchmark_raw.log | extract_value)
-STDDEV=$(grep "Global stddev:" benchmark_raw.log | extract_value)
-MISSED_TICKS=$(grep "Total missed ticks:" benchmark_raw.log | extract_value)
-
-# Output JSON to stdout
-cat << EOF
-{
-    "samples": ${TOTAL_SAMPLES},
-    "min_delta_ns": ${MIN_DELTA},
-    "max_delta_ns": ${MAX_DELTA},
-    "mean_delta_ns": ${MEAN_DELTA},
-    "stddev_ns": ${STDDEV},
-    "missed_ticks": ${MISSED_TICKS}
 }
-EOF
 
-# Clean up
-rm -f benchmark_raw.log
+# Parse command line arguments
+NAME="benchmark"
+STRESS_CMD=""
+DURATION=10
+OUTPUT_CSV="benchmark_results.csv"
 
-# Print summary
-log
-log "Benchmark Summary:"
-log "Total Samples: ${TOTAL_SAMPLES}"
-log "Min Delta: ${MIN_DELTA} ns"
-log "Max Delta: ${MAX_DELTA} ns"
-log "Mean Delta: ${MEAN_DELTA} ns"
-log "Standard Deviation: ${STDDEV} ns"
-log "Missed Ticks: ${MISSED_TICKS}" 
+while getopts "n:s:d:o:h" opt; do
+    case $opt in
+        n) NAME="$OPTARG" ;;
+        s) STRESS_CMD="$OPTARG" ;;
+        d) DURATION="$OPTARG" ;;
+        o) OUTPUT_CSV="$OPTARG" ;;
+        h) usage ;;
+        \?) usage ;;
+    esac
+done
+
+# Make sure we're in the module directory
+cd "$(dirname "$0")"
+
+# Generate unique trace file name
+TRACE_FILE="/tmp/sync_timer_trace_${NAME}_$$.dat"
+
+log "Running benchmark: $NAME"
+
+# Build the benchmark module if needed
+if [ ! -f "build/sync_timer_benchmark_module.ko" ]; then
+    log "Building benchmark module..."
+    make sync_timer_benchmark
+fi
+
+# Load benchmark module and wait
+log "Loading benchmark module..."
+sudo insmod "build/sync_timer_benchmark_module.ko"
+
+if [ -n "$STRESS_CMD" ]; then
+    log "Starting stress: $STRESS_CMD"
+    eval "$STRESS_CMD" 1>&2 2>&2 &
+    STRESS_PID=$!
+    sleep 2  # Let the stress command ramp up
+else
+    sleep .5  # Let the module ramp up
+fi
+
+# Start tracing
+log "Starting trace..."
+sudo trace-cmd start -e sync_timer_stats
+
+log "Running for $DURATION seconds..."
+sleep "$DURATION"
+
+# Stop benchmark and tracing
+log "Stopping trace..."
+sudo trace-cmd stop
+
+# Kill stress if it was started
+if [ -n "$STRESS_PID" ]; then
+    pkill -TERM -P "$STRESS_PID" 2>/dev/null || true
+    kill -9 "$STRESS_PID" 2>/dev/null || true
+    wait "$STRESS_PID" 2>/dev/null || true
+fi
+
+# Extract trace data
+log "Extracting trace data..."
+sudo trace-cmd extract -o "$TRACE_FILE"
+
+log "Unloading module..."
+sudo rmmod sync_timer_benchmark_module
+
+# Process trace data
+log "Processing trace data..."
+./process_benchmark.sh "$TRACE_FILE" "$NAME" "$OUTPUT_CSV"
+
+# Clean up trace file
+rm -f "$TRACE_FILE"
+
+log "Benchmark complete. Results appended to $OUTPUT_CSV" 
