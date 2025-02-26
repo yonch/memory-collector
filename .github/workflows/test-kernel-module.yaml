@@ -12,6 +12,15 @@ on:
         required: true
         default: true
         type: boolean
+      benchmark-duration:
+        description: 'Duration for each benchmark test'
+        required: false
+        default: '10'
+        type: choice
+        options:
+          - '1'
+          - '10'
+          - '100'
   push:
     branches:
       - main
@@ -63,7 +72,8 @@ jobs:
   test-module:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
-    timeout-minutes: ${{ inputs.run-benchmarks == true && 10 || 2 }}  # Add timeout in case system hangs
+    # for benchmarks, timeout is 5 min base + 0.15 × duration
+    timeout-minutes: ${{  inputs.run-benchmarks == false && 2 || inputs.benchmark-duration == '1' && 5 || inputs.benchmark-duration == '10' && 7 || inputs.benchmark-duration == '100' && 20 || 7 }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -196,7 +206,7 @@ jobs:
         if: ${{ inputs.run-benchmarks }}
         working-directory: module
         run: |
-          ./benchmark_sync_timer_stress.sh > benchmark_results.csv
+          ./benchmark_sync_timer_stress.sh -d ${{ inputs.benchmark-duration }} > benchmark_results.csv
           echo "Benchmark results (head -n 35):"
           head -n 35 benchmark_results.csv
 
@@ -329,12 +339,12 @@ jobs:
         uses: docker://rocker/tidyverse:latest
         with:
           entrypoint: sh
-          args: -c "cd /github/workspace/module && Rscript ./visualize_benchmark.R -i 'results/benchmark_results.csv' -o 'benchmark_results.pdf'"
+          args: -c "cd /github/workspace/module && mkdir -p plots && Rscript ./visualize_benchmark.R -i 'results/benchmark_results.csv' -p 'plots/benchmark_${{ inputs.benchmark-duration }}_${{ inputs.instance-type }}_'"
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-plots
-          path: module/plots/benchmark_*.pdf
+          path: module/plots/*.pdf
           if-no-files-found: error
 
   stop-runner:
