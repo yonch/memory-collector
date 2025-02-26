@@ -89,8 +89,4 @@ if stress-ng --help | grep -q -- "--mutex"; then
         -d "$DURATION" -o "$OUTPUT_CSV"
 fi
 
-# Generate visualization
-log "Generating visualization..."
-./visualize_benchmark.R -i "$OUTPUT_CSV" -o "$PLOT_FILE"
-
-log "Benchmark complete. Results in $OUTPUT_CSV and $PLOT_FILE"
+log "Benchmark complete. Results in $OUTPUT_CSV"
