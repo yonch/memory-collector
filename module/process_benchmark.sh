@@ -28,27 +28,22 @@ if [ ! -f "$OUTPUT_CSV" ]; then
     echo "timestamp,tick,min_delay,max_delay,mean_delay,stddev,samples,missing,experiment" > "$OUTPUT_CSV"
 fi
 
-# Process trace file and append to CSV
+# Process trace file and append to CSV in one go
 # Format: ts=<ts> tick=<tick> min=<min> max=<max> mean=<mean> stddev=<stddev> samples=<n> missing=<m>
-trace-cmd report -i "$TRACE_FILE" | grep "sync_timer_stats:" | while read -r line; do
-    # Extract values using awk
-    values=$(echo "$line" | awk '{
-        for(i=1; i<=NF; i++) {
-            split($i, pair, "=")
-            if(pair[1] == "ts") ts = pair[2]
-            if(pair[1] == "tick") tick = pair[2]
-            if(pair[1] == "min") min = pair[2]
-            if(pair[1] == "max") max = pair[2]
-            if(pair[1] == "mean") mean = pair[2]
-            if(pair[1] == "stddev") stddev = pair[2]
-            if(pair[1] == "samples") samples = pair[2]
-            if(pair[1] == "missing") missing = pair[2]
-        }
-        printf "%s,%s,%s,%s,%s,%s,%s,%s", ts, tick, min, max, mean, stddev, samples, missing
-    }')
-    
-    # Append to CSV with experiment name
-    echo "$values,$EXPERIMENT" >> "$OUTPUT_CSV"
-done
+trace-cmd report -i "$TRACE_FILE" | grep "sync_timer_stats:" | \
+awk -v experiment="$EXPERIMENT" '{
+    for(i=1; i<=NF; i++) {
+        split($i, pair, "=")
+        if(pair[1] == "ts") ts = pair[2]
+        if(pair[1] == "tick") tick = pair[2]
+        if(pair[1] == "min") min = pair[2]
+        if(pair[1] == "max") max = pair[2]
+        if(pair[1] == "mean") mean = pair[2]
+        if(pair[1] == "stddev") stddev = pair[2]
+        if(pair[1] == "samples") samples = pair[2]
+        if(pair[1] == "missing") missing = pair[2]
+    }
+    printf "%s,%s,%s,%s,%s,%s,%s,%s,%s\n", ts, tick, min, max, mean, stddev, samples, missing, experiment >> "'$OUTPUT_CSV'"
+}'
 
 echo "Processing complete. Data appended to $OUTPUT_CSV" 
