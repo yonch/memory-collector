@@ -13,10 +13,14 @@ on:
         default: true
         type: boolean
       benchmark-duration:
-        description: 'Duration in seconds for each benchmark test'
+        description: 'Duration for each benchmark test'
         required: false
         default: '10'
-        type: string
+        type: choice
+        options:
+          - '1'
+          - '10'
+          - '100'
   push:
     branches:
       - main
@@ -68,7 +72,13 @@ jobs:
   test-module:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
-    timeout-minutes: ${{ inputs.run-benchmarks == true && fromJSON(inputs.benchmark-duration) * 0.15 + 5 || 2 }}  # 5 min base + 0.15 × duration
+    timeout-minutes: |
+    ${{ 
+      inputs.run-benchmarks == false && 2 ||
+      inputs.benchmark-duration == '1' && 5 ||
+      inputs.benchmark-duration == '10' && 7 ||
+      inputs.benchmark-duration == '100' && 20 || 7
+    }}  # 5 min base + 0.15 × duration
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
