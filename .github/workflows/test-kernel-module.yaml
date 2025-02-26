@@ -1,8 +1,4 @@
 name: Test Kernel Module
-
-env:
-  DEFAULT_RUN_BENCHMARKS: true  # Set to true/false to control default behavior on push
-
 on: 
   workflow_dispatch:  # Manual trigger for testing
     inputs:
@@ -67,7 +63,7 @@ jobs:
   test-module:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
-    timeout-minutes: ${{ (inputs.run-benchmarks != null && inputs.run-benchmarks || (github.event_name == 'push' && env.DEFAULT_RUN_BENCHMARKS)) && 10 || 2 }}  # Add timeout in case system hangs
+    timeout-minutes: ${{ inputs.run-benchmarks == true && 10 || 2 }}  # Add timeout in case system hangs
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -190,7 +186,7 @@ jobs:
           fi
 
       - name: Install benchmark dependencies
-        if: ${{ inputs.run-benchmarks != null && inputs.run-benchmarks || (github.event_name == 'push' && env.DEFAULT_RUN_BENCHMARKS) }}
+        if: ${{ inputs.run-benchmarks }}
         run: |
           sudo apt-get install -y \
             stress-ng \
@@ -215,7 +211,7 @@ jobs:
       #   shell: Rscript {0}
 
       - name: Run benchmarks
-        if: ${{ inputs.run-benchmarks != null && inputs.run-benchmarks || (github.event_name == 'push' && env.DEFAULT_RUN_BENCHMARKS) }}
+        if: ${{ inputs.run-benchmarks }}
         working-directory: module
         run: |
           ./benchmark_sync_timer_stress.sh > benchmark_results.csv
@@ -223,7 +219,7 @@ jobs:
           head -n 35 benchmark_results.csv
 
       - name: Upload benchmark results
-        if: ${{ inputs.run-benchmarks != null && inputs.run-benchmarks || (github.event_name == 'push' && env.DEFAULT_RUN_BENCHMARKS) }}
+        if: ${{ inputs.run-benchmarks }}
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
@@ -337,7 +333,7 @@ jobs:
     needs: [test-module]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ inputs.run-benchmarks != null && inputs.run-benchmarks || (github.event_name == 'push' && env.DEFAULT_RUN_BENCHMARKS) }}
+    if: ${{ inputs.run-benchmarks }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
