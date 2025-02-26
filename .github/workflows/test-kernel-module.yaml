@@ -137,63 +137,21 @@ jobs:
 
       - name: Run RMID allocator tests
         id: rmid-allocator-test
-        continue-on-error: true
         working-directory: module
         run: |
-          echo "Running RMID allocator unit tests..."
-          chmod +x test_rmid_allocator.sh
           ./test_rmid_allocator.sh
-          
-          # Check test results from dmesg
-          echo "Test output from dmesg:"
-          dmesg | grep "rmid_allocator_test" || true
-          dmesg | grep "test_result:" || true
-
-          # Fail if any test failed
-          if dmesg | grep -q "test_result:.*:fail"; then
-            echo "RMID allocator tests failed"
-            exit 1
-          fi
 
       - name: Run procfs tests
         id: procfs-test
-        continue-on-error: true
         working-directory: module
         run: |
-          echo "Running procfs unit tests..."
-          chmod +x test_procfs.sh
           ./test_procfs.sh
-          
-          # Check test results from dmesg
-          echo "Test output from dmesg:"
-          dmesg | grep "procfs_test" || true
-          dmesg | grep "test_result:" || true
-
-          # Fail if any test failed
-          if dmesg | grep -q "test_result:.*:fail"; then
-            echo "procfs tests failed"
-            exit 1
-          fi
 
       - name: Run sync timer tests
         id: sync-timer-test
-        continue-on-error: true
         working-directory: module
         run: |
-          echo "Running sync timer unit tests..."
-          chmod +x test_sync_timer.sh
           ./test_sync_timer.sh
-          
-          # Check test results from dmesg
-          echo "Test output from dmesg:"
-          dmesg | grep "sync_timer_test" || true
-          dmesg | grep "test_result:" || true
-
-          # Fail if any test failed
-          if dmesg | grep -q "test_result:.*:fail"; then
-            echo "sync timer tests failed"
-            exit 1
-          fi
 
       - name: Install benchmark dependencies
         if: ${{ inputs.run-benchmarks }}
@@ -216,26 +174,6 @@ jobs:
         with:
           name: benchmark-results
           path: module/benchmark_results.csv
-
-      - name: Check test failure
-        run: |
-          FAILED=0
-          if [[ "${{ steps.rmid-allocator-test.outcome }}" == "failure" ]]; then
-            echo "RMID allocator tests failed"
-            FAILED=1
-          fi
-          if [[ "${{ steps.procfs-test.outcome }}" == "failure" ]]; then
-            echo "procfs tests failed"
-            FAILED=1
-          fi
-          if [[ "${{ steps.sync-timer-test.outcome }}" == "failure" ]]; then
-            echo "sync timer tests failed"
-            FAILED=1
-          fi
-          
-          if [[ $FAILED -eq 1 ]]; then
-            exit 1
-          fi        
 
       - name: Check RDT Capabilities
         run: |
