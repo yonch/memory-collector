@@ -66,26 +66,16 @@ else
 fi
 
 # Start tracing
-log "Starting trace..."
-sudo trace-cmd start -e sync_timer_stats
-
-log "Running for $DURATION seconds..."
-sleep "$DURATION"
-
-# Stop benchmark and tracing
-log "Stopping trace..."
-sudo trace-cmd stop
+log "Starting trace for $DURATION seconds..."
+sudo trace-cmd record -e sync_timer_stats  -o "$TRACE_FILE" -- sleep "$DURATION"
 
 # Kill stress if it was started
 if [ -n "$STRESS_PID" ]; then
+    log "Stopping stressor..."
     pkill -TERM -P "$STRESS_PID" 2>/dev/null || true
     kill -9 "$STRESS_PID" 2>/dev/null || true
     wait "$STRESS_PID" 2>/dev/null || true
 fi
-
-# Extract trace data
-log "Extracting trace data..."
-sudo trace-cmd extract -o "$TRACE_FILE"
 
 log "Unloading module..."
 sudo rmmod sync_timer_benchmark_module
