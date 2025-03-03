@@ -57,7 +57,7 @@ jobs:
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [start-runner, test-module]
+    needs: [start-runner]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
