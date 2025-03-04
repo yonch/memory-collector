@@ -70,21 +70,14 @@ jobs:
           # Force apt to use IPv4
           echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
 
-      - name: Configure apt to use HTTPS
+      - name: Update Linux
         run: |
-          # Update all archive URLs to use HTTPS
-          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
-
-          # Install apt-transport-https (might fail initially, hence the || true)
-          sudo apt-get update || true
-          sudo apt-get install -y apt-transport-https ca-certificates
-
           # Update again with HTTPS now configured
           sudo apt-get update
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [start-runner]
+    needs: [start-runner, k3-deployment]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
