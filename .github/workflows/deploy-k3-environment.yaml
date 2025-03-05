@@ -75,6 +75,20 @@ jobs:
           # Update again with HTTPS now configured
           sudo apt-get update
 
+      - name: Install K3 Cluster
+        run: |
+          # Installs K3s (a lightweight Kubernetes distribution) on the system
+          curl -sfL https://get.k3s.io | sh
+
+      - name: Install K3 Cluster
+        run: |
+          # Status of K3s Instalation
+          systemctl status k3s  
+      
+      - name: Get Default objects in kube-system
+        run: | 
+          kubectl get all -n kube-system
+
   stop-runner:
     name: Stop EC2 runner
     needs: [start-runner, k3-deployment]
