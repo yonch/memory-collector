@@ -73,8 +73,8 @@ jobs:
       - name: Update Linux
         run: |
           # Update again with HTTPS now configured
-          sudo apt-get update
-          sudo apt install git-all
+          sudo apt-get update -y
+          sudo apt install git-all -y
 
       - name: Install K3 Cluster
         run: |
