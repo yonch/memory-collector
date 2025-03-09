@@ -105,14 +105,14 @@ jobs:
           # Extract the folder name from the URL (remove .git at the end if present)
           FOLDER_NAME=$(basename "$GIT_URL" .git)
 
-          # Change into the cloned directory
-          cd "$FOLDER_NAME"
-
-          # Confirm current directory
-          echo "Switched to directory: $(pwd)"
+          # Save the variable as an output for later steps
+          echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
 
       - name: Install Micro Services
         run: |
+          # Move into the cloned repository
+          cd "$FOLDER_NAME"
+
           # Confirm current directory
           echo "Switched to directory: $(pwd)"
 
