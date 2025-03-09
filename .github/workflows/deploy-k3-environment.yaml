@@ -55,6 +55,10 @@ jobs:
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
   
+      - name: Store EC2 Instance ID in AWS SSM Parameter Store
+        run: |
+          aws ssm put-parameter --name "github-ec2-micro-service-instance-id" --value "${{ steps.start-ec2-runner.outputs.ec2-instance-id }}" --type "String" --overwrite
+
   k3-deployment:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
@@ -74,6 +78,7 @@ jobs:
         run: |
           # Update again with HTTPS now configured
           sudo apt-get update
+          sudo apt install git-all
 
       - name: Install K3 Cluster
         run: |
@@ -89,9 +94,52 @@ jobs:
         run: | 
           kubectl get all -n kube-system
 
+  microservice-deployment:
+    needs: [start-runner, k3-deployment]
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
+
+      - name: Clone Repository
+        run: |
+          # Set Git URL (modify or pass as argument)
+          GIT_URL="https://github.com/GoogleCloudPlatform/microservices-demo.git"
+          
+          # Clone the repository
+          git clone "$GIT_URL"
+
+          # Extract the folder name from the URL (remove .git at the end if present)
+          FOLDER_NAME=$(basename "$GIT_URL" .git)
+
+          # Change into the cloned directory
+          cd "$FOLDER_NAME"
+
+          # Confirm current directory
+          echo "Switched to directory: $(pwd)"
+
+      - name: Install Micro Services
+        run: |
+          # Confirm current directory
+          echo "Switched to directory: $(pwd)"
+
+          # Installs micro-services
+          kubectl apply -f release/kubernetes-manifests.yaml
+
+      - name: Wait for all Pods to be Ready
+        run: |
+          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s
+
+      - name: Print Pod Status
+        run: | 
+          kubectl get pods -n default
+
+      - name: Accisible URL
+        run: |
+          # Get accessible URL 
+          echo "http://$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}'):$(kubectl get svc frontend-external -o jsonpath='{.spec.ports[0].nodePort}')"
+
   stop-runner:
     name: Stop EC2 runner
-    needs: [start-runner, k3-deployment]
+    needs: [start-runner, k3-deployment, microservice-deployment]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
