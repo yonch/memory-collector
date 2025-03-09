@@ -131,7 +131,7 @@ jobs:
       - name: Accisible URL
         run: |
           # Get accessible URL 
-          echo "http://$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[0].address}'):$(kubectl get svc frontend-external -o jsonpath='{.spec.ports[0].nodePort}')"
+          echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
 
   stop-runner:
     name: Stop EC2 runner
