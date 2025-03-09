@@ -55,10 +55,6 @@ jobs:
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
   
-      - name: Store EC2 Instance ID in AWS SSM Parameter Store
-        run: |
-          aws ssm put-parameter --name "github-ec2-micro-service-instance-id" --value "${{ steps.start-ec2-runner.outputs.ec2-instance-id }}" --type "String" --overwrite
-
   k3-deployment:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
