@@ -7,6 +7,21 @@ on:
         required: false
         default: 'c5.large'
         type: string
+      run-benchmarks:
+        description: 'Run sync timer benchmarks'
+        required: true
+        default: true
+        type: boolean
+      benchmark-duration:
+        description: 'Duration for each benchmark test'
+        required: false
+        default: '10'
+        type: choice
+        options:
+          - '1'
+          - '10'
+          - '100'
+
   push:
     branches:
       - main
