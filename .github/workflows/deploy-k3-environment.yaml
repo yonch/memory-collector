@@ -132,8 +132,9 @@ jobs:
         run: |
           # Get accessible URL 
           echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
-        with:
-          time: '120s'  # 2 minutes
+    
+      - name: Delay for 2 minutes
+        run: sleep 120
 
   stop-runner:
     name: Stop EC2 runner
