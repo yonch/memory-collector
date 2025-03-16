@@ -1,4 +1,4 @@
-name: Test Kernel Module
+name: Test Kernel Module with Microservices
 on: 
   workflow_dispatch:  # Manual trigger for testing
     inputs:
