@@ -79,12 +79,14 @@ jobs:
               {"Key": "Branch", "Value": "${{ github.ref_name }}"},
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
-  
-  k3-deployment:
+  init-ebpf:
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
+    timeout-minutes: 10
     steps:
-  
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Disable IPv6
         run: |
           # Disable IPv6 via sysctl
@@ -95,11 +97,84 @@ jobs:
           # Force apt to use IPv4
           echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
 
-      - name: Update Linux
+      - name: Install dependencies
         run: |
-          # Update again with HTTPS now configured
-          sudo apt-get update -y
+          # Update all archive URLs to use HTTPS in both old and new locations
+          sudo find /etc/apt/sources.list /etc/apt/sources.list.d/ -type f -exec sed -i 's/http:/https:/g' {} +
+          sudo apt-get update
+          sudo apt-get install -y build-essential linux-headers-$(uname -r) \
+            golang-go llvm clang libbpf-dev git vim curl kmod unzip
 
+      - name: Install pqrs
+        run: |
+          # Download latest pqrs release
+          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
+          unzip pqrs.zip
+          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
+          rm pqrs.zip
+
+      - name: Build kernel module
+        working-directory: module
+        run: |
+          # Try to compile and capture the warning message
+          make 2>&1 | tee compile_output.txt || true
+          
+          # Extract gcc version from the warning message
+          KERNEL_GCC_VERSION=$(grep "The kernel was built by:" compile_output.txt | grep -oP 'gcc-\K\d+' || echo "")
+          echo "Detected kernel compiler version: ${KERNEL_GCC_VERSION}"
+          
+          # Install specific gcc version if detected
+          if [ ! -z "$KERNEL_GCC_VERSION" ]; then
+            echo "Installing gcc-${KERNEL_GCC_VERSION}"
+            sudo apt-get install -y gcc-${KERNEL_GCC_VERSION}
+            
+            # Configure as default gcc
+            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${KERNEL_GCC_VERSION} 100
+            sudo update-alternatives --set gcc /usr/bin/gcc-${KERNEL_GCC_VERSION}
+          else
+            echo "Warning: Could not detect kernel compiler version"
+          fi
+          
+          # Verify gcc version
+          gcc --version
+          
+          # Now try the actual build
+          make
+
+          ls -l build/collector.ko
+
+      - name: Build collector
+        working-directory: cmd/collector
+        run: |
+          export HOME=/tmp
+          echo "HOME: $HOME"
+          export GOCACHE=$HOME/golang/pkg/mod
+          echo "GOCACHE: $GOCACHE"
+
+          mkdir -p $GOCACHE
+          go env -w GOMODCACHE=$GOCACHE
+
+          # Set up asm link for go2bpf
+          arch=$(uname -m) && \
+              case ${arch} in \
+                  aarch64) ln -sf /usr/include/aarch64-linux-gnu/asm /usr/include/asm ;; \
+                  x86_64)  ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm ;; \
+                  *)       echo "Unsupported architecture: ${arch}" && exit 1 ;; \
+              esac
+          go generate
+          go build -v
+          ls -l collector
+
+      - name: Load kernel module
+        working-directory: module
+        run: |
+          sudo insmod build/collector.ko
+          lsmod | grep collector
+
+  k3-deployment:
+    needs: init-ebpf
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    steps:
       - name: Install K3 Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
@@ -115,7 +190,7 @@ jobs:
           kubectl get all -n kube-system
 
   microservice-deployment:
-    needs: [start-runner, k3-deployment]
+    needs: k3-deployment
     runs-on: ${{ needs.start-runner.outputs.label }}
     steps:
 
@@ -151,6 +226,10 @@ jobs:
           # Installs micro-services
           kubectl apply -f release/kubernetes-manifests.yaml
 
+      - name: Wait for all Pods to be Ready
+        run: |
+          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s
+
       - name: Print Pod Status
         run: | 
           kubectl get pods -n default
@@ -159,6 +238,17 @@ jobs:
         run: |
           # Get accessible URL 
           echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
+  test-ebpf:
+    needs: microservice-deployment
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    timeout-minutes: 10
+    steps:
+
+      - name: Listing Folders
+        run: |
+          # Move into the cloned repository
+          ls -al
+          pwd
 
   stop-runner:
     name: Stop EC2 runner
