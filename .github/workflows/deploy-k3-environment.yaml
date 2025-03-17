@@ -200,11 +200,8 @@ jobs:
             sed "s|value: \"10\"|value: \"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml | \
             sed "s|value: \"1\"|value: \"${{ github.event.inputs.rate }}\"|" > kubernetes-manifests/loadgenerator.yaml
 
-            
             # Review menifest file for load genarator
-            echo "menifest=$(cat kubernetes-manifests/loadgenerator.yaml)"
-
-            echo ${{ steps.vars.outputs.version }} 
+            cat kubernetes-manifests/loadgenerator.yaml 
 
             # Installs micro-services
             #kubectl apply -f release/kubernetes-manifests.yaml
