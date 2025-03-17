@@ -189,26 +189,27 @@ jobs:
 
       - name: Install Micro Services
         run: |
-          # Move into the cloned repository
-          cd "$FOLDER_NAME"
+          {
+            # Move into the cloned repository
+            cd "$FOLDER_NAME"
 
-          # Confirm current directory
-          echo "Switched to directory: $(pwd)"
+            # Confirm current directory
+            echo "Switched to directory: $(pwd)"
 
-          # Apply load generate environment varaibles
-          sed "s|value: \"10\"|value: \"${{ inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml | \
-          sed "s|value: \"1\"|value: \"${{ inputs.rate }}\"|" > kubernetes-manifests/loadgenerator.yaml
+            # Apply load generate environment varaibles
+            sed "s|value: \"10\"|value: \"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml | \
+            sed "s|value: \"1\"|value: \"${{ github.event.inputs.rate }}\"|" > kubernetes-manifests/loadgenerator.yaml
 
-          # Review menifest file for load genarator
-          cat kubernetes-manifests/loadgenerator.yaml
+            
+            # Review menifest file for load genarator
+            echo "menifest=$(cat kubernetes-manifests/loadgenerator.yaml)"
 
-          # Installs micro-services
-          kubectl apply -f release/kubernetes-manifests.yaml
+            echo ${{ steps.vars.outputs.version }} 
 
-      - name: Wait for all Pods to be Ready
-        run: |
-          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s
-
+            # Installs micro-services
+            #kubectl apply -f release/kubernetes-manifests.yaml
+          } >> "$GITHUB_OUTPUT"
+          
       - name: Print Pod Status
         run: | 
           kubectl get pods -n default
