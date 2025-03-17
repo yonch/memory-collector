@@ -21,6 +21,16 @@ on:
           - '1'
           - '10'
           - '100'
+      users:
+        description: 'Number of concurrent users for load generator'
+        required: false
+        default: '10'
+        type: string
+      rate:
+        escription: 'Request per second'
+        required: false
+        default: '1'
+        type: string
 
   push:
     branches:
@@ -131,13 +141,15 @@ jobs:
           # Confirm current directory
           echo "Switched to directory: $(pwd)"
 
+          # Apply load generate environment varaibles
+          sed -E "s|(name: USERS\s+value: )\"[0-9]+\"|\1\"${{ inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml | \
+          sed -E "s|(name: RATE\s+value: )\"[0-9]+\"|\1\"${{ inputs.rate }}\"|" > kubernetes-manifests/loadgenerator.yaml
+
+          # Review menifest file for load genarator
+          cat kubernetes-manifests/loadgenerator.yaml
+
           # Installs micro-services
           kubectl apply -f release/kubernetes-manifests.yaml
-
-      - name: Wait for all Pods to be Ready
-        run: |
-          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s
-
 
       - name: Print Pod Status
         run: | 
@@ -147,9 +159,6 @@ jobs:
         run: |
           # Get accessible URL 
           echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
-    
-      - name: Delay for 2 minutes
-        run: sleep 120
 
   stop-runner:
     name: Stop EC2 runner
