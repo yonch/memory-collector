@@ -142,8 +142,8 @@ jobs:
           echo "Switched to directory: $(pwd)"
 
           # Apply load generate environment varaibles
-          sed -E "s|(name: USERS\s+value: )\"[0-9]+\"|\1\"${{ inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml | \
-          sed -E "s|(name: RATE\s+value: )\"[0-9]+\"|\1\"${{ inputs.rate }}\"|" > kubernetes-manifests/loadgenerator.yaml
+          sed "s|value: \"10\"|value: \"${{ inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml | \
+          sed "s|value: \"1\"|value: \"${{ inputs.rate }}\"|" > kubernetes-manifests/loadgenerator.yaml
 
           # Review menifest file for load genarator
           cat kubernetes-manifests/loadgenerator.yaml
