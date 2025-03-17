@@ -169,7 +169,7 @@ jobs:
           kubectl get all -n kube-system
 
   microservice-deployment:
-    needs: k3-deployment
+    needs: [start-runner,init-ebpf, k3-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
     steps:
 
@@ -218,7 +218,7 @@ jobs:
           # Get accessible URL 
           echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
   test-ebpf:
-    needs: microservice-deployment
+    needs: [start-runner,init-ebpf, k3-deployment, microservice-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
     timeout-minutes: 10
     steps:
