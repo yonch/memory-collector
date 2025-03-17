@@ -252,7 +252,7 @@ jobs:
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [start-runner, k3-deployment, microservice-deployment]
+    needs: [start-runner, init-ebpf, k3-deployment, microservice-deployment, test-ebpf]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
