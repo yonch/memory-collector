@@ -24,7 +24,7 @@ on:
       users:
         description: 'Number of concurrent users for load generator'
         required: false
-        default: '10'
+        default: '200'
         type: string
       rate:
         escription: 'Request per second'
