@@ -149,11 +149,11 @@ jobs:
           ls -al
           pwd
       
-
   k3-deployment:
-    needs: init-ebpf
+    needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.label }}
     steps:
+
       - name: Install K3 Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
