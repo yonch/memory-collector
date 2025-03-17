@@ -189,23 +189,33 @@ jobs:
 
       - name: Install Micro Services
         run: |
-          {
-            # Move into the cloned repository
-            cd "$FOLDER_NAME"
+          # Move into the cloned repository
+          cd "$FOLDER_NAME"
 
-            # Confirm current directory
-            echo "Switched to directory: $(pwd)"
+          # Confirm current directory
+          echo "Switched to directory: $(pwd)"
 
-            # Apply load generate environment varaibles
-            sed "s|value: \"10\"|value: \"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml | \
-            sed "s|value: \"1\"|value: \"${{ github.event.inputs.rate }}\"|" > kubernetes-manifests/loadgenerator.yaml
+          # Ensure the file exists before modifying
+          if [ ! -f kubernetes-manifests/loadgenerator.yaml ]; then
+            echo "Error: kubernetes-manifests/loadgenerator.yaml not found!"
+            exit 1
+          fi
 
-            # Review menifest file for load genarator
-            cat kubernetes-manifests/loadgenerator.yaml 
+          # Debug: Print original file content
+          echo "🔍 Original loadgenerator.yaml:"
+          cat kubernetes-manifests/loadgenerator.yaml
 
-            # Installs micro-services
-            #kubectl apply -f release/kubernetes-manifests.yaml
-          } >> "$GITHUB_OUTPUT"
+          # Apply load generator environment variables
+          sed -i "s|\(name: USERS\s*value: \)\"[0-9]\+\"|\1\"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml
+          sed -i "s|\(name: RATE\s*value: \)\"[0-9]\+\"|\1\"${{ github.event.inputs.rate }}\"|" kubernetes-manifests/loadgenerator.yaml
+
+          # Debug: Print modified file content
+          echo "✅ Updated loadgenerator.yaml:"
+          cat kubernetes-manifests/loadgenerator.yaml
+
+          # Installs micro-services (Uncomment when ready)
+          # kubectl apply -f release/kubernetes-manifests.yaml
+          
           
       - name: Print Pod Status
         run: | 
