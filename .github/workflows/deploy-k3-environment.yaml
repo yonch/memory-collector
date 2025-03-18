@@ -207,7 +207,7 @@ jobs:
 
           # Apply load generator environment variables
           #sed -i "s|\(name: USERS\s*value: \)\"[0-9]\+\"|\1\"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml
-          sed "s|value: \"10\"|value: \"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml
+          sed -i "s|value: \"10\"|value: \"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml
           #sed -i "s|\(name: RATE\s*value: \)\"[0-9]\+\"|\1\"${{ github.event.inputs.rate }}\"|" kubernetes-manifests/loadgenerator.yaml
 
           # Debug: Print modified file content
