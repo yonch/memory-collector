@@ -187,9 +187,9 @@ jobs:
           # Save the variable as an output for later steps
           echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
       
-      - name: Use input
-        run: echo "Input was ${{ github.event.inputs.users }}"
-
+      - name: Debug Inputs
+        run: echo "Inputs ${{ toJson(github.event.inputs) }}"
+        
       - name: Install Micro Services
         run: |
           # Move into the cloned repository
