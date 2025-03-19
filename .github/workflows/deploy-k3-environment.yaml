@@ -232,7 +232,11 @@ jobs:
         run: |
           #kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s
           sleep $((3 * 60))
-          
+
+      - name: Print Pod Status
+        run: | 
+          kubectl get events
+
       - name: Print Pod Status
         run: | 
           kubectl get pods -n default
