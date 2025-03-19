@@ -155,6 +155,12 @@ jobs:
           go generate
           go build -v
           ls -l collector
+
+      - name: Load kernel module
+        working-directory: module
+        run: |
+          sudo insmod build/collector.ko
+          lsmod | grep collector
       
   k3-deployment:
     needs: [start-runner]
@@ -245,6 +251,37 @@ jobs:
           # Move into the cloned repository
           ls -al
           pwd
+      
+      - name: Run eBPF collector
+        working-directory: cmd/collector
+        run: |
+          sudo ./collector
+
+      - name: Upload parquet file
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-parquet
+          path: cmd/collector/metrics.parquet
+          if-no-files-found: error
+
+      - name: Verify parquet output
+        working-directory: cmd/collector
+        run: |
+          # Print parquet file contents as CSV
+          echo "Parquet file contents:"
+          pqrs cat --csv metrics.parquet
+          
+          # Verify file exists and has content
+          if [ ! -s metrics.parquet ]; then
+            echo "Error: metrics.parquet is empty or does not exist"
+            exit 1
+          fi
+
+      - name: Unload kernel module
+        working-directory: module
+        run: |
+          sudo rmmod collector
+          ! lsmod | grep collector
 
   stop-runner:
     name: Stop EC2 runner
