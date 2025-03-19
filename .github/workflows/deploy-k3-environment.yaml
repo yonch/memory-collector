@@ -172,7 +172,7 @@ jobs:
     needs: [start-runner,init-ebpf, k3-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
     env:
-      MY_ENV_VAR: ${{ inputs.users }}
+      MY_ENV_VAR: ${{ github.event.inputs.users }}
     steps:
 
       - name: Clone Repository
