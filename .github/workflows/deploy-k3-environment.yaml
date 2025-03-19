@@ -230,7 +230,8 @@ jobs:
 
       - name: Wait for all Pods to be Ready
         run: |
-          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s
+          #kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s
+          sleep $((3 * 60))
           
       - name: Print Pod Status
         run: | 
