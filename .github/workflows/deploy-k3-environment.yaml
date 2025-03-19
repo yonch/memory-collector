@@ -125,6 +125,7 @@ jobs:
           go version
           ls -al
           pwd
+          apt-cache policy golang-go
 
       - name: Build collector
         working-directory: cmd/collector
