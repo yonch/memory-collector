@@ -69,9 +69,9 @@ jobs:
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           pre-runner-script: |
-            echo "Hello" > /actions-runner/_work/myfolder/hello.txt
-            echo ${{ inputs.users }} > /actions-runner/_work/myfolder/usercount.txt
-            cat /actions-runner/_work/myfolder/hello.txt
+            echo "Hello" > /actions-runner/_work/hello.txt
+            echo ${{ inputs.users }} > /actions-runner/_work/usercount.txt
+            ls -al /actions-runner/_work/hello.txt
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "github-runner"},
