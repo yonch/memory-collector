@@ -136,6 +136,7 @@ jobs:
       - name: Build collector
         working-directory: cmd/collector
         run: |
+          source /etc/profile
           export HOME=/tmp
           echo "HOME: $HOME"
           export GOCACHE=$HOME/golang/pkg/mod
