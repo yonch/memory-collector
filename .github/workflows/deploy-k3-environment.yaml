@@ -71,6 +71,7 @@ jobs:
           pre-runner-script: |
             echo "Hello" > /actions-runner/_work/myfolder/hello.txt
             echo ${{ inputs.users }} > /actions-runner/_work/myfolder/usercount.txt
+            cat /actions-runner/_work/myfolder/hello.txt
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "github-runner"},
@@ -219,7 +220,6 @@ jobs:
           # Debug: Print modified file content
           echo "✅ Updated loadgenerator.yaml:"
           cat kubernetes-manifests/loadgenerator.yaml
-          cat /actions-runner/_work/myfolder/hello.txt
 
           # Installs micro-services (Uncomment when ready)
           # kubectl apply -f release/kubernetes-manifests.yaml
