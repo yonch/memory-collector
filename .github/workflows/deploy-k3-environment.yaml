@@ -122,9 +122,10 @@ jobs:
       - name: Listing Folders
         run: |
           # Move into the cloned repository
+          go version
           ls -al
           pwd
-          
+
       - name: Build collector
         working-directory: cmd/collector
         run: |
