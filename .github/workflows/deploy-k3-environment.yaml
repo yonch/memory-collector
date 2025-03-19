@@ -71,7 +71,7 @@ jobs:
           pre-runner-script: |
             echo "Hello" > /actions-runner/_work/hello.txt
             echo ${{ inputs.users }} > /actions-runner/_work/usercount.txt
-            ls -al /actions-runner/_work/hello.txt
+            ls -al /actions-runner/_work/
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "github-runner"},
