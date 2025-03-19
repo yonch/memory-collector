@@ -68,8 +68,6 @@ jobs:
           market-type: spot
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          pre-runner-script: |
-            pwd
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "github-runner"},
@@ -173,6 +171,8 @@ jobs:
   microservice-deployment:
     needs: [start-runner,init-ebpf, k3-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
+    env:
+      MY_ENV_VAR: "Production"
     steps:
 
       - name: Clone Repository
@@ -191,6 +191,9 @@ jobs:
       
       - name: Use input
         run: echo "Input was ${{ github.event.inputs.users }}"
+        
+      - name: Print env var
+        run: echo "Environment is $MY_ENV_VAR"
 
       - name: Install Micro Services
         run: |
