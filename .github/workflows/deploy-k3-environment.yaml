@@ -172,7 +172,7 @@ jobs:
     needs: [start-runner,init-ebpf, k3-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
     env:
-      MY_ENV_VAR: "Production"
+      MY_ENV_VAR: ${{ inputs.users }}
     steps:
 
       - name: Clone Repository
@@ -191,7 +191,7 @@ jobs:
       
       - name: Use input
         run: echo "Input was ${{ github.event.inputs.users }}"
-        
+
       - name: Print env var
         run: echo "Environment is $MY_ENV_VAR"
 
