@@ -68,6 +68,9 @@ jobs:
           market-type: spot
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          pre-runner-script: |
+            echo "Hello" > /actions-runner/_work/myfolder/hello.txt
+            echo ${{ inputs.users }} > /actions-runner/_work/myfolder/usercount.txt
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "github-runner"},
@@ -187,9 +190,9 @@ jobs:
           # Save the variable as an output for later steps
           echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
       
-      - name: Debug Inputs
-        run: echo "Inputs ${{ toJson(github.event.inputs) }}"
-        
+      - name: Use input
+        run: echo "Input was ${{ github.event.inputs.users }}"
+
       - name: Install Micro Services
         run: |
           # Move into the cloned repository
@@ -216,6 +219,7 @@ jobs:
           # Debug: Print modified file content
           echo "✅ Updated loadgenerator.yaml:"
           cat kubernetes-manifests/loadgenerator.yaml
+          cat /actions-runner/_work/myfolder/hello.txt
 
           # Installs micro-services (Uncomment when ready)
           # kubectl apply -f release/kubernetes-manifests.yaml
