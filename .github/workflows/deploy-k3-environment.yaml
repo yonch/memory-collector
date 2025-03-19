@@ -126,7 +126,7 @@ jobs:
           pwd
       
   k3-deployment:
-    needs: [start-runner,init-ebpf]
+    needs: [start-runner]
     runs-on: ${{ needs.start-runner.outputs.label }}
     steps:
     
@@ -148,8 +148,8 @@ jobs:
     needs: [start-runner,init-ebpf, k3-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
     env:
-      USERS: 300
-      RATE: 10
+      USERS: 3000
+      RATE: 100
     steps:
 
       - name: Clone Repository
@@ -166,9 +166,6 @@ jobs:
           # Save the variable as an output for later steps
           echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
 
-      - name: Print env var
-        run: echo "Environment is $MY_ENV_VAR"
-
       - name: Install Micro Services
         run: |
           # Move into the cloned repository
@@ -183,10 +180,6 @@ jobs:
             exit 1
           fi
 
-          # Debug: Print original file content
-          echo "🔍 Original loadgenerator.yaml:"
-          cat kubernetes-manifests/loadgenerator.yaml
-
           # Apply load generator environment variables
           sed -i "s|value: \"10\"|value: \"$USERS\"|" kubernetes-manifests/loadgenerator.yaml
           sed -i "s|value: \"1\"|value: \"$RATE\"|" kubernetes-manifests/loadgenerator.yaml
@@ -196,8 +189,11 @@ jobs:
           cat kubernetes-manifests/loadgenerator.yaml
 
           # Installs micro-services (Uncomment when ready)
-          # kubectl apply -f release/kubernetes-manifests.yaml
-          
+          kubectl apply -f release/kubernetes-manifests.yaml
+
+      - name: Wait for all Pods to be Ready
+        run: |
+          kubectl wait --for=condition=Ready pods --all --namespace=default --timeout=300s  
           
       - name: Print Pod Status
         run: | 
