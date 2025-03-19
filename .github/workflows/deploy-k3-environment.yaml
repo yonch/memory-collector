@@ -7,30 +7,6 @@ on:
         required: false
         default: 'm7i.xlarge'
         type: string
-      run-benchmarks:
-        description: 'Run sync timer benchmarks'
-        required: true
-        default: true
-        type: boolean
-      benchmark-duration:
-        description: 'Duration for each benchmark test'
-        required: false
-        default: '10'
-        type: choice
-        options:
-          - '1'
-          - '10'
-          - '100'
-      users:
-        description: 'Number of concurrent users for load generator'
-        required: false
-        default: '200'
-        type: string
-      rate:
-        escription: 'Request per second'
-        required: false
-        default: '1'
-        type: string
 
   push:
     branches:
@@ -172,7 +148,8 @@ jobs:
     needs: [start-runner,init-ebpf, k3-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
     env:
-      MY_ENV_VAR: ${{ github.event.inputs.users }}
+      USERS: 300
+      RATE: 10
     steps:
 
       - name: Clone Repository
@@ -188,9 +165,6 @@ jobs:
 
           # Save the variable as an output for later steps
           echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
-      
-      - name: Use input
-        run: echo "Input was ${{ github.event.inputs.users }}"
 
       - name: Print env var
         run: echo "Environment is $MY_ENV_VAR"
@@ -215,7 +189,7 @@ jobs:
 
           # Apply load generator environment variables
           #sed -i "s|\(name: USERS\s*value: \)\"[0-9]\+\"|\1\"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml
-          sed -i "s|value: \"10\"|value: \"${{ github.event.inputs.users }}\"|" kubernetes-manifests/loadgenerator.yaml
+          sed -i "s|value: \"10\"|value: \"$USERS\"|" kubernetes-manifests/loadgenerator.yaml
           #sed -i "s|\(name: RATE\s*value: \)\"[0-9]\+\"|\1\"${{ github.event.inputs.rate }}\"|" kubernetes-manifests/loadgenerator.yaml
 
           # Debug: Print modified file content
