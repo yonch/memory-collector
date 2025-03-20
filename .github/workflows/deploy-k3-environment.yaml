@@ -5,7 +5,7 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'm7i.metal-24xl'
+        default: 'c5.9xlarge'
         type: string
 
   push:
@@ -42,7 +42,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
-          ec2-instance-type: ${{ inputs.instance-type || 'm7i.metal-24xl' }}  # m7i.metal-24xl for RDT, c5.9xlarge for perf support
+          ec2-instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}  # m7i.metal-24xl for RDT, c5.9xlarge for perf support
           market-type: spot
           ec2-volume-size: 16
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
