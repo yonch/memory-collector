@@ -17,6 +17,8 @@ on:
 
 permissions:
   id-token: write # Required for requesting the JWT
+  contents: read
+  actions: write
 
 jobs:
   start-runner:
@@ -35,7 +37,7 @@ jobs:
 
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2.3.8
+        uses: tverghis/ec2-github-runner@7170053c36b2928213de1cf2303ac85059dadeee
         with:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
