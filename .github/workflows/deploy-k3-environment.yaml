@@ -44,6 +44,7 @@ jobs:
           ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
           ec2-instance-type: ${{ inputs.instance-type || 'm7i.metal-24xl' }}  # m7i.metal-24xl for RDT, c5.9xlarge for perf support
           market-type: spot
+          ec2-volume-size: 16GB
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           aws-resource-tags: >
