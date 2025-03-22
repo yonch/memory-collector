@@ -8,13 +8,6 @@ on:
         default: 'c5.9xlarge'
         type: string
 
-  push:
-    branches:
-      - main
-    paths:
-      - module/**
-      - .github/workflows/deploy-k3-environment.yaml
-
 permissions:
   id-token: write # Required for requesting the JWT
   contents: read
