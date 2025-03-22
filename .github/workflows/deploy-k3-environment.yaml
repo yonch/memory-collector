@@ -37,7 +37,7 @@ jobs:
 
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: devin-purple/ec2-github-runner@feature/allow-changing-root-volume-size
+        uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
         with:
           mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
