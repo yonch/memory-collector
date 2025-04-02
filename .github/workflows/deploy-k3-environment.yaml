@@ -169,7 +169,23 @@ jobs:
     needs: [start-runner]
     runs-on: ${{ needs.start-runner.outputs.label }}
     steps:
-    
+
+      - name: Download kustomize binary
+        run: | 
+          curl -sLo kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize-linux-amd64.tar.gz"
+
+      - name: Download kustomize binary
+        run: |
+          tar -xzf kustomize.tar.gz
+
+      - name: Download kustomize binary
+        run: |
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Download kustomize binary
+        run: |
+          kustomize version
+
       - name: Install K3 Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
@@ -183,6 +199,7 @@ jobs:
       - name: Get Default objects in kube-system
         run: | 
           kubectl get all -n kube-system
+
 
   microservice-deployment:
     needs: [start-runner,init-ebpf, k3-deployment]
