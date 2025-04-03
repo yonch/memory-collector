@@ -177,8 +177,8 @@ jobs:
       - name: Extract Kustomize
         run: |
           ls -al
-          file kustomize-linux-amd64.tar.gz
-          tar -xzf kustomize-linux-amd64.tar.gz
+          file kustomize.tar.gz
+          tar -xf kustomize.tar.gz
 
       - name: Move binary file to bon
         run: |
