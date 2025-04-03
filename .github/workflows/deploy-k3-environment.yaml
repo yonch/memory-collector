@@ -172,17 +172,7 @@ jobs:
 
       - name: Download kustomize binary
         run: | 
-          curl -sLo kustomize.tar.gz "https://github.com/kubernetes-sigs/kustomize/releases/latest/download/kustomize-linux-amd64.tar.gz"
-
-      - name: Extract Kustomize
-        run: |
-          ls -al
-          file kustomize.tar.gz
-          tar -xf kustomize.tar.gz
-
-      - name: Move binary file to bon
-        run: |
-          sudo mv kustomize /usr/local/bin/
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash
 
       - name: Check the version of kustomize
         run: |
