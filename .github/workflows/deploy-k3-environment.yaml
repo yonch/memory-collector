@@ -202,8 +202,8 @@ jobs:
     needs: [start-runner,init-ebpf, k3-deployment]
     runs-on: ${{ needs.start-runner.outputs.label }}
     env:
-      USERS: 3000
-      RATE: 100
+      USERS: 3000000
+      RATE: 10000
     steps:
 
       - name: Clone Repository
@@ -222,6 +222,10 @@ jobs:
 
       - name: Install Micro Services
         run: |
+
+          # copy kustomized file to location
+          cp -f kustomize/kustomization.yaml "$FOLDER_NAME/kustomize/kustomization.yaml"
+
           # Move into the cloned repository
           cd "$FOLDER_NAME"
 
@@ -229,21 +233,22 @@ jobs:
           echo "Switched to directory: $(pwd)"
 
           # Ensure the file exists before modifying
-          if [ ! -f kubernetes-manifests/loadgenerator.yaml ]; then
-            echo "Error: kubernetes-manifests/loadgenerator.yaml not found!"
+          if [ ! -f kustomize/base/loadgenerator.yaml ]; then
+            echo "Error: kustomize/base/loadgenerator.yaml not found!"
             exit 1
           fi
 
           # Apply load generator environment variables
-          sed -i "s|value: \"10\"|value: \"$USERS\"|" kubernetes-manifests/loadgenerator.yaml
-          sed -i "s|value: \"1\"|value: \"$RATE\"|" kubernetes-manifests/loadgenerator.yaml
+          sed -i "s|value: \"10\"|value: \"$USERS\"|" kustomize/base/loadgenerator.yaml
+          sed -i "s|value: \"1\"|value: \"$RATE\"|" kustomize/base/loadgenerator.yaml
 
           # Debug: Print modified file content
           echo "✅ Updated loadgenerator.yaml:"
-          cat kubernetes-manifests/loadgenerator.yaml
+          cat kustomize/base/loadgenerator.yaml
 
           # Installs micro-services (Uncomment when ready)
-          kubectl apply -f release/kubernetes-manifests.yaml
+          cd kustomize && kustomize build . | kubectl apply -f -
+          
 
       - name: Wait for all Pods to be Ready
         run: |
@@ -260,6 +265,10 @@ jobs:
       - name: Print Pod Status
         run: | 
           kubectl get pods -n default
+      
+      - name: Describe one of deployment
+        run: |
+          kubectl describe deployment adservice
 
       - name: Accisible URL
         run: |
