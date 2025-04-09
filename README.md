@@ -98,7 +98,7 @@ We welcome contributions! Here's how you can help:
 
 ## Learn More
 
-- Kubecon NA 2024: Love thy (noisy) neighbor [(video)](https://www.youtube.com/watch?v=VsYp_Z1PvOc) [(slides)](https://static.sched.com/hosted_files/kccncna2024/93/Slides_Kubecon%20NA%2724_%20Love%20thy%20%28Noisy%29%20Neighbor.pdf?_gl=1*kslbsa*_gcl_au*MTA1MDg0MjY3OS4xNzM3NjU4NjAyLjExNzY3ODMwODcuMTc0MzcxNTQ4MC4xNzQzNzE2Nzgz*FPAU*MTA1MDg0MjY3OS4xNzM3NjU4NjAy) [(notes)](https://static.sched.com/hosted_files/kccncna2024/50/Transcript_and_Slides__Love_thy_%28Noisy%29_Neighbor.pdf?_gl=1*il2muq*_gcl_au*MTA1MDg0MjY3OS4xNzM3NjU4NjAyLjExNzY3ODMwODcuMTc0MzcxNTQ4MC4xNzQzNzE2Nzgz*FPAU*MTA1MDg0MjY3OS4xNzM3NjU4NjAy)
+- Kubecon NA 2024: Love thy (noisy) neighbor [(video)](https://www.youtube.com/watch?v=VsYp_Z1PvOc) [(slides)](https://static.sched.com/hosted_files/kccncna2024/93/Slides_Kubecon%20NA%2724_%20Love%20thy%20%28Noisy%29%20Neighbor.pdf) [(notes)](https://static.sched.com/hosted_files/kccncna2024/50/Transcript_and_Slides__Love_thy_%28Noisy%29_Neighbor.pdf)
 
 ## Background
 
