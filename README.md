@@ -93,7 +93,7 @@ We welcome contributions! Here's how you can help:
 
 - **Code**: Check our [good first issues](../../issues?q=is:open+is:issue+label:"good+first+issue") and [documentation](https://unvariance.github.io/collector/)
 - **Use Cases**: Share interference scenarios, test in your environment  
-- **Discussion**: Open GitHub issues or reach out (CNCF Slack @Jonathan Perry)
+- **Discussion**: Open GitHub issues or reach out - [@Jonathan Perry](https://cloud-native.slack.com/team/U019KBNGKFT) on [CNCF Slack](https://slack.cncf.io/)
 - **Schedule a Chat**: https://yonch.com/collector
 
 ## Learn More
