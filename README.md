@@ -91,10 +91,14 @@ See the [GitHub Actions workflow](.github/workflows/test-ebpf-collector.yaml) fo
 
 We welcome contributions! Here's how you can help:
 
-- **Code**: Check our [good first issues](../../issues?q=is:open+is:issue+label:"good+first+issue") and [development guide](docs/development.md)
+- **Code**: Check our [good first issues](../../issues?q=is:open+is:issue+label:"good+first+issue") and [documentation](https://unvariance.github.io/collector/)
 - **Use Cases**: Share interference scenarios, test in your environment  
-- **Discussion**: Open GitHub issues or email yonch@yonch.com
+- **Discussion**: Open GitHub issues or reach out (CNCF Slack @Jonathan Perry)
 - **Schedule a Chat**: https://yonch.com/collector
+
+## Learn More
+
+- Kubecon NA 2024: Love thy (noisy) neighbor [(video)](https://www.youtube.com/watch?v=VsYp_Z1PvOc) [(slides)](https://static.sched.com/hosted_files/kccncna2024/93/Slides_Kubecon%20NA%2724_%20Love%20thy%20%28Noisy%29%20Neighbor.pdf?_gl=1*kslbsa*_gcl_au*MTA1MDg0MjY3OS4xNzM3NjU4NjAyLjExNzY3ODMwODcuMTc0MzcxNTQ4MC4xNzQzNzE2Nzgz*FPAU*MTA1MDg0MjY3OS4xNzM3NjU4NjAy) [(notes)](https://static.sched.com/hosted_files/kccncna2024/50/Transcript_and_Slides__Love_thy_%28Noisy%29_Neighbor.pdf?_gl=1*il2muq*_gcl_au*MTA1MDg0MjY3OS4xNzM3NjU4NjAyLjExNzY3ODMwODcuMTc0MzcxNTQ4MC4xNzQzNzE2Nzgz*FPAU*MTA1MDg0MjY3OS4xNzM3NjU4NjAy)
 
 ## Background
 
@@ -106,4 +110,4 @@ This project builds on research and technologies from:
 
 ## License
 
-Code is licensed under Apache 2.0. Documentation is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Code is licensed under [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0). Documentation is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
