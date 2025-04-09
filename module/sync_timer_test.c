@@ -156,10 +156,12 @@ static bool test_timer_cleanup(void)
 
     /* Let it run briefly */
     msleep(10);
-    old_count = atomic_read(&callback_count);
 
     /* Destroy timer */
     sync_timer_destroy(&test_timer);
+
+    old_count = atomic_read(&callback_count);
+
     free_percpu(cpu_ticks);
 
     /* Wait to ensure no more callbacks occur */

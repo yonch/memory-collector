@@ -80,7 +80,7 @@ echo "Total tests: $total_tests"
 print_color $GREEN "Passed: $passed_tests"
 if [ $failed_tests -gt 0 ]; then
     print_color $RED "Failed: $failed_tests"
-    echo "\nDmesg output:"
+    echo -e "\nDmesg output:"
     echo "========"
     sudo dmesg
 fi
