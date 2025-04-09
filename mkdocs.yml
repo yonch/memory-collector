@@ -1,5 +1,5 @@
-site_name: 'PerfPod docs'
-site_url: https://perfpod.github.io/memory-collector/
+site_name: 'Unvariance collector docs'
+site_url: https://unvariance.github.io/collector/
 theme: 'material'
 markdown_extensions:
   - footnotes
