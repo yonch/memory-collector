@@ -232,20 +232,6 @@ jobs:
           # Confirm current directory
           echo "Switched to directory: $(pwd)"
 
-          # Ensure the file exists before modifying
-          if [ ! -f kustomize/base/loadgenerator.yaml ]; then
-            echo "Error: kustomize/base/loadgenerator.yaml not found!"
-            exit 1
-          fi
-
-          # Apply load generator environment variables
-          sed -i "s|value: \"10\"|value: \"$USERS\"|" kustomize/base/loadgenerator.yaml
-          sed -i "s|value: \"1\"|value: \"$RATE\"|" kustomize/base/loadgenerator.yaml
-
-          # Debug: Print modified file content
-          echo "✅ Updated loadgenerator.yaml:"
-          cat kustomize/base/loadgenerator.yaml
-
           # Installs micro-services (Uncomment when ready)
           cd kustomize && kustomize build . | kubectl apply -f -
           
@@ -273,6 +259,7 @@ jobs:
       - name: Describe one of deployment load generator
         run: |
           kubectl describe deployment loadgenerator
+          
       - name: Accisible URL
         run: |
           # Get accessible URL 

@@ -16,25 +16,23 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
 - base
-components:
-# - components/cymbal-branding
-# - components/google-cloud-operations
-# - components/memorystore
-# - components/network-policies
-# - components/non-public-frontend
-# - components/service-accounts
-# - components/alloydb
-# - components/single-shared-session
-# - components/spanner
-# - components/service-mesh-istio
-# - components/without-loadgenerator
-# These must be run last and in this order
-# - components/container-images-tag
-# - components/container-images-tag-suffix
-# - components/container-images-registry
 
 # Patch all deployments with resource limits
 patches:
+- target:
+    kind: Deployment
+    name: loadgenerator
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/env
+      value:
+        - name: FRONTEND_ADDR
+          value: "frontend:80"
+        - name: USERS
+          value: "400000"
+        - name: RATE
+          value: "1000"
+
 - target:
     kind: Deployment
     name: adservice
