@@ -176,6 +176,7 @@ jobs:
 
       - name: Extract kustomize
         run: |
+          ls -al
           tar -xvzf kustomize_v5.6.0_linux_amd64.tar.gz
           sudo mv kustomize /usr/local/bin/
 
