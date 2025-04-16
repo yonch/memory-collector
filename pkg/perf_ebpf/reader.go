@@ -8,6 +8,9 @@ import (
 	"github.com/unvariance/collector/pkg/perf"
 )
 
+// PERF_RECORD_LOST is the type for lost sample records
+const PERF_RECORD_LOST = 2
+
 // Options controls the behavior of PerfMapReader
 type Options struct {
 	// The size of each per-CPU buffer in bytes
