@@ -27,6 +27,7 @@ on:
 
 permissions:
   id-token: write # Required for requesting the JWT
+  actions: write # To cancel the workflow if getting the AWS instance fails
 
 jobs:
   build-benchmark:
@@ -136,7 +137,7 @@ jobs:
         run: |
           sudo apt-get install -y \
             stress-ng
-            
+
       - name: Download benchmark binary
         uses: actions/download-artifact@v4
         with:
