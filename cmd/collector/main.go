@@ -14,7 +14,6 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/unvariance/collector/pkg/aggregate"
-	ourperf "github.com/unvariance/collector/pkg/perf"
 	"github.com/unvariance/collector/pkg/perf_ebpf"
 	"github.com/unvariance/collector/pkg/rmid"
 	"github.com/xitongsys/parquet-go-source/local"
@@ -355,7 +354,7 @@ func main() {
 				}
 
 				// Check for lost samples
-				if ring.PeekType() == ourperf.PERF_RECORD_LOST {
+				if ring.PeekType() == perf_ebpf.PERF_RECORD_LOST {
 					var lostCount uint64
 					if err := ring.PeekCopy((*[8]byte)(unsafe.Pointer(&lostCount))[:], 8); err != nil {
 						log.Printf("Error reading lost count: %s", err)

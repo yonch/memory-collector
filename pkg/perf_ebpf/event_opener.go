@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package perf_ebpf
 
 import (
 	"fmt"
@@ -84,4 +84,22 @@ func (eo *EventOpener) Close() error {
 	eo.array = nil
 
 	return firstErr
-} 
+}
+
+// Start enables the perf events
+func (eo *EventOpener) Start() error {
+	eo.mu.Lock()
+	defer eo.mu.Unlock()
+
+	if eo.eventFDs == nil {
+		return fmt.Errorf("event opener is closed")
+	}
+
+	for _, fd := range eo.eventFDs {
+		if err := unix.IoctlSetInt(fd, unix.PERF_EVENT_IOC_ENABLE, 0); err != nil {
+			return fmt.Errorf("failed to enable perf event: %v", err)
+		}
+	}
+
+	return nil
+}

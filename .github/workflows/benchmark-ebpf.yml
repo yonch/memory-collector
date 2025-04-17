@@ -1,0 +1,209 @@
+name: eBPF Sync Timer Benchmark
+
+on:
+  workflow_dispatch:  # Manual trigger for testing
+    inputs:
+      instance-type:
+        description: 'EC2 instance type to use'
+        required: false
+        default: 'm7i.xlarge'
+        type: string
+      benchmark-duration:
+        description: 'Duration for each benchmark test'
+        required: false
+        default: '10'
+        type: choice
+        options:
+          - '1'
+          - '10'
+          - '100'
+  push:
+    branches:
+      - main
+    paths:
+      - cmd/sync_timer_benchmark/**
+      - pkg/sync_timer/**
+      - .github/workflows/benchmark-ebpf.yml
+
+permissions:
+  id-token: write # Required for requesting the JWT
+  actions: write # To cancel the workflow if getting the AWS instance fails
+
+jobs:
+  build-benchmark:
+    name: Build benchmark binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential linux-headers-$(uname -r) \
+            golang-go llvm clang libbpf-dev git vim curl kmod unzip
+          # From cilium/ebpf instructions, to find asm/types.h
+          sudo ln -sf /usr/include/asm-generic/ /usr/include/asm
+
+      - name: Build benchmark
+        run: |
+          cd cmd/sync_timer_benchmark
+          go generate ../../...
+          go build -o sync_timer_benchmark
+          mkdir -p output
+          mv sync_timer_benchmark output/
+          cp benchmark_sync_timer.sh output/
+          cp ../../module/benchmark_sync_timer_stress.sh output/
+
+      - name: Upload benchmark binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-binary
+          path: cmd/sync_timer_benchmark/output/*
+
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: start
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
+          ec2-instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          market-type: spot
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "github-runner"},
+              {"Key": "Repository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+              {"Key": "RunId", "Value": "${{ github.run_id }}"},
+              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+              {"Key": "SHA", "Value": "${{ github.sha }}"},
+              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+              {"Key": "Actor", "Value": "${{ github.actor }}"}
+            ]
+
+  cancel-on-failure:
+    needs: start-runner
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Cancel workflow
+        uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
+
+  benchmark:
+    needs: [build-benchmark, start-runner]
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    timeout-minutes: ${{ inputs.benchmark-duration == '1' && 5 || inputs.benchmark-duration == '10' && 7 || inputs.benchmark-duration == '100' && 20 || 7 }}
+    steps:
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configure
+          sudo apt-get update
+
+      - name: Install benchmark dependencies
+        run: |
+          sudo apt-get install -y \
+            stress-ng
+
+      - name: Download benchmark binary
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-binary
+          path: cmd/sync_timer_benchmark
+
+      - name: Make benchmark executable
+        run: |
+          chmod +x cmd/sync_timer_benchmark/sync_timer_benchmark
+          chmod +x cmd/sync_timer_benchmark/benchmark_sync_timer*.sh
+
+      - name: Run benchmark
+        run: |
+          cd cmd/sync_timer_benchmark
+          sudo ./benchmark_sync_timer_stress.sh -d ${{ inputs.benchmark-duration || '10' }} -o benchmark_results.csv
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: cmd/sync_timer_benchmark/benchmark_results.csv
+
+  plot-benchmark:
+    needs: [benchmark]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results
+          path: results
+
+      - name: Visualize benchmark results
+        uses: docker://rocker/tidyverse:latest
+        with:
+          entrypoint: sh
+          args: -c "cd /github/workspace/ && mkdir -p plots && Rscript ./module/visualize_benchmark.R -i 'results/benchmark_results.csv' -p 'plots/benchmark_${{ inputs.benchmark-duration }}_${{ inputs.instance-type }}_'"
+
+      - name: Upload benchmark plots
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-plots
+          path: plots/*.pdf
+          if-no-files-found: error
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, benchmark]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if previous jobs fail
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: stop
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }} 
