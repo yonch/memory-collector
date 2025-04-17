@@ -112,6 +112,7 @@ func main() {
 	csvWriter := csv.NewWriter(outputFile)
 	defer csvWriter.Flush()
 	if err := csvWriter.Write([]string{
+		"timestamp",
 		"tick",
 		"min_delay",
 		"max_delay",
@@ -199,6 +200,7 @@ func main() {
 		stddev := math.Sqrt(variance)
 
 		if err := csvWriter.Write([]string{
+			fmt.Sprintf("%d", tickNumber*1_000_000),
 			fmt.Sprintf("%d", tickNumber),
 			fmt.Sprintf("%d", stats.minDelta),
 			fmt.Sprintf("%d", stats.maxDelta),
