@@ -92,6 +92,14 @@ jobs:
               {"Key": "Branch", "Value": "${{ github.ref_name }}"},
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
+  
+  cancel-on-failure:
+    needs: [build-benchmark, start-runner]
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Cancel workflow
+        uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
 
   benchmark:
     needs: [build-benchmark, start-runner]
