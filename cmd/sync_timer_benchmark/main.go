@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/unvariance/collector/pkg/perf_ebpf"
 	"github.com/unvariance/collector/pkg/sync_timer"
@@ -37,6 +38,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer objs.Close()
+
+	// Attach HR Timer expire exit tracepoint
+	tp, err := link.Tracepoint("timer", "hrtimer_expire_exit", objs.HandleHrtimerExpireExit, nil)
+	if err != nil {
+		fmt.Printf("Error attaching tracepoint: %v\n", err)
+		os.Exit(1)
+	}
+	defer tp.Close()
 
 	// Create sync timer with the benchmark implementation
 	timer := sync_timer.NewSyncTimer(
@@ -119,7 +128,7 @@ func main() {
 
 		// Read event data
 		eventData := make([]byte, 24) // Size of bench_event struct
-		if err := ring.PeekCopy(eventData, 0); err != nil {
+		if err := ring.PeekCopy(eventData, 4); err != nil {
 			fmt.Printf("Error reading event: %v\n", err)
 			break
 		}
