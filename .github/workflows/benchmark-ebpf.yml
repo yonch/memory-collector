@@ -1,0 +1,150 @@
+name: eBPF Sync Timer Benchmark
+
+on:
+  workflow_dispatch:  # Manual trigger for testing
+    inputs:
+      instance-type:
+        description: 'EC2 instance type to use'
+        required: false
+        default: 'm7i.xlarge'
+        type: string
+      benchmark-duration:
+        description: 'Duration for each benchmark test'
+        required: false
+        default: '10'
+        type: choice
+        options:
+          - '1'
+          - '10'
+          - '100'
+  push:
+    branches:
+      - main
+    paths:
+      - cmd/sync_timer_benchmark/**
+      - pkg/sync_timer/**
+      - .github/workflows/benchmark-ebpf.yml
+
+permissions:
+  id-token: write # Required for requesting the JWT
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: start
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
+          ec2-instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          market-type: spot
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          aws-resource-tags: >
+            [
+              {"Key": "Name", "Value": "github-runner"},
+              {"Key": "Repository", "Value": "${{ github.repository }}"},
+              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+              {"Key": "RunId", "Value": "${{ github.run_id }}"},
+              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+              {"Key": "SHA", "Value": "${{ github.sha }}"},
+              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+              {"Key": "Actor", "Value": "${{ github.actor }}"}
+            ]
+
+  benchmark:
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }}
+    timeout-minutes: ${{ inputs.benchmark-duration == '1' && 5 || inputs.benchmark-duration == '10' && 7 || inputs.benchmark-duration == '100' && 20 || 7 }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '1.21'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm
+
+      - name: Build benchmark
+        run: |
+          cd cmd/sync_timer_benchmark
+          go generate ../../...
+          go build -o benchmark
+
+      - name: Run benchmark
+        run: |
+          cd cmd/sync_timer_benchmark
+          sudo ./benchmark --experiment baseline --duration ${{ inputs.benchmark-duration }}s --csv benchmark_results.csv
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: cmd/sync_timer_benchmark/benchmark_results.csv
+
+  plot-benchmark:
+    needs: [benchmark]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results
+          path: results
+
+      - name: Visualize benchmark results
+        uses: docker://rocker/tidyverse:latest
+        with:
+          entrypoint: sh
+          args: -c "cd /github/workspace/ && mkdir -p plots && Rscript ./module/visualize_benchmark.R -i 'results/benchmark_results.csv' -p 'plots/benchmark_${{ inputs.benchmark-duration }}_${{ inputs.instance-type }}_'"
+
+      - name: Upload benchmark plots
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-plots
+          path: cmd/collector/plots/*.pdf
+          if-no-files-found: error
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs: [start-runner, benchmark]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if previous jobs fail
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: github-runner-session
+
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2.3.8
+        with:
+          mode: stop
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }} 
