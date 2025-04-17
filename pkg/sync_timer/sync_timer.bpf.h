@@ -101,8 +101,7 @@ int init_timer_##timer_name(struct bpf_sock_addr *ctx) \
     } \
 \
     /* Initialize timer if not already done */ \
-    ret = bpf_map_lookup_elem(&init_status_##timer_name, &cpu); \
-    if (!ret) { \
+    if (bpf_map_lookup_elem(&init_status_##timer_name, &cpu) == NULL) { \
         now = bpf_ktime_get_ns(); \
         state->next_expected = align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC); \
         bpf_timer_init(&state->timer, &timer_states_##timer_name, CLOCK_MONOTONIC); \

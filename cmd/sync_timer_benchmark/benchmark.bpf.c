@@ -8,11 +8,6 @@
 
 #define NSEC_PER_MSEC 1000000ULL
 
-/* Helper function to calculate absolute difference */
-static __always_inline __u64 abs_diff(__u64 a, __u64 b) {
-    return a > b ? a - b : b - a;
-}
-
 /* Benchmark event structure */
 struct benchmark_msg {
     __u64 timestamp;
@@ -42,7 +37,8 @@ static void benchmark_callback(void)
         .delta = delta,
     };
 
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &event, sizeof(event));
+    bpf_printk("benchmark_callback called on CPU %d, tick %llu, delta %llu\n", bpf_get_smp_processor_id(), event.tick_number, event.delta);
+    // bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &event, sizeof(event));
 }
 
 /* Define the benchmark sync timer */
