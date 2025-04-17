@@ -5,9 +5,11 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/csv"
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/bits"
 	"os"
 	"os/signal"
@@ -23,6 +25,8 @@ import (
 func main() {
 	// Parse command line flags
 	duration := flag.Duration("duration", 10*time.Second, "Duration to run the benchmark")
+	csvFile := flag.String("csv", "results.csv", "Output CSV file for benchmark results")
+	experimentName := flag.String("experiment", "", "Name of the experiment (e.g., baseline, cpu_stress)")
 	flag.Parse()
 
 	// Allow the current process to lock memory for eBPF resources
@@ -96,6 +100,30 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
+	// Create CSV file
+	outputFile, err := os.Create(*csvFile)
+	if err != nil {
+		fmt.Printf("Error creating CSV file: %v\n", err)
+		os.Exit(1)
+	}
+	defer outputFile.Close()
+
+	// Write CSV header
+	csvWriter := csv.NewWriter(outputFile)
+	defer csvWriter.Flush()
+	if err := csvWriter.Write([]string{
+		"tick",
+		"min_delay",
+		"max_delay",
+		"mean_delay",
+		"stddev",
+		"samples",
+		"experiment",
+	}); err != nil {
+		fmt.Printf("Error writing CSV header: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Run for specified duration
 	fmt.Printf("Running benchmark for %v...\n", *duration)
 	select {
@@ -113,10 +141,14 @@ func main() {
 	}
 	defer reader.Finish()
 
-	var eventCount uint64
-	var totalDelta uint64
-	var minDelta uint64 = ^uint64(0)
-	var maxDelta uint64
+	// Map to store statistics per tick number
+	tickStats := make(map[uint64]struct {
+		count           uint64
+		sumDelta        uint64
+		minDelta        uint64
+		maxDelta        uint64
+		sumSquaredDelta uint64
+	})
 
 	for !reader.Empty() {
 		// Get current ring
@@ -140,15 +172,18 @@ func main() {
 			break
 		}
 
-		// Update statistics
-		eventCount++
-		totalDelta += event.Delta
-		if event.Delta < minDelta {
-			minDelta = event.Delta
+		// Update statistics for this tick
+		stats := tickStats[event.TickNumber]
+		stats.count++
+		stats.sumDelta += event.Delta
+		stats.sumSquaredDelta += event.Delta * event.Delta
+		if stats.count == 1 || event.Delta < stats.minDelta {
+			stats.minDelta = event.Delta
 		}
-		if event.Delta > maxDelta {
-			maxDelta = event.Delta
+		if stats.count == 1 || event.Delta > stats.maxDelta {
+			stats.maxDelta = event.Delta
 		}
+		tickStats[event.TickNumber] = stats
 
 		// Consume the event
 		if err := reader.Pop(); err != nil {
@@ -157,11 +192,47 @@ func main() {
 		}
 	}
 
-	// Print statistics
-	if eventCount > 0 {
-		avgDelta := float64(totalDelta) / float64(eventCount)
+	// Write statistics to CSV
+	for tickNumber, stats := range tickStats {
+		meanDelay := float64(stats.sumDelta) / float64(stats.count)
+		variance := float64(stats.sumSquaredDelta)/float64(stats.count) - (meanDelay * meanDelay)
+		stddev := math.Sqrt(variance)
+
+		if err := csvWriter.Write([]string{
+			fmt.Sprintf("%d", tickNumber),
+			fmt.Sprintf("%d", stats.minDelta),
+			fmt.Sprintf("%d", stats.maxDelta),
+			fmt.Sprintf("%.2f", meanDelay),
+			fmt.Sprintf("%.2f", stddev),
+			fmt.Sprintf("%d", stats.count),
+			*experimentName,
+		}); err != nil {
+			fmt.Printf("Error writing CSV row: %v\n", err)
+			break
+		}
+	}
+
+	// Print summary statistics
+	var totalEvents uint64
+	var totalDelta uint64
+	var minDelta uint64 = ^uint64(0)
+	var maxDelta uint64
+
+	for _, stats := range tickStats {
+		totalEvents += stats.count
+		totalDelta += stats.sumDelta
+		if stats.minDelta < minDelta {
+			minDelta = stats.minDelta
+		}
+		if stats.maxDelta > maxDelta {
+			maxDelta = stats.maxDelta
+		}
+	}
+
+	if totalEvents > 0 {
+		avgDelta := float64(totalDelta) / float64(totalEvents)
 		fmt.Printf("\nBenchmark Statistics:\n")
-		fmt.Printf("Total Events: %d\n", eventCount)
+		fmt.Printf("Total Events: %d\n", totalEvents)
 		fmt.Printf("Average Delta: %.2f ns\n", avgDelta)
 		fmt.Printf("Minimum Delta: %d ns\n", minDelta)
 		fmt.Printf("Maximum Delta: %d ns\n", maxDelta)
