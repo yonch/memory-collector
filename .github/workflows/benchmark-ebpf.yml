@@ -92,9 +92,9 @@ jobs:
               {"Key": "Branch", "Value": "${{ github.ref_name }}"},
               {"Key": "Actor", "Value": "${{ github.actor }}"}
             ]
-  
+
   cancel-on-failure:
-    needs: [build-benchmark, start-runner]
+    needs: start-runner
     runs-on: ubuntu-latest
     if: failure()
     steps:
