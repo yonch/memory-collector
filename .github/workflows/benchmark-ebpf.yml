@@ -41,6 +41,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential linux-headers-$(uname -r) \
             golang-go llvm clang libbpf-dev git vim curl kmod unzip
+          # From cilium/ebpf instructions, to find asm/types.h
+          sudo ln -sf /usr/include/asm-generic/ /usr/include/asm
 
       - name: Build benchmark
         run: |
