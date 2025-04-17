@@ -29,6 +29,31 @@ permissions:
   id-token: write # Required for requesting the JWT
 
 jobs:
+  build-benchmark:
+    name: Build benchmark binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential linux-headers-$(uname -r) \
+            golang-go llvm clang libbpf-dev git vim curl kmod unzip
+
+      - name: Build benchmark
+        run: |
+          cd cmd/sync_timer_benchmark
+          go generate ../../...
+          go build -o benchmark
+
+      - name: Upload benchmark binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-binary
+          path: cmd/sync_timer_benchmark/benchmark
+
   start-runner:
     name: Start EC2 runner
     runs-on: ubuntu-latest
@@ -67,24 +92,18 @@ jobs:
             ]
 
   benchmark:
-    needs: start-runner
+    needs: [build-benchmark, start-runner]
     runs-on: ${{ needs.start-runner.outputs.label }}
     timeout-minutes: ${{ inputs.benchmark-duration == '1' && 5 || inputs.benchmark-duration == '10' && 7 || inputs.benchmark-duration == '100' && 20 || 7 }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Download benchmark binary
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-binary
+          path: cmd/sync_timer_benchmark
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential linux-headers-$(uname -r) \
-            golang-go llvm clang libbpf-dev git vim curl kmod unzip
-
-      - name: Build benchmark
-        run: |
-          cd cmd/sync_timer_benchmark
-          go generate ../../...
-          go build -o benchmark
+      - name: Make benchmark executable
+        run: chmod +x cmd/sync_timer_benchmark/benchmark
 
       - name: Run benchmark
         run: |
