@@ -38,19 +38,12 @@ func main() {
 	}
 	defer objs.Close()
 
-	// Create sync timer
-	st, err := sync_timer.NewSyncTimer()
-	if err != nil {
-		fmt.Printf("Error creating sync timer: %v\n", err)
-		os.Exit(1)
-	}
-	defer st.Stop()
-
-	// Set benchmark callback
-	if err := st.SetCallback(objs.BenchmarkCallback); err != nil {
-		fmt.Printf("Error setting benchmark callback: %v\n", err)
-		os.Exit(1)
-	}
+	// Create sync timer with the benchmark implementation
+	timer := sync_timer.NewSyncTimer(
+		objs.InitTimerBenchmark,
+		objs.TimerStatesBenchmark,
+		objs.InitStatusBenchmark,
+	)
 
 	// Calculate buffer size for perf rings
 	// Each event is 24 bytes (3 uint64s) + 8 bytes overhead
@@ -84,10 +77,11 @@ func main() {
 	defer rd.Close()
 
 	// Start sync timer
-	if err := st.Start(); err != nil {
+	if err := timer.Start(); err != nil {
 		fmt.Printf("Error starting sync timer: %v\n", err)
 		os.Exit(1)
 	}
+	defer timer.Stop()
 
 	// Set up signal handling
 	sig := make(chan os.Signal, 1)

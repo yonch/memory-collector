@@ -4,6 +4,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
+#include "../../pkg/sync_timer/sync_timer.bpf.h"
 
 #define NSEC_PER_MSEC 1000000ULL
 
@@ -27,9 +28,8 @@ struct {
     __uint(value_size, sizeof(__u32));
 } events SEC(".maps");
 
-/* Benchmark callback program */
-SEC("timer_callback")
-int benchmark_callback(struct bpf_perf_event_data *ctx)
+/* Benchmark callback function */
+static void benchmark_callback(void)
 {
     __u64 now = bpf_ktime_get_ns();
     __u64 expected_tick = now / NSEC_PER_MSEC;
@@ -43,7 +43,9 @@ int benchmark_callback(struct bpf_perf_event_data *ctx)
     };
 
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &event, sizeof(event));
-    return 0;
 }
+
+/* Define the benchmark sync timer */
+DEFINE_SYNC_TIMER(benchmark, benchmark_callback)
 
 char _license[] SEC("license") = "GPL"; 
