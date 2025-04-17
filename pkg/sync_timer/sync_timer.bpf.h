@@ -25,6 +25,81 @@ static __always_inline __u64 align_to_interval(__u64 time, __u64 interval) {
     return (time / interval) * interval;
 }
 
+/* Shared timer callback implementation */
+static __always_inline int shared_timer_callback(
+    void *map,
+    int *key,
+    struct timer_state *state,
+    void (*callback_func)(void)
+) {
+    __u64 now = bpf_ktime_get_ns();
+    __u64 expected_tick = now / NSEC_PER_MSEC;
+    __u64 actual_tick = state->last_tick + 1;
+    __u64 delta;
+
+    /* Call the provided callback function */
+    callback_func();
+
+    /* Check for missed ticks */
+    if (expected_tick > actual_tick) {
+        actual_tick = expected_tick;
+    }
+
+    /* Update tick counter */
+    state->last_tick = actual_tick;
+
+    /* Calculate timing delta */
+    delta = abs_diff(now, actual_tick * NSEC_PER_MSEC);
+
+    /* Calculate next absolute time for timer */
+    state->next_expected = align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC);
+
+    /* Reschedule timer for next interval using absolute time */
+    bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+
+    return 0;
+}
+
+/* Shared timer initialization implementation */
+static __always_inline int shared_init_timer(
+    void *timer_states_map,
+    void *init_status_map,
+    int (*timer_callback)(void *, int *, struct timer_state *)
+) {
+    __u32 cpu = bpf_get_smp_processor_id();
+    struct timer_state *state;
+    __u64 now;
+    int ret;
+    __u8 init_flag = 1;
+    __u32 key = 0;
+
+    /* Get timer state for this CPU */
+    state = bpf_map_lookup_elem(timer_states_map, &cpu);
+    if (!state) {
+        struct timer_state new_state = {};
+        ret = bpf_map_update_elem(timer_states_map, &cpu, &new_state, BPF_ANY);
+        if (ret < 0) {
+            return ret;
+        }
+        state = bpf_map_lookup_elem(timer_states_map, &cpu);
+        if (!state) {
+            return -1;
+        }
+    }
+
+    /* Initialize timer if not already done */
+    if (bpf_map_lookup_elem(init_status_map, &cpu) == NULL) {
+        now = bpf_ktime_get_ns();
+        state->next_expected = align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC);
+        bpf_timer_init(&state->timer, timer_states_map, CLOCK_MONOTONIC);
+        bpf_timer_set_callback(&state->timer, timer_callback);
+        bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+        bpf_map_update_elem(init_status_map, &cpu, &init_flag, BPF_ANY);
+    }
+
+    return 0;
+}
+
 /* Macro to define a complete sync timer implementation */
 #define DEFINE_SYNC_TIMER(timer_name, callback_func) \
 \
@@ -47,68 +122,12 @@ struct { \
 /* Timer callback function */ \
 static int timer_callback_##timer_name(void *map, int *key, struct timer_state *state) \
 { \
-    __u64 now = bpf_ktime_get_ns(); \
-    __u64 expected_tick = now / NSEC_PER_MSEC; \
-    __u64 actual_tick = state->last_tick + 1; \
-    __u64 delta; \
-\
-    /* Check for missed ticks */ \
-    if (expected_tick > actual_tick) { \
-        actual_tick = expected_tick; \
-    } \
-\
-    /* Update tick counter */ \
-    state->last_tick = actual_tick; \
-\
-    /* Calculate timing delta */ \
-    delta = abs_diff(now, actual_tick * NSEC_PER_MSEC); \
-\
-    /* Calculate next absolute time for timer */ \
-    state->next_expected = align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC); \
-\
-    /* Reschedule timer for next interval using absolute time */ \
-    bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN); \
-\
-    /* Call the provided callback function */ \
-    callback_func(); \
-\
-    return 0; \
+    return shared_timer_callback(map, key, state, callback_func); \
 } \
 \
 /* Timer initialization function */ \
 SEC("syscall") \
 int init_timer_##timer_name(struct bpf_sock_addr *ctx) \
 { \
-    __u32 cpu = bpf_get_smp_processor_id(); \
-    struct timer_state *state; \
-    __u64 now; \
-    int ret; \
-    __u8 init_flag = 1; \
-    __u32 key = 0; \
-\
-    /* Get timer state for this CPU */ \
-    state = bpf_map_lookup_elem(&timer_states_##timer_name, &cpu); \
-    if (!state) { \
-        struct timer_state new_state = {}; \
-        ret = bpf_map_update_elem(&timer_states_##timer_name, &cpu, &new_state, BPF_ANY); \
-        if (ret < 0) { \
-            return ret; \
-        } \
-        state = bpf_map_lookup_elem(&timer_states_##timer_name, &cpu); \
-        if (!state) { \
-            return -1; \
-        } \
-    } \
-\
-    /* Initialize timer if not already done */ \
-    if (bpf_map_lookup_elem(&init_status_##timer_name, &cpu) == NULL) { \
-        now = bpf_ktime_get_ns(); \
-        state->next_expected = align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC); \
-        bpf_timer_init(&state->timer, &timer_states_##timer_name, CLOCK_MONOTONIC); \
-        bpf_timer_set_callback(&state->timer, timer_callback_##timer_name); \
-        bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN); \
-        bpf_map_update_elem(&init_status_##timer_name, &cpu, &init_flag, BPF_ANY); \
-    } \
-\
-    return 0; \
+    return shared_init_timer(&timer_states_##timer_name, &init_status_##timer_name, timer_callback_##timer_name); \
 } 
