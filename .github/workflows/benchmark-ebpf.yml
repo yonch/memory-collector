@@ -48,13 +48,17 @@ jobs:
         run: |
           cd cmd/sync_timer_benchmark
           go generate ../../...
-          go build -o benchmark
+          go build -o sync_timer_benchmark
+          mkdir -p output
+          mv sync_timer_benchmark output/
+          cp benchmark_sync_timer.sh output/
+          cp ../../module/benchmark_sync_timer_stress.sh output/
 
       - name: Upload benchmark binary
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-binary
-          path: cmd/sync_timer_benchmark/benchmark
+          path: cmd/sync_timer_benchmark/output/*
 
   start-runner:
     name: Start EC2 runner
@@ -106,6 +110,33 @@ jobs:
     runs-on: ${{ needs.start-runner.outputs.label }}
     timeout-minutes: ${{ inputs.benchmark-duration == '1' && 5 || inputs.benchmark-duration == '10' && 7 || inputs.benchmark-duration == '100' && 20 || 7 }}
     steps:
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configure
+          sudo apt-get update
+
+      - name: Install benchmark dependencies
+        run: |
+          sudo apt-get install -y \
+            stress-ng
+            
       - name: Download benchmark binary
         uses: actions/download-artifact@v4
         with:
@@ -113,12 +144,14 @@ jobs:
           path: cmd/sync_timer_benchmark
 
       - name: Make benchmark executable
-        run: chmod +x cmd/sync_timer_benchmark/benchmark
+        run: |
+          chmod +x cmd/sync_timer_benchmark/sync_timer_benchmark
+          chmod +x cmd/sync_timer_benchmark/benchmark_sync_timer*.sh
 
       - name: Run benchmark
         run: |
           cd cmd/sync_timer_benchmark
-          sudo ./benchmark --experiment baseline --duration ${{ inputs.benchmark-duration || '10' }}s --csv benchmark_results.csv
+          sudo ./benchmark_sync_timer_stress.sh -d ${{ inputs.benchmark-duration || '10' }} -o benchmark_results.csv
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
