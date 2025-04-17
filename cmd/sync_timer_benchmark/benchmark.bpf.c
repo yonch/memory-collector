@@ -23,6 +23,11 @@ struct {
     __uint(value_size, sizeof(__u32));
 } events SEC(".maps");
 
+/* Helper function to calculate absolute difference */
+static __always_inline __u64 abs_diff(__u64 a, __u64 b) {
+    return a > b ? a - b : b - a;
+}
+
 /* Benchmark callback function */
 static void benchmark_callback(void)
 {

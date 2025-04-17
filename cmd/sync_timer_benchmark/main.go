@@ -40,9 +40,9 @@ func main() {
 
 	// Create sync timer with the benchmark implementation
 	timer := sync_timer.NewSyncTimer(
-		objs.InitTimerBenchmark,
-		objs.TimerStatesBenchmark,
-		objs.InitStatusBenchmark,
+		objs.SyncTimerInitBenchmark,
+		objs.SyncTimerStatesBenchmark,
+		objs.SyncTimerInitStatusBenchmark,
 	)
 
 	// Calculate buffer size for perf rings
