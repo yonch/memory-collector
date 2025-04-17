@@ -4,14 +4,13 @@ package sync_timer
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"runtime"
 
 	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
-	"github.com/unvariance/collector/pkg/perf_ebpf"
 	"golang.org/x/sys/unix"
 )
 
@@ -38,63 +37,29 @@ func NewSyncTimer() (*SyncTimer, error) {
 	}, nil
 }
 
+// Return the callback program
+func (st *SyncTimer) GetCallbackProgram() *ebpf.Program {
+	return st.objs.Callback
+}
+
 // Start initializes and starts the synchronized timer system
 func (st *SyncTimer) Start() error {
-	// Configure perf events for initialization
-	commonOpts := unix.PerfEventAttr{
-		Type:        unix.PERF_TYPE_HARDWARE,
-		Config:      unix.PERF_COUNT_HW_CPU_CYCLES,
-		Sample:      1000000, // Sample every 1M cycles
-		Sample_type: unix.PERF_SAMPLE_RAW,
-		Read_format: unix.PERF_FORMAT_TOTAL_TIME_ENABLED | unix.PERF_FORMAT_TOTAL_TIME_RUNNING,
-		Bits:        unix.PerfBitDisabled | unix.PerfBitExcludeKernel,
-		Wakeup:      1,
-	}
-
-	// Create event opener for initialization
-	initEvents, err := perf_ebpf.NewEventOpener(st.objs.InitEvents, commonOpts)
-	if err != nil {
-		return fmt.Errorf("creating event opener: %w", err)
-	}
-	defer initEvents.Close()
-
-	// Start initialization events
-	if err := initEvents.Start(); err != nil {
-		return fmt.Errorf("starting init events: %w", err)
-	}
-
-	// Attach the initialization program to each perf event
-	links := make([]*link.RawLink, 0, runtime.NumCPU())
-	defer func() {
-		// Clean up all links
-		for _, link := range links {
-			link.Close()
-		}
-	}()
-
-	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
-		// Get the file descriptor from the init_events map
-		var fd uint32
-		if err := st.objs.InitEvents.Lookup(uint32(cpu), &fd); err != nil {
-			return fmt.Errorf("looking up init event FD for CPU %d: %w", cpu, err)
-		}
-
-		// Create and attach the raw link
-		rawLink, err := link.AttachRawLink(link.RawLinkOptions{
-			Target:  int(fd),
-			Program: st.objs.InitTimers,
-			Attach:  ebpf.AttachPerfEvent,
-		})
-		if err != nil {
-			return fmt.Errorf("attaching init program to CPU %d: %w", cpu, err)
-		}
-		links = append(links, rawLink)
-	}
-
 	// Wait for initialization to complete
 	timeout := time.After(time.Second)
-	ticker := time.NewTicker(time.Millisecond)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+
+	// Initialize timers on each CPU
+	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
+		setCPUAffinity(cpu)
+
+		// Run the initialization program on the target CPU
+		ret, err := st.objs.InitTimer.Run(nil)
+		if err != nil {
+			return fmt.Errorf("running init_timer on CPU %d: %w", cpu, err)
+		}
+		fmt.Printf("init_timer returned: %d\n", ret)
+	}
 
 	for {
 		select {
@@ -103,13 +68,16 @@ func (st *SyncTimer) Start() error {
 		case <-ticker.C:
 			// Check initialization status for all CPUs
 			allInitialized := true
+			initializedCount := 0
 			for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
 				var initFlag uint8
 				if err := st.objs.InitStatus.Lookup(uint32(cpu), &initFlag); err != nil || initFlag == 0 {
 					allInitialized = false
-					break
+					continue
 				}
+				initializedCount++
 			}
+			fmt.Printf("initializedCount: %d\n", initializedCount)
 
 			if allInitialized {
 				return nil
@@ -124,14 +92,20 @@ func (st *SyncTimer) Stop() {
 	key := uint32(0) // Delete the timer state to stop the timer
 	st.objs.TimerStates.Delete(key)
 
+	// Remove the cgroup
+	os.RemoveAll(st.cgroupPath)
+
 	st.objs.Close()
 }
 
-// SetCallback configures the callback function for the timer
-func (st *SyncTimer) SetCallback(prog *ebpf.Program) error {
-	// Update the callback in the BPF program array
-	if err := st.objs.Callbacks.Put(uint32(0), prog); err != nil {
-		return fmt.Errorf("setting callback: %w", err)
-	}
-	return nil
+// setCPUAffinity sets the CPU affinity for the current thread to a specific CPU core
+func setCPUAffinity(cpu int) error {
+	// Create a CPU set with only the specified CPU
+	var cpuSet unix.CPUSet
+	cpuSet.Zero()
+	cpuSet.Set(cpu)
+
+	// Set the CPU affinity for the current thread
+	pid := unix.Gettid()
+	return unix.SchedSetaffinity(pid, &cpuSet)
 }
