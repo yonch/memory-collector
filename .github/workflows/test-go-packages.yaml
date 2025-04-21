@@ -78,8 +78,8 @@ jobs:
         # Run the perf tests with the permissioned binary
         ./perf.test -test.v
         ./perf_ebpf.test -test.v
-        ./backoff.test -test.v
-        ./rmid_allocator.test -test.v
+        sudo ./backoff.test -test.v
+        sudo ./rmid_allocator.test -test.v
 
     - name: Run other package tests
       run: |
