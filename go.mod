@@ -5,8 +5,7 @@ go 1.23.0
 toolchain go1.23.8
 
 // replace github.com/cilium/ebpf/cmd/bpf2go => github.com/yonch/cilium-ebpf/cmd/bpf2go v0.0.0-20250419025143-874e9a29af02
-replace github.com/cilium/ebpf => github.com/yonch/cilium-ebpf v0.0.0-20250419025143-874e9a29af02
-
+replace github.com/cilium/ebpf => github.com/yonch/cilium-ebpf v0.0.0-20250419031303-b709db450429
 require (
 	github.com/cilium/ebpf v0.18.0
 	github.com/elastic/go-perf v0.0.0-20241029065020-30bec95324b8
