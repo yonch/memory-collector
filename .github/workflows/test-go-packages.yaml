@@ -34,8 +34,8 @@ jobs:
     - name: Install go dependencies
       run: go mod download
 
-    - name: Install libcap and bpftool
-      run: sudo apt-get update && sudo apt-get install -y libcap2-bin linux-tools-$(uname -r)
+    - name: Install libcap and bpf dependencies
+      run: sudo apt-get update && sudo apt-get install -y libcap2-bin linux-tools-$(uname -r) libbpf-dev
 
     - name: Set up asm link for go2bpf
       run: |
