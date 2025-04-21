@@ -15,7 +15,7 @@ import (
 // Wrapper functions
 func RmidInit(objs *RmidTestObjects, numRmid uint32, minFreeTimeNs uint64) error {
 	input := RmidTestRmidInitInput{
-		NumRmid:       numRmid,
+		NumRmids:      numRmid,
 		MinFreeTimeNs: minFreeTimeNs,
 	}
 
