@@ -12,6 +12,8 @@ import (
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type rmid_init_input -type rmid_init_output -type rmid_alloc_input -type rmid_alloc_output -type rmid_free_input -type rmid_free_output -type rmid_is_allocated_input -type rmid_is_allocated_output RmidTest rmid_allocator.bpf.c rmid_allocator_test.bpf.c -- -I../headers
 
+const XDP_PASS = 2
+
 // Wrapper functions
 func RmidInit(objs *RmidTestObjects, numRmid uint32, minFreeTimeNs uint64) error {
 	input := RmidTestRmidInitInput{
@@ -28,7 +30,7 @@ func RmidInit(objs *RmidTestObjects, numRmid uint32, minFreeTimeNs uint64) error
 	if err != nil {
 		return fmt.Errorf("calling test function: %w", err)
 	}
-	if ret != 0 {
+	if ret != XDP_PASS {
 		return fmt.Errorf("test function returned non-zero: %d", ret)
 	}
 
@@ -58,7 +60,7 @@ func RmidAlloc(objs *RmidTestObjects, timestamp uint64) (uint32, error) {
 	if err != nil {
 		return 0, fmt.Errorf("calling test function: %w", err)
 	}
-	if ret != 0 {
+	if ret != XDP_PASS {
 		return 0, fmt.Errorf("test function returned non-zero: %d", ret)
 	}
 
@@ -85,7 +87,7 @@ func RmidFree(objs *RmidTestObjects, rmid uint32, timestamp uint64) error {
 	if err != nil {
 		return fmt.Errorf("calling test function: %w", err)
 	}
-	if ret != 0 {
+	if ret != XDP_PASS {
 		return fmt.Errorf("test function returned non-zero: %d", ret)
 	}
 
@@ -115,7 +117,7 @@ func RmidIsAllocated(objs *RmidTestObjects, rmid uint32) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("calling test function: %w", err)
 	}
-	if ret != 0 {
+	if ret != XDP_PASS {
 		return false, fmt.Errorf("test function returned non-zero: %d", ret)
 	}
 
