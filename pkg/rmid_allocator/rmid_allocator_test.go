@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/cilium/ebpf/rlimit"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type rmid_init_input -type rmid_init_output -type rmid_alloc_input -type rmid_alloc_output -type rmid_free_input -type rmid_free_output -type rmid_is_allocated_input -type rmid_is_allocated_output RmidTest rmid_allocator.bpf.c rmid_allocator_test.bpf.c -- -I../headers
@@ -127,6 +129,9 @@ func RmidIsAllocated(objs *RmidTestObjects, rmid uint32) (bool, error) {
 
 // Test functions
 func TestRmidAllocation(t *testing.T) {
+	if err := rlimit.RemoveMemlock(); err != nil {
+		t.Fatalf("Failed to remove memlock limit: %v", err)
+	}
 	// Load the compiled program
 	objs := RmidTestObjects{}
 	if err := LoadRmidTestObjects(&objs, nil); err != nil {
@@ -164,6 +169,9 @@ func TestRmidAllocation(t *testing.T) {
 }
 
 func TestRmidFreeAndReuse(t *testing.T) {
+	if err := rlimit.RemoveMemlock(); err != nil {
+		t.Fatalf("Failed to remove memlock limit: %v", err)
+	}
 	// Load the compiled program
 	objs := RmidTestObjects{}
 	if err := LoadRmidTestObjects(&objs, nil); err != nil {
@@ -223,6 +231,9 @@ func TestRmidFreeAndReuse(t *testing.T) {
 }
 
 func TestRmidExhaustion(t *testing.T) {
+	if err := rlimit.RemoveMemlock(); err != nil {
+		t.Fatalf("Failed to remove memlock limit: %v", err)
+	}
 	// Load the compiled program
 	objs := RmidTestObjects{}
 	if err := LoadRmidTestObjects(&objs, nil); err != nil {
@@ -262,6 +273,9 @@ func TestRmidExhaustion(t *testing.T) {
 }
 
 func TestInvalidRmid(t *testing.T) {
+	if err := rlimit.RemoveMemlock(); err != nil {
+		t.Fatalf("Failed to remove memlock limit: %v", err)
+	}
 	// Load the compiled program
 	objs := RmidTestObjects{}
 	if err := LoadRmidTestObjects(&objs, nil); err != nil {
@@ -298,6 +312,9 @@ func TestInvalidRmid(t *testing.T) {
 }
 
 func TestInvalidMaxRmid(t *testing.T) {
+	if err := rlimit.RemoveMemlock(); err != nil {
+		t.Fatalf("Failed to remove memlock limit: %v", err)
+	}
 	// Load the compiled program
 	objs := RmidTestObjects{}
 	if err := LoadRmidTestObjects(&objs, nil); err != nil {
