@@ -13,6 +13,9 @@ static __always_inline __u8 rmid_is_valid(struct rmid_allocator *allocator, __u3
 
 // Helper function to check if an RMID is allocated
 __u8 rmid_is_allocated(struct rmid_allocator *allocator, __u32 rmid) {
+    if (!allocator)
+        return 0;
+        
     if (!rmid_is_valid(allocator, rmid))
         return 0;
         
@@ -21,6 +24,9 @@ __u8 rmid_is_allocated(struct rmid_allocator *allocator, __u32 rmid) {
 
 // Function to initialize the allocator
 __u8 rmid_init(struct rmid_allocator *allocator, __u32 max_rmid, __u64 min_free_time_ns) {
+    if (!allocator)
+        return 0;
+        
     // Validate max_rmid is within bounds
     // Note that max_rmid is the largest RMID, so the actual number of RMIDs (0-based) is max_rmid + 1
     if (max_rmid == 0 || max_rmid + 1 >  MAX_RMIDS)
@@ -43,14 +49,22 @@ __u8 rmid_init(struct rmid_allocator *allocator, __u32 max_rmid, __u64 min_free_
 
 // Function to allocate an RMID
 __u32 rmid_alloc(struct rmid_allocator *allocator, __u64 timestamp) {
+    if (!allocator)
+        return 0;
+        
     __u32 rmid;
     
     // Check if there are any free RMIDs by comparing head and tail
     if (allocator->free_head == allocator->free_tail)
         return 0;
         
-    // Get next free RMID from circular buffer using modulo for index
-    struct rmid_free_entry *entry = &allocator->free_list[allocator->free_head % allocator->max_rmid];
+    // Compute the index safely
+    __u32 head_idx = allocator->free_head % allocator->max_rmid;
+    if (head_idx >= MAX_RMIDS)
+        return 0;
+        
+    // Get next free RMID from circular buffer
+    struct rmid_free_entry *entry = &allocator->free_list[head_idx];
     
     // Check if enough time has passed since this RMID was freed
     if (timestamp - entry->free_timestamp < allocator->min_free_time_ns)
@@ -69,14 +83,22 @@ __u32 rmid_alloc(struct rmid_allocator *allocator, __u64 timestamp) {
 
 // Function to free an RMID
 void rmid_free(struct rmid_allocator *allocator, __u32 rmid, __u64 timestamp) {
+    if (!allocator)
+        return;
+        
     if (!rmid_is_valid(allocator, rmid) || !rmid_is_allocated(allocator, rmid))
         return;
         
     // Mark as free
     allocator->is_allocated[rmid - 1] = 0;
     
-    // Add to free list using modulo for index
-    struct rmid_free_entry *entry = &allocator->free_list[allocator->free_tail % allocator->max_rmid];
+    // Compute the index safely
+    __u32 tail_idx = allocator->free_tail % allocator->max_rmid;
+    if (tail_idx >= MAX_RMIDS)
+        return;
+        
+    // Add to free list
+    struct rmid_free_entry *entry = &allocator->free_list[tail_idx];
     entry->rmid = rmid;
     entry->free_timestamp = timestamp;
     allocator->free_tail++;
