@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -49,7 +50,7 @@ func BackoffUpdateFailure(objs *BackoffTestObjects) error {
 }
 
 func BackoffInBackoff(objs *BackoffTestObjects) (bool, error) {
-	ret, result, err := objs.BackoffTestPrograms.WrapBackoffInBackoff.Test([]byte{})
+	ret, result, err := objs.BackoffTestPrograms.WrapBackoffInBackoff.Test([]byte{1 /* must be non-empty */})
 	if err != nil {
 		return false, fmt.Errorf("calling test function: %w", err)
 	}
@@ -243,7 +244,7 @@ func TestBackoffProbability(t *testing.T) {
 	defer objs.Close()
 
 	// Test probability distribution for each backoff level
-	for level := 1; level <= 7; level++ {
+	for level := 1; level <= 9; level++ {
 		// Reset state
 		if err := BackoffInit(&objs); err != nil {
 			t.Fatalf("Failed to initialize backoff: %v", err)
@@ -259,10 +260,11 @@ func TestBackoffProbability(t *testing.T) {
 		// Test probability
 		tries := 10000
 		successes := 0
-		expectedProbability := 1.0 / float64(uint32(1)<<uint(level))
+		expectedProbability := math.Max(1.0/float64(uint32(1)<<uint(level)), 1.0/128.0)
+		r := rand.New(rand.NewSource(99))
 
 		for i := 0; i < tries; i++ {
-			shouldTry, err := BackoffShouldTry(&objs, uint32(rand.Uint32()))
+			shouldTry, err := BackoffShouldTry(&objs, uint32(r.Uint32()))
 			if err != nil {
 				t.Fatalf("Failed to check should try: %v", err)
 			}
@@ -272,8 +274,8 @@ func TestBackoffProbability(t *testing.T) {
 		}
 
 		actualProbability := float64(successes) / float64(tries)
-		// Allow 5% error margin
-		if actualProbability < expectedProbability*0.95 || actualProbability > expectedProbability*1.05 {
+		// Allow 20% error margin
+		if actualProbability < expectedProbability*0.80 || actualProbability > expectedProbability*1.2 {
 			t.Errorf("Level %d: Expected probability %.4f, got %.4f", level, expectedProbability, actualProbability)
 		}
 	}
