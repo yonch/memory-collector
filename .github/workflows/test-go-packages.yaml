@@ -37,11 +37,22 @@ jobs:
     - name: Install libcap and bpftool
       run: sudo apt-get update && sudo apt-get install -y libcap2-bin linux-tools-$(uname -r)
 
-    - name: Run perf-related package tests
+    - name: Set up asm link for go2bpf
+      run: |
+        arch=$(uname -m) && \
+            case ${arch} in \
+                aarch64) ln -sf /usr/include/aarch64-linux-gnu/asm /usr/include/asm ;; \
+                x86_64)  ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm ;; \
+                *)       echo "Unsupported architecture: ${arch}" && exit 1 ;; \
+            esac
+    
+    - name: Run go generate
       run: |
         # Run go generate in the packages directory
         go generate ./pkg/...
 
+    - name: Run perf-related package tests
+      run: |
         # Compile the test binaries for packages requiring capabilities
         go test -c ./pkg/perf ./pkg/perf_ebpf ./pkg/backoff ./pkg/rmid_allocator -race -o .
         
