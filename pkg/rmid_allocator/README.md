@@ -30,10 +30,10 @@ The allocator uses a struct-based approach:
 
 ```c
 struct rmid_allocator allocator;
-const __u32 max_rmid = 4;
+const __u32 num_rmids = 4;
 const __u64 min_free_time_ns = 2000000; // 2ms
 
-if (!rmid_init(&allocator, max_rmid, min_free_time_ns)) {
+if (!rmid_init(&allocator, num_rmids, min_free_time_ns)) {
     // Handle initialization error
 }
 ```

@@ -8,7 +8,7 @@
 
 // Helper function to check if an RMID is valid
 static __always_inline __u8 rmid_is_valid(struct rmid_allocator *allocator, __u32 rmid) {
-    return (rmid != 0 && rmid <= allocator->max_rmid) ? 1 : 0;
+    return (rmid != 0 && rmid <= allocator->num_rmids) ? 1 : 0;
 }
 
 // Helper function to check if an RMID is allocated
@@ -19,30 +19,29 @@ __u8 rmid_is_allocated(struct rmid_allocator *allocator, __u32 rmid) {
     if (!rmid_is_valid(allocator, rmid))
         return 0;
         
-    return allocator->is_allocated[rmid - 1];
+    return allocator->is_allocated[rmid];
 }
 
 // Function to initialize the allocator
-__u8 rmid_init(struct rmid_allocator *allocator, __u32 max_rmid, __u64 min_free_time_ns) {
+__u8 rmid_init(struct rmid_allocator *allocator, __u32 num_rmids, __u64 min_free_time_ns) {
     if (!allocator)
         return 0;
         
-    // Validate max_rmid is within bounds
-    // Note that max_rmid is the largest RMID, so the actual number of RMIDs (0-based) is max_rmid + 1
-    if (max_rmid == 0 || max_rmid + 1 >  MAX_RMIDS)
+    // Validate num_rmids is within bounds
+    if (num_rmids == 0 || num_rmids > MAX_RMIDS)
         return 0;
         
-    allocator->max_rmid = max_rmid;
+    allocator->num_rmids = num_rmids;
     allocator->min_free_time_ns = min_free_time_ns;
     allocator->free_head = 0;
     allocator->free_tail = 0;
     
     // Initialize free list with all valid RMIDs
-    for (__u32 i = 1; i <= max_rmid; i++) {
+    for (__u32 i = 1; i <= num_rmids; i++) {
         allocator->free_list[i-1].rmid = i;
         allocator->free_list[i-1].free_timestamp = 0;
     }
-    allocator->free_tail = max_rmid;
+    allocator->free_tail = num_rmids;
     
     return 1;
 }
@@ -59,7 +58,7 @@ __u32 rmid_alloc(struct rmid_allocator *allocator, __u64 timestamp) {
         return 0;
         
     // Compute the index safely
-    __u32 head_idx = allocator->free_head % allocator->max_rmid;
+    __u32 head_idx = allocator->free_head % allocator->num_rmids;
     if (head_idx >= MAX_RMIDS)
         return 0;
         
@@ -76,7 +75,7 @@ __u32 rmid_alloc(struct rmid_allocator *allocator, __u64 timestamp) {
     allocator->free_head++;
     
     // Mark as allocated
-    allocator->is_allocated[rmid - 1] = 1;
+    allocator->is_allocated[rmid] = 1;
     
     return rmid;
 }
@@ -90,10 +89,10 @@ void rmid_free(struct rmid_allocator *allocator, __u32 rmid, __u64 timestamp) {
         return;
         
     // Mark as free
-    allocator->is_allocated[rmid - 1] = 0;
+    allocator->is_allocated[rmid] = 0;
     
     // Compute the index safely
-    __u32 tail_idx = allocator->free_tail % allocator->max_rmid;
+    __u32 tail_idx = allocator->free_tail % allocator->num_rmids;
     if (tail_idx >= MAX_RMIDS)
         return;
         

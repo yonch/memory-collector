@@ -13,9 +13,9 @@ import (
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type rmid_init_input -type rmid_init_output -type rmid_alloc_input -type rmid_alloc_output -type rmid_free_input -type rmid_free_output -type rmid_is_allocated_input -type rmid_is_allocated_output RmidTest rmid_allocator.bpf.c rmid_allocator_test.bpf.c -- -I../headers
 
 // Wrapper functions
-func RmidInit(objs *RmidTestObjects, maxRmid uint32, minFreeTimeNs uint64) error {
+func RmidInit(objs *RmidTestObjects, numRmid uint32, minFreeTimeNs uint64) error {
 	input := RmidTestRmidInitInput{
-		MaxRmid:       maxRmid,
+		NumRmid:       numRmid,
 		MinFreeTimeNs: minFreeTimeNs,
 	}
 
@@ -140,11 +140,11 @@ func TestRmidAllocation(t *testing.T) {
 	defer objs.Close()
 
 	// Initialize allocator
-	const maxRmid = 4
+	const numRmid = 4
 	const minFreeTimeNs = 2000000 // 2ms
 
 	// Initialize the allocator
-	if err := RmidInit(&objs, maxRmid, minFreeTimeNs); err != nil {
+	if err := RmidInit(&objs, numRmid, minFreeTimeNs); err != nil {
 		t.Fatalf("Failed to initialize allocator: %v", err)
 	}
 
@@ -180,17 +180,17 @@ func TestRmidFreeAndReuse(t *testing.T) {
 	defer objs.Close()
 
 	// Initialize allocator
-	const maxRmid = 4
+	const numRmid = 4
 	const minFreeTimeNs = 2000000 // 2ms
 
 	// Initialize the allocator
-	if err := RmidInit(&objs, maxRmid, minFreeTimeNs); err != nil {
+	if err := RmidInit(&objs, numRmid, minFreeTimeNs); err != nil {
 		t.Fatalf("Failed to initialize allocator: %v", err)
 	}
 
 	// Allocate all RMIDs
 	now := uint64(time.Now().UnixNano())
-	for i := 1; i <= maxRmid; i++ {
+	for i := 1; i < numRmid; i++ {
 		_, err := RmidAlloc(&objs, now)
 		if err != nil {
 			t.Fatalf("Failed to allocate RMID %d: %v", i, err)
@@ -242,17 +242,17 @@ func TestRmidExhaustion(t *testing.T) {
 	defer objs.Close()
 
 	// Initialize allocator
-	const maxRmid = 4
+	const numRmid = 4
 	const minFreeTimeNs = 2000000 // 2ms
 
 	// Initialize the allocator
-	if err := RmidInit(&objs, maxRmid, minFreeTimeNs); err != nil {
+	if err := RmidInit(&objs, numRmid, minFreeTimeNs); err != nil {
 		t.Fatalf("Failed to initialize allocator: %v", err)
 	}
 
 	// Allocate all RMIDs
 	now := uint64(time.Now().UnixNano())
-	for i := 1; i <= maxRmid; i++ {
+	for i := 1; i < numRmid; i++ {
 		rmid, err := RmidAlloc(&objs, now)
 		if err != nil {
 			t.Fatalf("Failed to allocate RMID %d: %v", i, err)
@@ -284,11 +284,11 @@ func TestInvalidRmid(t *testing.T) {
 	defer objs.Close()
 
 	// Initialize allocator
-	const maxRmid = 4
+	const numRmid = 4
 	const minFreeTimeNs = 2000000 // 2ms
 
 	// Initialize the allocator
-	if err := RmidInit(&objs, maxRmid, minFreeTimeNs); err != nil {
+	if err := RmidInit(&objs, numRmid, minFreeTimeNs); err != nil {
 		t.Fatalf("Failed to initialize allocator: %v", err)
 	}
 
@@ -301,17 +301,17 @@ func TestInvalidRmid(t *testing.T) {
 		t.Error("Expected RMID 0 to be invalid")
 	}
 
-	// Test RMID beyond max
-	allocated, err = RmidIsAllocated(&objs, maxRmid+1)
+	// Test RMID beyond num_rmids
+	allocated, err = RmidIsAllocated(&objs, numRmid)
 	if err != nil {
 		t.Fatalf("Failed to check RMID allocation: %v", err)
 	}
 	if allocated {
-		t.Error("Expected RMID beyond max to be invalid")
+		t.Error("Expected RMID beyond num_rmids to be invalid")
 	}
 }
 
-func TestInvalidMaxRmid(t *testing.T) {
+func TestInvalidNumRmid(t *testing.T) {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		t.Fatalf("Failed to remove memlock limit: %v", err)
 	}
@@ -322,27 +322,27 @@ func TestInvalidMaxRmid(t *testing.T) {
 	}
 	defer objs.Close()
 
-	var maxRmid uint32
-	err := objs.RmidTestVariables.MaxRmids.Get(&maxRmid)
+	var maxRmids uint32
+	err := objs.RmidTestVariables.MaxRmids.Get(&maxRmids)
 	if err != nil {
 		t.Fatalf("Failed to get max RMIDs: %v", err)
 	}
 
-	// Test with max_rmid = 0
+	// Test with num_rmid = 0
 	err = RmidInit(&objs, 0, 2000000)
 	if err == nil {
-		t.Error("Expected error when max_rmid is 0")
+		t.Error("Expected error when num_rmid is 0")
 	}
 
-	// Test with max_rmid > MAX_RMIDS
-	err = RmidInit(&objs, maxRmid+1, 2000000)
+	// Test with num_rmid > MAX_RMIDS
+	err = RmidInit(&objs, maxRmids+1, 2000000)
 	if err == nil {
-		t.Error("Expected error when max_rmid exceeds MAX_RMIDS")
+		t.Error("Expected error when num_rmid exceeds MAX_RMIDS")
 	}
 
-	// Test with valid max_rmid
-	err = RmidInit(&objs, maxRmid, 2000000)
+	// Test with valid num_rmid
+	err = RmidInit(&objs, maxRmids, 2000000)
 	if err != nil {
-		t.Errorf("Unexpected error with valid max_rmid: %v", err)
+		t.Errorf("Unexpected error with valid num_rmid: %v", err)
 	}
 }

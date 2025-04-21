@@ -6,7 +6,7 @@
 #include <bpf/bpf_tracing.h>
 #include "rmid_allocator.bpf.h"
 
-// Make bpf2go wrap this variable, for the test that checks if max_rmid is within bounds
+// Make bpf2go wrap this variable, for the test that checks if num_rmids is within bounds
 const __u32 max_rmids = MAX_RMIDS;
 
 // Map to store the allocator
@@ -19,7 +19,7 @@ struct {
 
 // Input/output structures for test functions
 struct rmid_init_input {
-    __u32 max_rmid;
+    __u32 num_rmids;
     __u64 min_free_time_ns;
 };
 const struct rmid_init_input *unused_bpf2go_generate_rmid_init_input __attribute__((unused));
@@ -83,7 +83,7 @@ int test_rmid_init(struct xdp_md *ctx) {
         return XDP_ABORTED;
         
     // Call the actual function and store result
-    output.success = rmid_init(allocator, input.max_rmid, input.min_free_time_ns);
+    output.success = rmid_init(allocator, input.num_rmids, input.min_free_time_ns);
     
     // Write output to packet data
     if (bpf_xdp_store_bytes(ctx, 0, &output, sizeof(output)) < 0)
