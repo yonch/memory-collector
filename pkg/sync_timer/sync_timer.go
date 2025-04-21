@@ -32,9 +32,18 @@ func (st *SyncTimer) Start() error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	guard, err := NewCPUAffinityGuard()
+	if err != nil {
+		return fmt.Errorf("creating CPU affinity guard: %w", err)
+	}
+	defer guard.Close()
+
 	// Initialize timers on each CPU
 	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
-		setCPUAffinity(cpu)
+		err := setCPUAffinity(cpu)
+		if err != nil {
+			return fmt.Errorf("setting CPU affinity for CPU %d: %w", cpu, err)
+		}
 
 		// Run the initialization program on the target CPU
 		ret, err := st.initProgram.Run(nil)
@@ -74,8 +83,8 @@ func (st *SyncTimer) Stop() {
 	// Reset all timer states to stop the timers
 	for cpu := 0; cpu < runtime.NumCPU(); cpu++ {
 		key := uint32(cpu)
-		st.timerStates.Delete(key)
-		st.initStatus.Delete(key)
+		_ = st.timerStates.Delete(key)
+		_ = st.initStatus.Delete(key)
 	}
 }
 
@@ -89,4 +98,28 @@ func setCPUAffinity(cpu int) error {
 	// Set the CPU affinity for the current thread
 	pid := unix.Gettid()
 	return unix.SchedSetaffinity(pid, &cpuSet)
+}
+
+// CPU affinity guard: on instantiation, reads the current CPU affinity. Its Close method restores the original CPU affinity.
+type CPUAffinityGuard struct {
+	originalCPUSet unix.CPUSet
+}
+
+func (c *CPUAffinityGuard) Close() error {
+	pid := unix.Gettid()
+	return unix.SchedSetaffinity(pid, &c.originalCPUSet)
+}
+
+// NewCPUAffinityGuard creates a new CPU affinity guard
+func NewCPUAffinityGuard() (*CPUAffinityGuard, error) {
+	guard := &CPUAffinityGuard{}
+	guard.originalCPUSet.Zero()
+
+	pid := unix.Gettid()
+	// Get the current CPU affinity
+	err := unix.SchedGetaffinity(pid, &guard.originalCPUSet)
+	if err != nil {
+		return nil, fmt.Errorf("getting current CPU affinity: %w", err)
+	}
+	return guard, nil
 }

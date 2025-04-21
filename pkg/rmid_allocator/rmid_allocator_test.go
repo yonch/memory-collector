@@ -10,7 +10,7 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type rmid_init_input -type rmid_init_output -type rmid_alloc_input -type rmid_alloc_output -type rmid_free_input -type rmid_free_output -type rmid_is_allocated_input -type rmid_is_allocated_output RmidTest rmid_allocator.bpf.c rmid_allocator_test.bpf.c -- -I../headers
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -no-strip -type rmid_init_input -type rmid_init_output -type rmid_alloc_input -type rmid_alloc_output -type rmid_free_input -type rmid_free_output -type rmid_is_allocated_input -type rmid_is_allocated_output RmidTest rmid_allocator.bpf.c rmid_allocator_test.bpf.c -- -I../headers
 
 const XDP_PASS = 2
 

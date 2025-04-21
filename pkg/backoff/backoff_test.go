@@ -11,7 +11,7 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type backoff_should_try_input -type backoff_should_try_output BackoffTest backoff_test.bpf.c -- -I.
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -no-strip -type backoff_should_try_input -type backoff_should_try_output BackoffTest backoff_test.bpf.c -- -I.
 
 const XDP_PASS = 2
 
