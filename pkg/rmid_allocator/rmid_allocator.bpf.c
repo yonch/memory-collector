@@ -57,13 +57,8 @@ __u32 rmid_alloc(struct rmid_allocator *allocator, __u64 timestamp) {
     if (allocator->free_head == allocator->free_tail)
         return 0;
         
-    // Compute the index safely
-    __u32 head_idx = allocator->free_head % allocator->num_rmids;
-    if (head_idx >= MAX_RMIDS)
-        return 0;
-        
     // Get next free RMID from circular buffer
-    struct rmid_free_entry *entry = &allocator->free_list[head_idx];
+    struct rmid_free_entry *entry = &allocator->free_list[allocator->free_head % MAX_RMIDS];
     
     // Check if enough time has passed since this RMID was freed
     if (timestamp - entry->free_timestamp < allocator->min_free_time_ns)
@@ -91,13 +86,8 @@ void rmid_free(struct rmid_allocator *allocator, __u32 rmid, __u64 timestamp) {
     // Mark as free
     allocator->is_allocated[rmid] = 0;
     
-    // Compute the index safely
-    __u32 tail_idx = allocator->free_tail % allocator->num_rmids;
-    if (tail_idx >= MAX_RMIDS)
-        return;
-        
     // Add to free list
-    struct rmid_free_entry *entry = &allocator->free_list[tail_idx];
+    struct rmid_free_entry *entry = &allocator->free_list[allocator->free_tail % MAX_RMIDS];
     entry->rmid = rmid;
     entry->free_timestamp = timestamp;
     allocator->free_tail++;
