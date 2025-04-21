@@ -39,6 +39,9 @@ jobs:
 
     - name: Run perf-related package tests
       run: |
+        # Run go generate in the packages directory
+        go generate ./pkg/...
+
         # Compile the test binaries for packages requiring capabilities
         go test -c ./pkg/perf ./pkg/perf_ebpf ./pkg/backoff ./pkg/rmid_allocator -race -o .
         
