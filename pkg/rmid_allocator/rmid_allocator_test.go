@@ -94,7 +94,7 @@ func RmidFree(objs *RmidTestObjects, rmid uint32, timestamp uint64) error {
 		return fmt.Errorf("deserializing output: %w", err)
 	}
 
-	if output.Success == 0 {
+	if output.Success != 0 {
 		return fmt.Errorf("free operation failed")
 	}
 

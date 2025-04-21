@@ -7,8 +7,8 @@
 #include "rmid_allocator.bpf.h"
 
 // Helper function to check if an RMID is valid
-static __always_inline __u8 rmid_is_valid(struct rmid_allocator *allocator, __u32 rmid) {
-    return (rmid != 0 && rmid <= allocator->num_rmids) ? 1 : 0;
+static __always_inline __u32 rmid_is_valid(struct rmid_allocator *allocator, __u32 rmid) {
+    return (rmid != 0 && rmid < allocator->num_rmids);
 }
 
 // Helper function to check if an RMID is allocated
@@ -16,7 +16,7 @@ __u8 rmid_is_allocated(struct rmid_allocator *allocator, __u32 rmid) {
     if (!allocator)
         return 0;
         
-    if (!rmid_is_valid(allocator, rmid))
+    if (rmid >= MAX_RMIDS)
         return 0;
         
     return allocator->is_allocated[rmid];
@@ -33,15 +33,14 @@ __u8 rmid_init(struct rmid_allocator *allocator, __u32 num_rmids, __u64 min_free
         
     allocator->num_rmids = num_rmids;
     allocator->min_free_time_ns = min_free_time_ns;
-    allocator->free_head = 0;
-    allocator->free_tail = 0;
-    
-    // Initialize free list with all valid RMIDs
-    for (__u32 i = 1; i <= num_rmids; i++) {
-        allocator->free_list[i-1].rmid = i;
-        allocator->free_list[i-1].free_timestamp = 0;
-    }
+    allocator->free_head = 1;
     allocator->free_tail = num_rmids;
+    
+    // Initialize free list with all RMIDs
+    for (__u32 i = 0; i < MAX_RMIDS; i++) {
+        allocator->free_list[i].rmid = i;
+        allocator->free_list[i].free_timestamp = 0;
+    }
     
     return 1;
 }
@@ -65,6 +64,8 @@ __u32 rmid_alloc(struct rmid_allocator *allocator, __u64 timestamp) {
         return 0;
         
     rmid = entry->rmid;
+    if (rmid > MAX_RMIDS)
+        return 0;
     
     // Update free head (let it grow)
     allocator->free_head++;
@@ -76,13 +77,19 @@ __u32 rmid_alloc(struct rmid_allocator *allocator, __u64 timestamp) {
 }
 
 // Function to free an RMID
-void rmid_free(struct rmid_allocator *allocator, __u32 rmid, __u64 timestamp) {
+__s64 rmid_free(struct rmid_allocator *allocator, __u32 rmid, __u64 timestamp) {
     if (!allocator)
-        return;
+        return -1;
         
-    if (!rmid_is_valid(allocator, rmid) || !rmid_is_allocated(allocator, rmid))
-        return;
-        
+    if (!rmid_is_valid(allocator, rmid))
+        return -1;
+
+    if (!rmid_is_allocated(allocator, rmid))
+        return -1;
+
+    if (rmid >= MAX_RMIDS)
+        return -1;
+
     // Mark as free
     allocator->is_allocated[rmid] = 0;
     
@@ -91,6 +98,8 @@ void rmid_free(struct rmid_allocator *allocator, __u32 rmid, __u64 timestamp) {
     entry->rmid = rmid;
     entry->free_timestamp = timestamp;
     allocator->free_tail++;
+
+    return 0;
 }
 
 char _license[] SEC("license") = "GPL"; 

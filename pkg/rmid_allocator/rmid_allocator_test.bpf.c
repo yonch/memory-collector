@@ -46,7 +46,7 @@ struct rmid_free_input {
 const struct rmid_free_input *unused_bpf2go_generate_rmid_free_input __attribute__((unused));
 
 struct rmid_free_output {
-    __u8 success;
+    __s64 success;
 };
 const struct rmid_free_output *unused_bpf2go_generate_rmid_free_output __attribute__((unused));
 
@@ -135,8 +135,7 @@ int test_rmid_free(struct xdp_md *ctx) {
         return XDP_ABORTED;
         
     // Call the actual function
-    rmid_free(allocator, input.rmid, input.timestamp);
-    output.success = 1;
+    output.success = rmid_free(allocator, input.rmid, input.timestamp);
     
     // Write output to packet data
     if (bpf_xdp_store_bytes(ctx, 0, &output, sizeof(output)) < 0)
