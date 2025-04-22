@@ -18,7 +18,6 @@ const (
 // Metadata represents the metadata associated with an RMID
 type Metadata struct {
 	Comm  string // Process command name
-	Tgid  uint32 // Thread group ID
 	Valid bool   // Whether the RMID is currently valid
 }
 
@@ -47,10 +46,9 @@ func NewTracker() *Tracker {
 }
 
 // Alloc enqueues an RMID allocation with metadata
-func (t *Tracker) Alloc(rmid uint32, comm string, tgid uint32, timestamp uint64) {
+func (t *Tracker) Alloc(rmid uint32, comm string, timestamp uint64) {
 	meta := Metadata{
 		Comm:  comm,
-		Tgid:  tgid,
 		Valid: true,
 	}
 
@@ -107,6 +105,15 @@ func (t *Tracker) Advance(timestamp uint64) {
 func (t *Tracker) GetMetadata(rmid uint32) (Metadata, bool) {
 	meta, exists := t.rmids[rmid]
 	return meta, exists
+}
+
+// GetAllMetadata returns a copy of all stored metadata
+func (t *Tracker) GetAllMetadata() map[uint32]Metadata {
+	result := make(map[uint32]Metadata, len(t.rmids))
+	for id, meta := range t.rmids {
+		result[id] = meta
+	}
+	return result
 }
 
 // Reset clears all state and pending updates

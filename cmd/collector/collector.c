@@ -3,7 +3,7 @@
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include "protocol.bpf.h"
-#include "task_rmid.bpf.h"
+#include "task_metadata.bpf.h"
 
 
 // Structure to store previous counter values per CPU
@@ -64,23 +64,14 @@ static __u64 compute_delta(__u64 current, __u64 previous) {
 
 SEC("tracepoint/sched/sched_switch")
 int measure_perf(struct trace_event_raw_sched_switch *ctx) {
+    // Get current task before checking counters
+    struct task_struct *current_task = (struct task_struct *)bpf_get_current_task();
+    
+    // Check and report task metadata if needed
+    send_task_metadata_if_needed(ctx, current_task);
+    
+    __u32 pid = current_task->pid;
 
-#if 0
-    // Extract RMID from the tracepoint context
-    struct {
-        __u64 pad;  // Common fields in tracepoint
-        __u8 is_context_switch;
-        __u32 rmid;
-    } *args = ctx;
-    
-    __u32 rmid = args->rmid;
-    
-    // If RMID not provided, get it from current task
-    if (rmid == 0) {
-        struct task_struct *current_task = (struct task_struct *)bpf_get_current_task();
-        rmid = task_rmid_get(current_task);
-    }
-    
     __u64 now;
     
     // Get previous counters
@@ -96,7 +87,7 @@ int measure_perf(struct trace_event_raw_sched_switch *ctx) {
     struct bpf_perf_event_value llc_misses_val = {};
     
     struct perf_measurement_params params = {
-        .rmid = rmid
+        .pid = pid  // Use pid instead of rmid
     };
     
     int err = bpf_perf_event_read_value(&cycles, BPF_F_CURRENT_CPU, &cycles_val, sizeof(cycles_val));
@@ -124,13 +115,12 @@ int measure_perf(struct trace_event_raw_sched_switch *ctx) {
     if (prev->timestamp != 0) {
         params.time_delta_ns = compute_delta(now, prev->timestamp);
         params.timestamp = now;
-        // Submit the event using the new helper function
+        // Submit the event using the helper function
         send_perf_measurement(ctx, &params);
     }
     prev->timestamp = now;
     
     increase_count(ctx);
-#endif
     return 0;
 }
 

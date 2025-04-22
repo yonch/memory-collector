@@ -6,7 +6,7 @@ import (
 
 // Measurement represents a single measurement from a perf event
 type Measurement struct {
-	RMID         uint32
+	PID          uint32 // Process ID (renamed from RMID)
 	Cycles       uint64
 	Instructions uint64
 	LLCMisses    uint64
@@ -14,9 +14,9 @@ type Measurement struct {
 	Duration     uint64 // nanoseconds
 }
 
-// TimeSlotAggregation represents aggregated measurements for a specific RMID in a time slot
+// TimeSlotAggregation represents aggregated measurements for a specific PID in a time slot
 type TimeSlotAggregation struct {
-	RMID         uint32
+	PID          uint32 // Process ID (renamed from RMID)
 	Cycles       uint64
 	Instructions uint64
 	LLCMisses    uint64
@@ -27,7 +27,7 @@ type TimeSlotAggregation struct {
 type TimeSlot struct {
 	StartTime    uint64                          // nanoseconds
 	EndTime      uint64                          // nanoseconds
-	Aggregations map[uint32]*TimeSlotAggregation // keyed by RMID
+	Aggregations map[uint32]*TimeSlotAggregation // keyed by PID
 }
 
 // Config holds the configuration parameters for the aggregator
@@ -194,13 +194,13 @@ func (a *Aggregator) UpdateMeasurement(m *Measurement) error {
 			llcMisses = uint64(float64(remainingLLCMisses) * proportion)
 		}
 
-		// Update or create aggregation for this RMID
-		agg, exists := slot.Aggregations[m.RMID]
+		// Update or create aggregation for this PID
+		agg, exists := slot.Aggregations[m.PID]
 		if !exists {
 			agg = &TimeSlotAggregation{
-				RMID: m.RMID,
+				PID: m.PID,
 			}
-			slot.Aggregations[m.RMID] = agg
+			slot.Aggregations[m.PID] = agg
 		}
 
 		// Update aggregation
