@@ -4,6 +4,7 @@
 #include <bpf/bpf_helpers.h>
 #include <linux/sched.h>
 #include "protocol.bpf.h"
+#include "task_rmid.bpf.h"
 
 
 // Structure to store previous counter values per CPU
@@ -73,6 +74,13 @@ int measure_perf(void *ctx) {
     } *args = ctx;
     
     __u32 rmid = args->rmid;
+    
+    // If RMID not provided, get it from current task
+    if (rmid == 0) {
+        struct task_struct *current_task = (struct task_struct *)bpf_get_current_task();
+        rmid = task_rmid_get(current_task);
+    }
+    
     __u64 now;
     
     // Get previous counters

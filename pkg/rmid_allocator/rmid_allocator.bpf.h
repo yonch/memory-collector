@@ -1,11 +1,6 @@
 #ifndef __RMID_ALLOCATOR_BPF_H
 #define __RMID_ALLOCATOR_BPF_H
 
-#include <linux/bpf.h>
-#include <linux/types.h>
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_tracing.h>
-
 #define MAX_RMIDS 1024
 #define TASK_COMM_LEN 16
 

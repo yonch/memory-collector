@@ -1,18 +1,18 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type msg_type -type perf_measurement_msg -type rmid_alloc_msg -type rmid_free_msg bpf collector.c protocol.bpf.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type msg_type -type perf_measurement_msg -type rmid_alloc_msg -type rmid_free_msg -type task_rmid_init_params bpf collector.c protocol.bpf.c task_rmid.bpf.c  -- -I../../pkg/rmid_allocator
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
 	"time"
 	"unsafe"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/unvariance/collector/pkg/aggregate"
@@ -179,6 +179,23 @@ func main() {
 	}
 	defer objs.Close()
 
+	// Initialize the RMID system
+	// Set maximum RMIDs to 256 and minimum free time to 1 second (in nanoseconds)
+	params := bpfTaskRmidInitParams{
+		MaxRmids:      512,
+		MinFreeTimeNs: 2_000_000, // 2 milliseconds in nanoseconds
+	}
+
+	// Run the initialization program with our parameters
+	ret, err := objs.TaskRmidInitProg.Run(&ebpf.RunOptions{Context: &params})
+	if err != nil {
+		log.Fatalf("Failed to initialize RMID allocation system: %v", err)
+	}
+	if ret != 1 {
+		log.Fatalf("RMID allocation initialization failed with return code: %d", ret)
+	}
+	log.Println("RMID allocation system successfully initialized")
+
 	// -- Set up perf rings for ebpf -> userspace --
 	// Create a ReaderOptions with a large Watermark
 	perCPUBufferSize := 16 * os.Getpagesize()
@@ -210,7 +227,7 @@ func main() {
 	cyclesAttr := commonOpts
 	cyclesAttr.Type = unix.PERF_TYPE_HARDWARE
 	cyclesAttr.Config = unix.PERF_COUNT_HW_CPU_CYCLES
-	cyclesOpener, err := NewEventOpener(objs.Cycles, cyclesAttr)
+	cyclesOpener, err := perf_ebpf.NewEventOpener(objs.Cycles, cyclesAttr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -220,7 +237,7 @@ func main() {
 	instrAttr := commonOpts
 	instrAttr.Type = unix.PERF_TYPE_HARDWARE
 	instrAttr.Config = unix.PERF_COUNT_HW_INSTRUCTIONS
-	instrOpener, err := NewEventOpener(objs.Instructions, instrAttr)
+	instrOpener, err := perf_ebpf.NewEventOpener(objs.Instructions, instrAttr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -230,7 +247,7 @@ func main() {
 	llcAttr := commonOpts
 	llcAttr.Type = unix.PERF_TYPE_HARDWARE
 	llcAttr.Config = unix.PERF_COUNT_HW_CACHE_MISSES
-	llcOpener, err := NewEventOpener(objs.LlcMisses, llcAttr)
+	llcOpener, err := perf_ebpf.NewEventOpener(objs.LlcMisses, llcAttr)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -249,38 +266,19 @@ func main() {
 
 	// -- Track RMIDs --
 	rmidTracker := rmid.NewTracker()
-
-	// Attach RMID free tracepoint first, so we don't get dangling RMIDs
-	rmidFreeTp, err := link.Tracepoint("memory_collector", "rmid_free", objs.HandleRmidFree, nil)
+	// Attach the process fork tracepoint
+	forkTp, err := link.Tracepoint("sched", "sched_process_fork", objs.HandleProcessFork, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to attach process fork tracepoint: %v", err)
 	}
-	defer rmidFreeTp.Close()
+	defer forkTp.Close()
 
-	// Attach RMID allocation tracepoint
-	rmidAllocTp, err := link.Tracepoint("memory_collector", "rmid_alloc", objs.HandleRmidAlloc, nil)
+	// Attach the process exit tracepoint
+	exitTp, err := link.Tracepoint("sched", "sched_process_free", objs.HandleProcessFree, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to attach process exit tracepoint: %v", err)
 	}
-	defer rmidAllocTp.Close()
-
-	// Attach RMID existing tracepoint
-	rmidExistingTp, err := link.Tracepoint("memory_collector", "rmid_existing", objs.HandleRmidExisting, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Trigger RMID dump via procfs
-	if err := ioutil.WriteFile("/proc/unvariance_collector", []byte("dump"), 0644); err != nil {
-		log.Fatal(err)
-	}
-	log.Println("Triggered RMID dump via procfs")
-
-	// Close the RMID existing tracepoint since we're done with the dump
-	if err := rmidExistingTp.Close(); err != nil {
-		log.Printf("Warning: Failed to close RMID existing tracepoint: %v", err)
-	}
-	log.Println("Closed RMID existing tracepoint")
+	defer exitTp.Close()
 
 	// Catch CTRL+C
 	stopper := make(chan os.Signal, 1)

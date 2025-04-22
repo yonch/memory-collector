@@ -1,9 +1,6 @@
 #ifndef PROTOCOL_BPF_H
 #define PROTOCOL_BPF_H
 
-#include <linux/bpf.h>
-#include <bpf/bpf_helpers.h>
-
 // Struct for passing perf measurement parameters
 struct perf_measurement_params {
     __u32 rmid;
