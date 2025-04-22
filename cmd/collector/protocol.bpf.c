@@ -6,11 +6,11 @@
 
 #define TASK_COMM_LEN 16
 
-// Perf event array for all events
+/* Perf event map for benchmark output */
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-    __uint(key_size, 0);
-    __uint(value_size, 0);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
 } events SEC(".maps");
 
 
@@ -53,7 +53,7 @@ struct rmid_free_msg {
 const struct rmid_free_msg *unused_bpf2go_generate_rmid_free_msg __attribute__((unused)); // force golang generation of the struct
 
 // Helper function to send RMID allocation message
-void send_rmid_alloc(void *ctx, __u32 rmid, const char *comm, __u32 tgid, __u64 timestamp) {
+int send_rmid_alloc(void *ctx, __u32 rmid, const char *comm, __u32 tgid, __u64 timestamp) {
     struct rmid_alloc_msg msg = {
         .timestamp = timestamp,
         .type = MSG_TYPE_RMID_ALLOC,
@@ -61,23 +61,23 @@ void send_rmid_alloc(void *ctx, __u32 rmid, const char *comm, __u32 tgid, __u64 
         .tgid = tgid,
     };
     __builtin_memcpy(msg.comm, comm, TASK_COMM_LEN);
-    
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
+
+    return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
 }
 
 // Helper function to send RMID free message
-void send_rmid_free(void *ctx, __u32 rmid, __u64 timestamp) {
+int send_rmid_free(void *ctx, __u32 rmid, __u64 timestamp) {
     struct rmid_free_msg msg = {
         .timestamp = timestamp,
         .type = MSG_TYPE_RMID_FREE,
         .rmid = rmid,
     };
     
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
+    return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
 }
 
 // Helper function to send perf measurement data
-void send_perf_measurement(void *ctx, struct perf_measurement_params *params) {
+int send_perf_measurement(void *ctx, struct perf_measurement_params *params) {
     struct perf_measurement_msg msg = {
         .timestamp = params->timestamp,
         .type = MSG_TYPE_PERF,
@@ -88,5 +88,5 @@ void send_perf_measurement(void *ctx, struct perf_measurement_params *params) {
         .time_delta_ns = params->time_delta_ns
     };
     
-    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
+    return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &msg, sizeof(msg));
 }

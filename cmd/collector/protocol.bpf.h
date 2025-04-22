@@ -12,12 +12,12 @@ struct perf_measurement_params {
 };
 
 // Function to send perf measurement data
-void send_perf_measurement(void *ctx, struct perf_measurement_params *params);
+int send_perf_measurement(void *ctx, struct perf_measurement_params *params);
 
 // Function to send RMID allocation message
-void send_rmid_alloc(void *ctx, __u32 rmid, const char *comm, __u32 tgid, __u64 timestamp);
+int send_rmid_alloc(void *ctx, __u32 rmid, const char *comm, __u32 tgid, __u64 timestamp);
 
 // Function to send RMID free message
-void send_rmid_free(void *ctx, __u32 rmid, __u64 timestamp);
+int send_rmid_free(void *ctx, __u32 rmid, __u64 timestamp);
 
 #endif // PROTOCOL_BPF_H 

@@ -1,8 +1,7 @@
 //go:build ignore
 
-#include <linux/bpf.h>
+#include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
-#include <linux/sched.h>
 #include "protocol.bpf.h"
 #include "task_rmid.bpf.h"
 
@@ -63,9 +62,10 @@ static __u64 compute_delta(__u64 current, __u64 previous) {
     return current - previous;
 }
 
+SEC("tracepoint/sched/sched_switch")
+int measure_perf(struct trace_event_raw_sched_switch *ctx) {
 
-SEC("tracepoint/memory_collector/measure_perf_counters")
-int measure_perf(void *ctx) {
+#if 0
     // Extract RMID from the tracepoint context
     struct {
         __u64 pad;  // Common fields in tracepoint
@@ -130,7 +130,7 @@ int measure_perf(void *ctx) {
     prev->timestamp = now;
     
     increase_count(ctx);
-    
+#endif
     return 0;
 }
 

@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type msg_type -type perf_measurement_msg -type rmid_alloc_msg -type rmid_free_msg -type task_rmid_init_params bpf collector.c protocol.bpf.c task_rmid.bpf.c  -- -I../../pkg/rmid_allocator
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type msg_type -type perf_measurement_msg -type rmid_alloc_msg -type rmid_free_msg -type task_rmid_init_params bpf collector.c protocol.bpf.c task_rmid.bpf.c ../../pkg/rmid_allocator/rmid_allocator.bpf.c -- -I../../pkg/rmid_allocator
 
 import (
 	"bytes"
