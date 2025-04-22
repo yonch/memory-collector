@@ -32,17 +32,34 @@ struct {
     __type(value, struct task_rmid);
 } task_rmid_map SEC(".maps");
 
+// Map to store RMIDs for each task
+struct {
+    __uint(type, BPF_MAP_TYPE_TASK_STORAGE);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __type(key, __u32);
+    __type(value, __u32);
+} task_rmid_storage SEC(".maps");
+
 // Helper functions for BPF-side use only
 static __always_inline __u32 get_task_rmid(struct task_struct *task) {
     if (!task)
         return 0;
-    return task->rmid;
+    
+    __u32 *rmid_ptr = bpf_task_storage_get(&task_rmid_storage, task, NULL, 0);
+    if (!rmid_ptr)
+        return 0;
+    
+    return *rmid_ptr;
 }
 
 static __always_inline void set_task_rmid(struct task_struct *task, __u32 rmid) {
     if (!task)
         return;
-    task->rmid = rmid;
+    
+    // Create storage if it doesn't exist yet
+    __u32 *rmid_ptr = bpf_task_storage_get(&task_rmid_storage, task, &rmid, BPF_LOCAL_STORAGE_GET_F_CREATE);
+    if (rmid_ptr)
+        *rmid_ptr = rmid;
 }
 
 static __always_inline struct task_struct *get_group_leader(struct task_struct *task) {
@@ -192,6 +209,8 @@ int handle_process_free(u64 *ctx) {
     rmid = get_task_rmid(task);
     if (rmid) {
         free_rmid(ctx, rmid);
+        // Note: no need to explicitly delete task storage as it's automatically
+        // cleaned up when the task is freed
     }
 
     return 0;
