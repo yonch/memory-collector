@@ -1,6 +1,6 @@
 package main
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type msg_type -type perf_measurement_msg -type rmid_alloc_msg -type rmid_free_msg -type task_rmid_init_params bpf collector.c protocol.bpf.c task_rmid.bpf.c ../../pkg/rmid_allocator/rmid_allocator.bpf.c -- -I../../pkg/rmid_allocator
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target bpfel -cc clang -type msg_type -type perf_measurement_msg -type rmid_alloc_msg -type rmid_free_msg -type task_rmid_init_params bpf collector.c protocol.bpf.c task_rmid.bpf.c  -- -I../../pkg/rmid_allocator
 
 import (
 	"bytes"
@@ -267,14 +267,20 @@ func main() {
 	// -- Track RMIDs --
 	rmidTracker := rmid.NewTracker()
 	// Attach the process fork tracepoint
-	forkTp, err := link.Tracepoint("sched", "sched_process_fork", objs.HandleProcessFork, nil)
+	forkTp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "sched_process_fork",
+		Program: objs.HandleProcessFork,
+	})
 	if err != nil {
 		log.Fatalf("Failed to attach process fork tracepoint: %v", err)
 	}
 	defer forkTp.Close()
 
 	// Attach the process exit tracepoint
-	exitTp, err := link.Tracepoint("sched", "sched_process_free", objs.HandleProcessFree, nil)
+	exitTp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "sched_process_free",
+		Program: objs.HandleProcessFree,
+	})
 	if err != nil {
 		log.Fatalf("Failed to attach process exit tracepoint: %v", err)
 	}

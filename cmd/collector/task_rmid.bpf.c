@@ -100,7 +100,7 @@ __u32 task_rmid_get(struct task_struct *task) {
 }
 
 // Helper function to allocate an RMID for a task
-static __always_inline __u32 allocate_rmid(void *ctx, struct task_struct *task) {
+static __always_inline __u32 allocate_rmid(u64 *ctx, struct task_struct *task) {
     __u32 key = 0;
     struct task_rmid *state;
     __u64 timestamp = bpf_ktime_get_ns();
@@ -111,14 +111,19 @@ static __always_inline __u32 allocate_rmid(void *ctx, struct task_struct *task) 
     if (!state)
         return 0;
 
+    __u32 *rmid_ptr = bpf_task_storage_get(&task_rmid_storage, task, &rmid, BPF_LOCAL_STORAGE_GET_F_CREATE);
+    if (!rmid_ptr)
+        return 0;
+
+
     // Acquire lock using proper BPF helper
     bpf_spin_lock(&state->lock);
 
     // Check if task already has an RMID under the lock to avoid races
-    if (get_task_rmid(task) != 0) {
+    if (*rmid_ptr != 0) {
         // Task already has an RMID - nothing to do
         bpf_spin_unlock(&state->lock);
-        return get_task_rmid(task);
+        return *rmid_ptr;
     }
 
     // Allocate a new RMID since the task doesn't have one
@@ -126,7 +131,7 @@ static __always_inline __u32 allocate_rmid(void *ctx, struct task_struct *task) 
     
     // Set the RMID in the task while still under the lock
     if (rmid != 0) {
-        set_task_rmid(task, rmid);
+        *rmid_ptr = rmid;
     }
     
     // Release lock using proper BPF helper
@@ -142,10 +147,9 @@ static __always_inline __u32 allocate_rmid(void *ctx, struct task_struct *task) 
 }
 
 // Helper function to free an RMID
-static __always_inline void free_rmid(void *ctx, __u32 rmid) {
+static __always_inline void free_rmid(void *ctx, __u32 rmid, __u64 timestamp) {
     __u32 key = 0;
     struct task_rmid *state;
-    __u64 timestamp = bpf_ktime_get_ns();
 
     // Get the allocator from the map
     state = bpf_map_lookup_elem(&task_rmid_map, &key);
@@ -160,13 +164,10 @@ static __always_inline void free_rmid(void *ctx, __u32 rmid) {
     
     // Release lock using proper BPF helper
     bpf_spin_unlock(&state->lock);
-
-    // Send free event to userspace
-    send_rmid_free(ctx, rmid, timestamp);
 }
 
 // Handle process fork
-SEC("tp_btf/sched_process_fork")
+SEC("raw_tp/sched_process_fork")
 int handle_process_fork(u64 *ctx) {
     struct task_struct *task = (void *)ctx[1];
     struct task_struct *leader = get_group_leader(task);
@@ -196,7 +197,7 @@ int handle_process_fork(u64 *ctx) {
 }
 
 // Handle process exit
-SEC("tp_btf/sched_process_free")
+SEC("raw_tp/sched_process_free")
 int handle_process_free(u64 *ctx) {
     struct task_struct *task = (void *)ctx[0];
     struct task_struct *leader = get_group_leader(task);
@@ -208,7 +209,13 @@ int handle_process_free(u64 *ctx) {
 
     rmid = get_task_rmid(task);
     if (rmid) {
-        free_rmid(ctx, rmid);
+        __u64 timestamp = bpf_ktime_get_ns();
+
+        free_rmid(ctx, rmid, timestamp);
+
+        // Send free event to userspace
+        send_rmid_free(ctx, rmid, timestamp);
+
         // Note: no need to explicitly delete task storage as it's automatically
         // cleaned up when the task is freed
     }
