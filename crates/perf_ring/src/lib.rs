@@ -10,6 +10,8 @@ mod memory_storage;
 mod mmap_storage;
 mod reader;
 mod ring;
+pub mod perf_event;
+pub mod map_reader;
 
 pub use memory_storage::*;
 #[cfg(target_os = "linux")]

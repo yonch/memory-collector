@@ -7,10 +7,10 @@ resolver = "2"
 members = [
     "crates/collector",
     "crates/perf_ring",
-    "crates/maps",
 ]
 
 [workspace.dependencies]
 collector = { path = "crates/collector" }
 perf_ring = { path = "crates/perf_ring" }
-maps = { path = "crates/maps" }
+
+libbpf-rs = "0.24.8"

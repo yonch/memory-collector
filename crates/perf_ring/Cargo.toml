@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 thiserror = "1.0"
 page_size = "0.5"
+libbpf-rs = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

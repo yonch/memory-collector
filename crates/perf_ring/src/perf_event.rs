@@ -133,7 +133,7 @@ pub fn update_map_with_fds(map: &mut MapMut, fds: &[i32]) -> Result<(), PerfEven
 /// # Example
 ///
 /// ```no_run
-/// use maps::perf_event;
+/// use perf_ring::perf_event;
 /// use libbpf_rs::MapMut;
 /// use perf_event_open_sys as sys;
 ///
@@ -244,7 +244,7 @@ pub fn start_events(map: &MapMut) -> Result<(), PerfEventError> {
 /// # Example
 ///
 /// ```no_run
-/// use maps::perf_event;
+/// use perf_ring::perf_event;
 /// use libbpf_rs::MapMut;
 ///
 /// fn example(map: &mut MapMut) -> Result<(), perf_event::PerfEventError> {

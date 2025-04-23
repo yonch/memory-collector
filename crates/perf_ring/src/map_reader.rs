@@ -7,7 +7,7 @@ use std::io;
 use std::slice;
 
 use libbpf_rs::{MapCore as _, MapMut};
-use perf_ring::{MmapStorage, PerfRing, Reader, Storage, StorageError};
+use crate::{MmapStorage, PerfRing, PerfRingError, Reader, RingReaderError, Storage, StorageError};
 
 use crate::perf_event::{self, PerfEventError};
 
@@ -37,12 +37,12 @@ pub enum PerfMapError {
         /// CPU where the error occurred
         cpu: i32,
         /// Source error
-        source: perf_ring::PerfRingError,
+        source: PerfRingError,
     },
 
     /// Error adding a ring to the reader
     #[error("failed to add ring to reader: {0}")]
-    ReaderAddRingError(perf_ring::RingReaderError),
+    ReaderAddRingError(RingReaderError),
 }
 
 /// PerfMapReader manages perf ring buffers connected to an eBPF map
