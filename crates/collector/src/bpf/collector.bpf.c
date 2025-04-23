@@ -12,6 +12,14 @@ struct {
     __type(value, __u64);
 } task_metadata_storage SEC(".maps");
 
+// Hash map to track exited group leaders that need to be reported during process_free
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 8192);
+    __type(key, __u32);  // PID of the exited group leader
+    __type(value, __u8); // Just a presence indicator
+} exited_leaders SEC(".maps");
+
 // Performance event output for events
 struct {
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -21,6 +29,8 @@ struct {
 
 // Initialize value for task storage
 static const __u64 TASK_METADATA_INIT = 0;  // 0 = not reported yet
+// Value to store in the exited_leaders map
+static const __u8 LEADER_PRESENT = 1;
 
 // Helper function to check if a task is a kernel thread
 static __always_inline int is_kernel_thread(struct task_struct *task)
@@ -51,16 +61,13 @@ static __always_inline int send_task_metadata(void *ctx, struct task_struct *tas
 }
 
 // Send task free event to userspace
-static __always_inline int send_task_free(void *ctx, struct task_struct *task)
+static __always_inline int send_task_free(void *ctx, __u32 pid)
 {
-    if (!task)
-        return 0;
-    
     struct task_free_msg msg = {};
     
     msg.timestamp = bpf_ktime_get_ns();
     msg.type = MSG_TYPE_TASK_FREE;
-    msg.pid = task->pid;
+    msg.pid = pid;
     
     return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
                                  &msg, sizeof(msg));
@@ -110,17 +117,40 @@ int handle_sched_switch(u64 *ctx)
     return 0;
 }
 
-SEC("raw_tp/sched_process_free")
-int handle_process_free(u64 *ctx)
+SEC("tracepoint/sched/sched_process_exit")
+int handle_process_exit(struct trace_event_raw_sched_process_template *ctx)
 {
     struct task_struct *task = bpf_get_current_task_btf();
-    
+
     // Skip if not a group leader or kernel thread
-    if (!task || task != task->group_leader || is_kernel_thread(task))
+    if (!task || task != task->group_leader)
         return 0;
+
+    // Add task to the list of tasks to be reported
+    __u32 pid = task->pid;
+    bpf_map_update_elem(&exited_leaders, &pid, &LEADER_PRESENT, BPF_ANY);
+
+    return 0;
+}
+
+
+SEC("tracepoint/sched/sched_process_free")
+int handle_process_free(struct trace_event_raw_sched_process_template *ctx)
+{
+    __u32 pid = ctx->pid;
+    
+    // Check if this is a registered group leader that needs reporting
+    __u8 *present = bpf_map_lookup_elem(&exited_leaders, &pid);
+    if (!present) {
+        // Not an exited group leader we care about
+        return 0;
+    }
+    
+    // Remove from the tracking map
+    bpf_map_delete_elem(&exited_leaders, &pid);
     
     // Report task free event
-    send_task_free(ctx, task);
+    send_task_free(ctx, pid);
     
     return 0;
 }
