@@ -113,7 +113,7 @@ int handle_sched_switch(u64 *ctx)
 SEC("raw_tp/sched_process_free")
 int handle_process_free(u64 *ctx)
 {
-    struct task_struct *task = (void *)ctx[0];
+    struct task_struct *task = bpf_get_current_task_btf();
     
     // Skip if not a group leader or kernel thread
     if (!task || task != task->group_leader || is_kernel_thread(task))
