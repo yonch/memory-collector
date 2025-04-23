@@ -1,0 +1,12 @@
+[workspace.package]
+name = "unvariance"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [
+    "crates/collector",
+]
+
+[workspace.dependencies]
+collector = { path = "crates/collector" }
