@@ -161,3 +161,53 @@ pub fn start_events(map: &MapMut) -> Result<(), PerfEventError> {
 
     Ok(())
 }
+
+/// Opens perf events for BPF output maps configured similarly to MmapStorage.
+///
+/// This helper configures and opens perf events for each CPU aimed to be used for perf rings.
+///
+/// # Arguments
+///
+/// * `map` - A mutable reference to a libbpf-rs map to store the file descriptors
+/// * `n_watermark_bytes` - Number of bytes to wait before waking up. If 0, wake up on every event.
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(PerfEventError)` on failure
+///
+/// # Example
+///
+/// ```no_run
+/// use maps::perf_event;
+/// use libbpf_rs::MapMut;
+///
+/// fn example(map: &mut MapMut) -> Result<(), perf_event::PerfEventError> {
+///     // Open perf events with 2 pages and wake up on every event
+///     perf_event::open_event_maps(map, 0)?;
+///     
+///     Ok(())
+/// }
+/// ```
+pub fn open_event_maps(
+    map: &mut MapMut,
+    n_watermark_bytes: u32
+) -> Result<(), PerfEventError> {
+    // Configure perf event attributes
+    let mut attr = sys::bindings::perf_event_attr::default();
+    attr.size = std::mem::size_of::<sys::bindings::perf_event_attr>() as u32;
+    attr.type_ = sys::bindings::PERF_TYPE_SOFTWARE;
+    attr.config = sys::bindings::PERF_COUNT_SW_BPF_OUTPUT as u64;
+    attr.sample_type = sys::bindings::PERF_SAMPLE_RAW as u64;
+
+    // Configure watermark behavior
+    if n_watermark_bytes > 0 {
+        attr.set_watermark(1);
+        attr.__bindgen_anon_2.wakeup_watermark = n_watermark_bytes;
+    } else {
+        attr.__bindgen_anon_2.wakeup_events = 1; // Wake up on every event
+    }
+
+    // Open the events
+    open_events(map, &mut attr)
+}
