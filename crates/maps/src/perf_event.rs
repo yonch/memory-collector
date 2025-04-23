@@ -37,6 +37,87 @@ pub enum PerfEventError {
     MapInfoError(libbpf_rs::Error),
 }
 
+/// Opens perf events for each CPU and returns a vector of file descriptors.
+///
+/// # Arguments
+///
+/// * `n_cpu` - Number of CPUs to open events for
+/// * `attr` - Perf event attributes
+///
+/// # Returns
+///
+/// * `Ok(Vec<i32>)` - Vector of file descriptors on success
+/// * `Err(PerfEventError)` on failure
+///
+pub fn open_perf_events(
+    n_cpu: i32,
+    attr: &mut sys::bindings::perf_event_attr,
+) -> Result<Vec<i32>, PerfEventError> {
+    let mut fds = Vec::with_capacity(n_cpu as usize);
+
+    // Open perf events for each CPU
+    for cpu in 0..n_cpu {
+        // Open perf event
+        let fd = unsafe {
+            sys::perf_event_open(
+                attr,
+                -1, // pid (all threads)
+                cpu,
+                -1, // group_fd
+                sys::bindings::PERF_FLAG_FD_CLOEXEC as u64,
+            )
+        };
+
+        if fd < 0 {
+            // Close any already opened file descriptors
+            for &open_fd in &fds {
+                unsafe {
+                    libc::close(open_fd);
+                }
+            }
+            return Err(PerfEventError::OpenError {
+                cpu,
+                source: io::Error::last_os_error(),
+            });
+        }
+
+        fds.push(fd);
+    }
+
+    Ok(fds)
+}
+
+/// Updates a map with file descriptors for each CPU.
+///
+/// # Arguments
+///
+/// * `map` - A mutable reference to a libbpf-rs map to store the file descriptors
+/// * `fds` - Vector of file descriptors to store in the map
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(PerfEventError)` on failure
+///
+pub fn update_map_with_fds(map: &mut MapMut, fds: &[i32]) -> Result<(), PerfEventError> {
+    for (cpu, &fd) in fds.iter().enumerate() {
+        // Store FD in map
+        // Convert cpu to u32 for key and fd to u32 for value
+        let key = (cpu as u32).to_le_bytes();
+        let value = (fd as u32).to_le_bytes();
+
+        if let Err(err) = map.update(&key, &value, libbpf_rs::MapFlags::ANY) {
+            // Don't close FDs here as they are still owned by the caller
+            return Err(PerfEventError::MapUpdateError {
+                cpu: cpu as i32,
+                source: err,
+            });
+        }
+    }
+
+    Ok(())
+}
+
 /// Opens perf events for each CPU and updates the provided map with the file descriptors.
 ///
 /// # Arguments
@@ -84,44 +165,27 @@ pub fn open_events(
     attr: &mut sys::bindings::perf_event_attr,
 ) -> Result<(), PerfEventError> {
     // Determine number of CPUs from map max entries
-    let n_cpu = map.info().map(|info| info.info.max_entries  as i32).map_err(|e| PerfEventError::MapInfoError(e))?;
+    let n_cpu = map
+        .info()
+        .map(|info| info.info.max_entries as i32)
+        .map_err(|e| PerfEventError::MapInfoError(e))?;
 
-    // Open perf events for each CPU
-    for cpu in 0..n_cpu {
-        // Open perf event
-        let fd = unsafe {
-            sys::perf_event_open(
-                attr,
-                -1, // pid (all threads)
-                cpu,
-                -1, // group_fd
-                sys::bindings::PERF_FLAG_FD_CLOEXEC as u64,
-            )
-        };
+    // Open perf events for each CPU and get file descriptors
+    let fds = open_perf_events(n_cpu, attr)?;
 
-        if fd < 0 {
-            return Err(PerfEventError::OpenError {
-                cpu,
-                source: io::Error::last_os_error(),
-            });
-        }
-
-        // Store FD in map
-        // Convert cpu to u32 for key and fd to u32 for value
-        let key = cpu.to_le_bytes();
-        let value = (fd as u32).to_le_bytes();
-
-        if let Err(err) = map.update(&key, &value, libbpf_rs::MapFlags::ANY) {
-            // Close the fd we just opened to avoid leaking it
-            unsafe {
-                libc::close(fd);
+    // Update the map with the file descriptors
+    match update_map_with_fds(map, &fds) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // Clean up file descriptors on error
+            for fd in fds {
+                unsafe {
+                    libc::close(fd);
+                }
             }
-
-            return Err(PerfEventError::MapUpdateError { cpu, source: err });
+            Err(e)
         }
     }
-
-    Ok(())
 }
 
 /// Enables all perf events stored in the map.
@@ -136,7 +200,10 @@ pub fn open_events(
 /// * `Err(PerfEventError)` on failure
 pub fn start_events(map: &MapMut) -> Result<(), PerfEventError> {
     // Determine number of CPUs from map max entries
-    let n_cpu = map.info().map(|info| info.info.max_entries as i32).map_err(|e| PerfEventError::MapInfoError(e))?;
+    let n_cpu = map
+        .info()
+        .map(|info| info.info.max_entries as i32)
+        .map_err(|e| PerfEventError::MapInfoError(e))?;
 
     // Iterate through each CPU's file descriptor and enable the perf event
     for cpu in 0..n_cpu {
@@ -148,9 +215,7 @@ pub fn start_events(map: &MapMut) -> Result<(), PerfEventError> {
                 let fd = u32::from_le_bytes([value[0], value[1], value[2], value[3]]) as i32;
 
                 // Enable the perf event
-                let ret = unsafe {
-                    libc::ioctl(fd, sys::bindings::ENABLE as libc::c_ulong, 0)
-                };
+                let ret = unsafe { libc::ioctl(fd, sys::bindings::ENABLE as libc::c_ulong, 0) };
 
                 if ret < 0 {
                     return Err(PerfEventError::EnableError(io::Error::last_os_error()));
@@ -189,10 +254,7 @@ pub fn start_events(map: &MapMut) -> Result<(), PerfEventError> {
 ///     Ok(())
 /// }
 /// ```
-pub fn open_event_maps(
-    map: &mut MapMut,
-    n_watermark_bytes: u32
-) -> Result<(), PerfEventError> {
+pub fn open_event_maps(map: &mut MapMut, n_watermark_bytes: u32) -> Result<(), PerfEventError> {
     // Configure perf event attributes
     let mut attr = sys::bindings::perf_event_attr::default();
     attr.size = std::mem::size_of::<sys::bindings::perf_event_attr>() as u32;

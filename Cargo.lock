@@ -301,6 +301,7 @@ dependencies = [
  "libbpf-rs",
  "libc",
  "perf-event-open-sys 4.0.0",
+ "perf_ring",
  "thiserror",
 ]
 
