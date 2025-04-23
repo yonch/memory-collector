@@ -51,6 +51,7 @@ pub struct PerfEventMmapPage {
 
 /// Type constants for perf events
 pub const PERF_RECORD_SAMPLE: u32 = 9;
+pub const PERF_RECORD_LOST: u32 = 2;
 
 /// PerfRing represents a perf ring buffer with shared metadata and data pages
 pub struct PerfRing {
@@ -307,14 +308,7 @@ impl PerfRing {
 
     /// Returns the number of bytes available to read
     pub fn bytes_remaining(&self) -> u32 {
-        let begin = (self.head & self.buf_mask) as u32;
-        let end = (self.tail & self.buf_mask) as u32;
-
-        if end < begin {
-            ((self.buf_mask + 1) as u32) - begin + end
-        } else {
-            end - begin
-        }
+        ((self.tail - self.head) & self.buf_mask) as u32
     }
 }
 

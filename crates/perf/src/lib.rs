@@ -7,11 +7,13 @@
 
 mod ring;
 mod memory_ring_storage;
+mod ring_reader;
 #[cfg(target_os = "linux")]
 mod mmap_ring_storage;
 
 pub use ring::*;
 pub use memory_ring_storage::*;
+pub use ring_reader::*;
 #[cfg(target_os = "linux")]
 pub use mmap_ring_storage::*;
 
