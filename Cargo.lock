@@ -295,6 +295,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
 
 [[package]]
+name = "maps"
+version = "0.1.0"
+dependencies = [
+ "libbpf-rs",
+ "libc",
+ "perf-event-open-sys 4.0.0",
+ "thiserror",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -354,6 +364,15 @@ dependencies = [
 
 [[package]]
 name = "perf-event-open-sys"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c44fb1c7651a45a3652c4afc6e754e40b3d6e6556f1487e2b230bfc4f33c2a8"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "perf-event-open-sys"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53fa97b8f69404e792c384914dbe6ffc298586cca534e1c1c410e02f7cd13cfe"
@@ -367,7 +386,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "page_size",
- "perf-event-open-sys",
+ "perf-event-open-sys 5.0.0",
  "thiserror",
 ]
 

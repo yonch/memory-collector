@@ -1,0 +1,10 @@
+[package]
+name = "maps"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libbpf-rs = "0.24.8"
+libc = "0.2"
+perf-event-open-sys = "4.0.0"
+thiserror = "1.0" 
