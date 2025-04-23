@@ -5,17 +5,17 @@
 //! eBPF programs.
 //!
 
-mod ring;
 mod memory_storage;
-mod reader;
 #[cfg(target_os = "linux")]
 mod mmap_storage;
+mod reader;
+mod ring;
 
-pub use ring::*;
 pub use memory_storage::*;
-pub use reader::*;
 #[cfg(target_os = "linux")]
 pub use mmap_storage::*;
+pub use reader::*;
+pub use ring::*;
 
 use std::os::unix::io::RawFd;
 use thiserror::Error;
@@ -31,13 +31,13 @@ pub enum StorageError {
 pub trait Storage {
     /// Return the raw data buffer containing metadata page and data pages
     fn data(&self) -> &[u8];
-    
+
     /// Return the number of data pages in the ring buffer
     fn num_data_pages(&self) -> u32;
-    
+
     /// Return the system page size
     fn page_size(&self) -> u64;
-    
+
     /// Return the file descriptor if this is a perf event storage, or -1 otherwise
     fn file_descriptor(&self) -> RawFd;
 }

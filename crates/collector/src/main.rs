@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
-use std::time::Duration;
 use std::str;
+use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
@@ -67,7 +67,7 @@ struct Command {
     /// Verbose debug output
     #[arg(short, long)]
     verbose: bool,
-    
+
     /// Track duration in seconds (0 = unlimited)
     #[arg(short, long, default_value = "0")]
     duration: u64,
@@ -89,13 +89,13 @@ fn handle_event(_cpu: i32, data: &[u8]) {
         eprintln!("Event data too short");
         return;
     }
-    
+
     let mut type_bytes = [0u8; 4];
     type_bytes.copy_from_slice(&data[8..12]);
     let msg_type = u32::from_ne_bytes(type_bytes);
-    
+
     let now = format_time();
-    
+
     match MsgType::from(msg_type) {
         MsgType::TaskMetadata => {
             let mut event = TaskMetadataMsg::default();
@@ -103,28 +103,22 @@ fn handle_event(_cpu: i32, data: &[u8]) {
                 eprintln!("Failed to parse task metadata event: {:?}", e);
                 return;
             }
-            
+
             let comm = match str::from_utf8(&event.comm) {
                 Ok(s) => s.trim_end_matches(char::from(0)),
                 Err(_) => "<invalid utf8>",
             };
-            
-            println!(
-                "{} TASK_NEW: pid={:<7} comm={:<16}",
-                now, event.pid, comm
-            );
-        },
+
+            println!("{} TASK_NEW: pid={:<7} comm={:<16}", now, event.pid, comm);
+        }
         MsgType::TaskFree => {
             let mut event = TaskFreeMsg::default();
             if let Err(e) = plain::copy_from_bytes(&mut event, data) {
                 eprintln!("Failed to parse task free event: {:?}", e);
                 return;
             }
-            
-            println!(
-                "{} TASK_EXIT: pid={:<7}",
-                now, event.pid
-            );
+
+            println!("{} TASK_EXIT: pid={:<7}", now, event.pid);
         }
     }
 }
@@ -138,7 +132,7 @@ fn main() -> Result<()> {
 
     // Allow the current process to lock memory for eBPF resources
     let _ = libbpf_rs::set_print(None);
-    
+
     // Open BPF program
     let mut skel_builder = CollectorSkelBuilder::default();
     if opts.verbose {
@@ -150,10 +144,10 @@ fn main() -> Result<()> {
 
     // Load & verify program
     let mut skel = open_skel.load()?;
-    
+
     // Attach the tracepoints
     skel.attach()?;
-    
+
     println!("Successfully started! Tracing task lifecycle events...");
     println!("{:<23} {:<9} {:<16}", "TIME", "EVENT", "DETAILS");
     println!("{}", "-".repeat(60));
@@ -166,11 +160,11 @@ fn main() -> Result<()> {
 
     // Process events
     let poll_timeout = Duration::from_millis(100);
-    
+
     if opts.duration > 0 {
         let duration = Duration::from_secs(opts.duration);
         let start_time = std::time::Instant::now();
-        
+
         // Run for the specified duration
         while start_time.elapsed() < duration {
             if let Err(e) = perf.poll(poll_timeout) {

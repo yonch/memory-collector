@@ -6,13 +6,13 @@ use std::os::unix::io::{FromRawFd, RawFd};
 use std::ptr;
 use std::slice;
 
-use libc::{c_void, mmap, munmap, PROT_READ, PROT_WRITE, MAP_SHARED};
+use libc::{c_void, mmap, munmap, MAP_SHARED, PROT_READ, PROT_WRITE};
 use perf_event_open_sys as sys;
 
 use crate::{Storage, StorageError};
 
 /// Memory-mapped ring storage implementation using Linux perf_event_open
-/// 
+///
 /// This implementation is only available on Linux platforms.
 pub struct MmapStorage {
     data: *mut u8,
@@ -26,22 +26,22 @@ pub struct MmapStorage {
 
 impl MmapStorage {
     /// Create a new mmap-based ring storage
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `cpu` - The CPU to monitor (-1 for any CPU)
     /// * `n_pages` - Number of data pages in the ring buffer
     /// * `n_watermark_bytes` - Number of bytes to wait before waking up. If 0, wake up on every event.
     pub fn new(cpu: i32, n_pages: u32, n_watermark_bytes: u32) -> Result<Self, StorageError> {
         let page_size = page_size::get() as u64;
-        
+
         // Configure perf event attributes
         let mut attr = sys::bindings::perf_event_attr::default();
         attr.size = std::mem::size_of::<sys::bindings::perf_event_attr>() as u32;
         attr.type_ = sys::bindings::PERF_TYPE_SOFTWARE;
         attr.config = sys::bindings::PERF_COUNT_SW_BPF_OUTPUT as u64;
         attr.sample_type = sys::bindings::PERF_SAMPLE_RAW as u64;
-        
+
         // Configure watermark behavior
         if n_watermark_bytes > 0 {
             attr.set_watermark(1);
@@ -49,7 +49,7 @@ impl MmapStorage {
         } else {
             attr.__bindgen_anon_2.wakeup_events = 1; // Wake up on every event
         }
-        
+
         // Open perf event
         let fd = unsafe {
             sys::perf_event_open(
@@ -60,14 +60,14 @@ impl MmapStorage {
                 sys::bindings::PERF_FLAG_FD_CLOEXEC as u64,
             )
         };
-        
+
         if fd < 0 {
             return Err(StorageError::OsError(io::Error::last_os_error()));
         }
-        
+
         // Take ownership of the file descriptor
         let file = unsafe { Some(File::from_raw_fd(fd)) };
-        
+
         // Calculate total size and mmap the buffer
         let total_size = (page_size * (1 + u64::from(n_pages))) as usize; // 1 metadata page + data pages
         let data_ptr = unsafe {
@@ -80,11 +80,11 @@ impl MmapStorage {
                 0,
             )
         };
-        
+
         if data_ptr == libc::MAP_FAILED {
             return Err(StorageError::OsError(io::Error::last_os_error()));
         }
-        
+
         Ok(MmapStorage {
             data: data_ptr as *mut u8,
             data_len: total_size,
@@ -100,15 +100,15 @@ impl Storage for MmapStorage {
     fn data(&self) -> &[u8] {
         unsafe { slice::from_raw_parts(self.data, self.data_len) }
     }
-    
+
     fn num_data_pages(&self) -> u32 {
         self.n_data_pages
     }
-    
+
     fn page_size(&self) -> u64 {
         self.page_size
     }
-    
+
     fn file_descriptor(&self) -> RawFd {
         self.fd
     }
@@ -122,7 +122,7 @@ impl Drop for MmapStorage {
             }
             self.data = ptr::null_mut();
         }
-        
+
         // The fd will be closed when the File is dropped
     }
 }
@@ -130,7 +130,7 @@ impl Drop for MmapStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_mmap_ring_storage() {
         let n_pages = 2;
@@ -143,17 +143,17 @@ mod tests {
                 return;
             }
         };
-        
+
         // Check basic properties
         assert_eq!(storage.num_data_pages(), n_pages);
         assert_eq!(storage.page_size(), page_size::get() as u64);
-        
+
         let expected_size = storage.page_size() * (1 + u64::from(n_pages));
         assert_eq!(storage.data().len() as u64, expected_size);
-        
+
         assert!(storage.file_descriptor() > 0);
     }
-    
+
     #[test]
     fn test_mmap_ring_storage_watermark() {
         // Test with wake up on every event
@@ -161,11 +161,11 @@ mod tests {
             println!("Skipping watermark test (every event) due to error: {}", e);
             return;
         }
-        
+
         // Test with wake up after 4096 bytes
         if let Err(e) = MmapStorage::new(0, 2, 4096) {
             println!("Skipping watermark test (4096 bytes) due to error: {}", e);
             return;
         }
     }
-} 
+}
