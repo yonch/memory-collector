@@ -353,22 +353,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "perf"
-version = "0.1.0"
-dependencies = [
- "libc",
- "page_size",
- "perf-event-open-sys",
- "thiserror",
-]
-
-[[package]]
 name = "perf-event-open-sys"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53fa97b8f69404e792c384914dbe6ffc298586cca534e1c1c410e02f7cd13cfe"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "perf_ring"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "page_size",
+ "perf-event-open-sys",
+ "thiserror",
 ]
 
 [[package]]

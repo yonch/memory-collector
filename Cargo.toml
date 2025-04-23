@@ -6,9 +6,9 @@ edition = "2021"
 resolver = "2"
 members = [
     "crates/collector",
-    "crates/perf",
+    "crates/perf_ring",
 ]
 
 [workspace.dependencies]
 collector = { path = "crates/collector" }
-perf = { path = "crates/perf" }
+perf_ring = { path = "crates/perf_ring" }

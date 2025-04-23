@@ -1,27 +1,27 @@
 use std::os::fd::RawFd;
 
-use crate::RingStorageError;
-use crate::RingStorage;
+use crate::StorageError;
+use crate::Storage;
 
 
 /// Memory-based ring storage implementation
 /// 
 /// This is useful for testing and inter-thread communication
-pub struct MemoryRingStorage {
+pub struct MemoryStorage {
     data: Vec<u8>,
     n_data_pages: u32,
     page_size: u64,
 }
 
-impl MemoryRingStorage {
+impl MemoryStorage {
     /// Create a new memory-based ring storage
-    pub fn new(n_pages: u32) -> Result<Self, RingStorageError> {
+    pub fn new(n_pages: u32) -> Result<Self, StorageError> {
         let page_size = page_size::get() as u64;
         let total_size = page_size * (1 + u64::from(n_pages)); // 1 metadata page + data pages
 
         let data = vec![0; total_size as usize];
         
-        Ok(MemoryRingStorage {
+        Ok(MemoryStorage {
             data,
             n_data_pages: n_pages,
             page_size,
@@ -29,7 +29,7 @@ impl MemoryRingStorage {
     }
 }
 
-impl RingStorage for MemoryRingStorage {
+impl Storage for MemoryStorage {
     fn data(&self) -> &[u8] {
         &self.data
     }
@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn test_memory_ring_storage() {
         let n_pages = 2;
-        let storage = MemoryRingStorage::new(n_pages).unwrap();
+        let storage = MemoryStorage::new(n_pages).unwrap();
         
         // Check basic properties
         assert_eq!(storage.num_data_pages(), n_pages);

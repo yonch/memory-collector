@@ -6,29 +6,29 @@
 //!
 
 mod ring;
-mod memory_ring_storage;
-mod ring_reader;
+mod memory_storage;
+mod reader;
 #[cfg(target_os = "linux")]
-mod mmap_ring_storage;
+mod mmap_storage;
 
 pub use ring::*;
-pub use memory_ring_storage::*;
-pub use ring_reader::*;
+pub use memory_storage::*;
+pub use reader::*;
 #[cfg(target_os = "linux")]
-pub use mmap_ring_storage::*;
+pub use mmap_storage::*;
 
 use std::os::unix::io::RawFd;
 use thiserror::Error;
 
 /// Errors that can occur when using perf ring storage
 #[derive(Error, Debug)]
-pub enum RingStorageError {
+pub enum StorageError {
     #[error("OS error: {0}")]
     OsError(std::io::Error),
 }
 
 /// Perf ring buffer storage trait
-pub trait RingStorage {
+pub trait Storage {
     /// Return the raw data buffer containing metadata page and data pages
     fn data(&self) -> &[u8];
     

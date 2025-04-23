@@ -9,12 +9,12 @@ use std::slice;
 use libc::{c_void, mmap, munmap, PROT_READ, PROT_WRITE, MAP_SHARED};
 use perf_event_open_sys as sys;
 
-use crate::{RingStorage, RingStorageError};
+use crate::{Storage, StorageError};
 
 /// Memory-mapped ring storage implementation using Linux perf_event_open
 /// 
 /// This implementation is only available on Linux platforms.
-pub struct MmapRingStorage {
+pub struct MmapStorage {
     data: *mut u8,
     data_len: usize,
     n_data_pages: u32,
@@ -24,7 +24,7 @@ pub struct MmapRingStorage {
     _file: Option<File>,
 }
 
-impl MmapRingStorage {
+impl MmapStorage {
     /// Create a new mmap-based ring storage
     /// 
     /// # Arguments
@@ -32,7 +32,7 @@ impl MmapRingStorage {
     /// * `cpu` - The CPU to monitor (-1 for any CPU)
     /// * `n_pages` - Number of data pages in the ring buffer
     /// * `n_watermark_bytes` - Number of bytes to wait before waking up. If 0, wake up on every event.
-    pub fn new(cpu: i32, n_pages: u32, n_watermark_bytes: u32) -> Result<Self, RingStorageError> {
+    pub fn new(cpu: i32, n_pages: u32, n_watermark_bytes: u32) -> Result<Self, StorageError> {
         let page_size = page_size::get() as u64;
         
         // Configure perf event attributes
@@ -62,7 +62,7 @@ impl MmapRingStorage {
         };
         
         if fd < 0 {
-            return Err(RingStorageError::OsError(io::Error::last_os_error()));
+            return Err(StorageError::OsError(io::Error::last_os_error()));
         }
         
         // Take ownership of the file descriptor
@@ -82,10 +82,10 @@ impl MmapRingStorage {
         };
         
         if data_ptr == libc::MAP_FAILED {
-            return Err(RingStorageError::OsError(io::Error::last_os_error()));
+            return Err(StorageError::OsError(io::Error::last_os_error()));
         }
         
-        Ok(MmapRingStorage {
+        Ok(MmapStorage {
             data: data_ptr as *mut u8,
             data_len: total_size,
             n_data_pages: n_pages,
@@ -96,7 +96,7 @@ impl MmapRingStorage {
     }
 }
 
-impl RingStorage for MmapRingStorage {
+impl Storage for MmapStorage {
     fn data(&self) -> &[u8] {
         unsafe { slice::from_raw_parts(self.data, self.data_len) }
     }
@@ -114,7 +114,7 @@ impl RingStorage for MmapRingStorage {
     }
 }
 
-impl Drop for MmapRingStorage {
+impl Drop for MmapStorage {
     fn drop(&mut self) {
         if !self.data.is_null() {
             unsafe {
@@ -134,7 +134,7 @@ mod tests {
     #[test]
     fn test_mmap_ring_storage() {
         let n_pages = 2;
-        let storage = match MmapRingStorage::new(0, n_pages, 0) {
+        let storage = match MmapStorage::new(0, n_pages, 0) {
             Ok(s) => s,
             Err(e) => {
                 // If test is run on a platform that doesn't support perf_event_open,
@@ -157,13 +157,13 @@ mod tests {
     #[test]
     fn test_mmap_ring_storage_watermark() {
         // Test with wake up on every event
-        if let Err(e) = MmapRingStorage::new(0, 2, 0) {
+        if let Err(e) = MmapStorage::new(0, 2, 0) {
             println!("Skipping watermark test (every event) due to error: {}", e);
             return;
         }
         
         // Test with wake up after 4096 bytes
-        if let Err(e) = MmapRingStorage::new(0, 2, 4096) {
+        if let Err(e) = MmapStorage::new(0, 2, 4096) {
             println!("Skipping watermark test (4096 bytes) due to error: {}", e);
             return;
         }

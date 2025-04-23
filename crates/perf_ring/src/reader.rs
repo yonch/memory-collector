@@ -53,17 +53,17 @@ impl Ord for PerfEntry {
 }
 
 /// RingReader provides sorted access to events from multiple perf rings
-pub struct RingReader {
+pub struct Reader {
     rings: Vec<PerfRing>,
     heap: BinaryHeap<PerfEntry>,
     in_heap: Vec<bool>,
     active: bool,
 }
 
-impl RingReader {
+impl Reader {
     /// Creates a new reader for accessing events
     pub fn new() -> Self {
-        RingReader {
+        Reader {
             rings: Vec::new(),
             heap: BinaryHeap::new(),
             in_heap: Vec::new(),
@@ -227,7 +227,7 @@ impl RingReader {
     }
 }
 
-impl Default for RingReader {
+impl Default for Reader {
     fn default() -> Self {
         Self::new()
     }
@@ -241,7 +241,7 @@ mod tests {
     
     #[test]
     fn test_ring_reader() {
-        let mut reader = RingReader::new();
+        let mut reader = Reader::new();
         
         // Create test rings
         let page_size = 4096u64;
@@ -345,7 +345,7 @@ mod tests {
     
     #[test]
     fn test_lost_records() {
-        let mut reader = RingReader::new();
+        let mut reader = Reader::new();
         
         // Create two test rings
         let page_size = 4096u64;
