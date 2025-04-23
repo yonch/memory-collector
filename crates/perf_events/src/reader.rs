@@ -6,7 +6,7 @@ use crate::{PerfRing, PerfRingError, PERF_RECORD_SAMPLE};
 
 /// Errors that can occur when using the ring reader
 #[derive(Error, Debug)]
-pub enum RingReaderError {
+pub enum ReaderError {
     #[error("no rings available")]
     NoRings,
 
@@ -72,9 +72,9 @@ impl Reader {
     }
 
     /// Adds a ring to the collection
-    pub fn add_ring(&mut self, ring: PerfRing) -> Result<(), RingReaderError> {
+    pub fn add_ring(&mut self, ring: PerfRing) -> Result<(), ReaderError> {
         if self.active {
-            return Err(RingReaderError::AlreadyActive);
+            return Err(ReaderError::AlreadyActive);
         }
 
         self.rings.push(ring);
@@ -84,13 +84,13 @@ impl Reader {
     }
 
     /// Begins a read batch, initializing the heap with available entries
-    pub fn start(&mut self) -> Result<(), RingReaderError> {
+    pub fn start(&mut self) -> Result<(), ReaderError> {
         if self.rings.is_empty() {
-            return Err(RingReaderError::NoRings);
+            return Err(ReaderError::NoRings);
         }
 
         if self.active {
-            return Err(RingReaderError::AlreadyActive);
+            return Err(ReaderError::AlreadyActive);
         }
 
         // Start read batches and initialize the heap
@@ -107,7 +107,7 @@ impl Reader {
     }
 
     /// Ends the current read batch
-    pub fn finish(&mut self) -> Result<(), RingReaderError> {
+    pub fn finish(&mut self) -> Result<(), ReaderError> {
         if !self.active {
             return Ok(());
         }
@@ -130,37 +130,37 @@ impl Reader {
     }
 
     /// Returns the timestamp of the next event
-    pub fn peek_timestamp(&self) -> Result<u64, RingReaderError> {
+    pub fn peek_timestamp(&self) -> Result<u64, ReaderError> {
         if !self.active {
-            return Err(RingReaderError::NotActive);
+            return Err(ReaderError::NotActive);
         }
 
         self.heap
             .peek()
             .map(|entry| entry.timestamp)
-            .ok_or(RingReaderError::BufferEmpty)
+            .ok_or(ReaderError::BufferEmpty)
     }
 
     /// Returns the ring containing the next event and its index
-    pub fn current_ring(&self) -> Result<(&PerfRing, usize), RingReaderError> {
+    pub fn current_ring(&self) -> Result<(&PerfRing, usize), ReaderError> {
         if !self.active {
-            return Err(RingReaderError::NotActive);
+            return Err(ReaderError::NotActive);
         }
 
         match self.heap.peek() {
             Some(entry) => Ok((&self.rings[entry.ring_index], entry.ring_index)),
-            None => Err(RingReaderError::BufferEmpty),
+            None => Err(ReaderError::BufferEmpty),
         }
     }
 
     /// Consumes the current event and updates the heap
-    pub fn pop(&mut self) -> Result<(), RingReaderError> {
+    pub fn pop(&mut self) -> Result<(), ReaderError> {
         if !self.active {
-            return Err(RingReaderError::NotActive);
+            return Err(ReaderError::NotActive);
         }
 
         let Some(entry) = self.heap.pop() else {
-            return Err(RingReaderError::BufferEmpty);
+            return Err(ReaderError::BufferEmpty);
         };
 
         self.rings[entry.ring_index].pop()?;
@@ -178,7 +178,7 @@ impl Reader {
     /// - Malformed sample records (less than 8 bytes)
     /// - Failed timestamp reads
     /// This ensures such records are processed as soon as possible.
-    fn maintain_heap_entry(&mut self, idx: usize) -> Result<(), RingReaderError> {
+    fn maintain_heap_entry(&mut self, idx: usize) -> Result<(), ReaderError> {
         let in_heap = self.in_heap[idx];
 
         // If the ring is empty, remove its entry if it's in the heap
@@ -269,7 +269,7 @@ mod tests {
             reader.add_ring(unsafe {
                 PerfRing::init_contiguous(&mut data1, n_pages, page_size).unwrap()
             }),
-            Err(RingReaderError::AlreadyActive)
+            Err(ReaderError::AlreadyActive)
         ));
         reader.finish().unwrap();
 
@@ -282,13 +282,13 @@ mod tests {
         assert!(reader.is_empty());
         assert!(matches!(
             reader.peek_timestamp(),
-            Err(RingReaderError::NotActive)
+            Err(ReaderError::NotActive)
         ));
         assert!(matches!(
             reader.current_ring(),
-            Err(RingReaderError::NotActive)
+            Err(ReaderError::NotActive)
         ));
-        assert!(matches!(reader.pop(), Err(RingReaderError::NotActive)));
+        assert!(matches!(reader.pop(), Err(ReaderError::NotActive)));
 
         // Create events with timestamps
         let mut event1 = vec![0u8; 16]; // 8 bytes for timestamp + "event1"
@@ -369,13 +369,13 @@ mod tests {
         assert!(reader.is_empty());
         assert!(matches!(
             reader.peek_timestamp(),
-            Err(RingReaderError::NotActive)
+            Err(ReaderError::NotActive)
         ));
         assert!(matches!(
             reader.current_ring(),
-            Err(RingReaderError::NotActive)
+            Err(ReaderError::NotActive)
         ));
-        assert!(matches!(reader.pop(), Err(RingReaderError::NotActive)));
+        assert!(matches!(reader.pop(), Err(ReaderError::NotActive)));
     }
 
     #[test]
