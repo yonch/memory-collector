@@ -1,5 +1,5 @@
 [package]
-name = "perf_ring"
+name = "perf_events"
 version = "0.1.0"
 edition = "2021"
 description = "eBPF perf ring buffer implementation"

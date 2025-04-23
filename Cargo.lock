@@ -362,7 +362,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "perf_ring"
+name = "perf_events"
 version = "0.1.0"
 dependencies = [
  "libbpf-rs",

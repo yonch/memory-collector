@@ -9,7 +9,7 @@ use std::slice;
 use libbpf_rs::{MapCore as _, MapMut};
 use crate::{MmapStorage, PerfRing, PerfRingError, Reader, RingReaderError, Storage, StorageError};
 
-use crate::perf_event::{self, PerfEventError};
+use crate::helpers::{self, PerfEventError};
 
 /// Error type for perf map operations
 #[derive(Debug, thiserror::Error)]
@@ -120,7 +120,7 @@ impl PerfMapReader {
         }
 
         // Update the map with all file descriptors at once
-        perf_event::update_map_with_fds(map, &fds).map_err(PerfMapError::PerfEventError)?;
+        helpers::update_map_with_fds(map, &fds).map_err(PerfMapError::PerfEventError)?;
 
         Ok(PerfMapReader {
             _storage: storage,

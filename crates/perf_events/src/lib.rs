@@ -10,7 +10,7 @@ mod memory_storage;
 mod mmap_storage;
 mod reader;
 mod ring;
-pub mod perf_event;
+mod helpers;
 pub mod map_reader;
 
 pub use memory_storage::*;
@@ -18,6 +18,7 @@ pub use memory_storage::*;
 pub use mmap_storage::*;
 pub use reader::*;
 pub use ring::*;
+pub use helpers::*;
 
 use std::os::unix::io::RawFd;
 use thiserror::Error;
