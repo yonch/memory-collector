@@ -65,13 +65,13 @@ static __u64 compute_delta(__u64 current, __u64 previous) {
 SEC("tracepoint/sched/sched_switch")
 int measure_perf(struct trace_event_raw_sched_switch *ctx) {
     // Get current task before checking counters
-    struct task_struct *current_task = (struct task_struct *)bpf_get_current_task();
+    struct task_struct *current_task = bpf_get_current_task_btf();
     
     // Check and report task metadata if needed
     send_task_metadata_if_needed(ctx, current_task);
-    
-    __u32 pid = current_task->pid;
 
+    // report using the PID of the task leader
+    __u32 pid = current_task->group_leader->pid;
     __u64 now;
     
     // Get previous counters

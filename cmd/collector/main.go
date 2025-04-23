@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/unvariance/collector/pkg/aggregate"
@@ -26,8 +28,8 @@ import (
 
 // MetricsRecord represents a single row in our parquet file
 type MetricsRecord struct {
-	StartTime    int64  `parquet:"name=start_time, type=INT64"`
-	EndTime      int64  `parquet:"name=end_time, type=INT64"`
+	StartTime    int64  `parquet:"name=start_time, type=INT64, encoding=DELTA_BINARY_PACKED"`
+	EndTime      int64  `parquet:"name=end_time, type=INT64, encoding=DELTA_BINARY_PACKED"`
 	PID          int32  `parquet:"name=pid, type=INT32, encoding=DELTA_BINARY_PACKED"`
 	ProcessName  string `parquet:"name=process_name, type=BYTE_ARRAY, convertedType=UTF8, encoding=PLAIN_DICTIONARY"`
 	Cycles       int64  `parquet:"name=cycles, type=INT64"`
@@ -50,7 +52,7 @@ func newParquetWriter(filename string) (*parquetWriter, error) {
 	}
 
 	// Create parquet writer with 8MB row group size and Snappy compression
-	pw, err := writer.NewParquetWriter(file, new(MetricsRecord), 8*1024*1024)
+	pw, err := writer.NewParquetWriter(file, new(MetricsRecord), 100*1024*1024)
 	if err != nil {
 		file.Close()
 		return nil, fmt.Errorf("failed to create parquet writer: %w", err)
@@ -162,6 +164,12 @@ func main() {
 	// Load pre-compiled programs and maps into the kernel
 	objs := bpfObjects{}
 	if err := loadBpfObjects(&objs, nil); err != nil {
+		if err != nil {
+			var verr *ebpf.VerifierError
+			if errors.As(err, &verr) {
+				fmt.Printf("%+v\n", verr)
+			}
+		}
 		log.Fatal(err)
 	}
 	defer objs.Close()
@@ -251,7 +259,7 @@ func main() {
 	stopper := make(chan os.Signal, 1)
 	signal.Notify(stopper, os.Interrupt)
 
-	timeout := time.After(5 * time.Second)
+	timeout := time.After(50 * time.Second)
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
