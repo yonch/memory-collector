@@ -1,0 +1,9 @@
+[package]
+name = "perf"
+version = "0.1.0"
+edition = "2021"
+description = "eBPF perf ring buffer implementation"
+license = "MIT"
+
+[dependencies]
+thiserror = "1.0" 
