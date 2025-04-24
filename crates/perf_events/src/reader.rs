@@ -1,5 +1,6 @@
-use std::cmp::Ordering as CmpOrdering;
+use std::{cmp::Ordering as CmpOrdering, mem::offset_of};
 use std::collections::BinaryHeap;
+use plain::Plain;
 use thiserror::Error;
 
 use crate::{PerfRing, PerfRingError, PERF_RECORD_SAMPLE};
@@ -22,6 +23,15 @@ pub enum ReaderError {
     #[error("perf ring error: {0}")]
     PerfRingError(#[from] PerfRingError),
 }
+
+/// The header for RECORD_SAMPLE messages that we require from eBPF
+#[repr(C)]
+pub struct SampleHeader {
+    pub size: u32,
+    pub type_: u32,
+    pub timestamp: u64,
+}
+unsafe impl Plain for SampleHeader {}
 
 /// A perf entry represents a timestamped entry from a specific ring
 struct PerfEntry {
@@ -162,6 +172,7 @@ impl Reader {
         let Some(entry) = self.heap.pop() else {
             return Err(ReaderError::BufferEmpty);
         };
+        self.in_heap[entry.ring_index] = false;
 
         self.rings[entry.ring_index].pop()?;
 
@@ -172,25 +183,21 @@ impl Reader {
     }
 
     /// Manages the heap entry for a ring
-    /// For PERF_RECORD_SAMPLE records, the timestamp is read from the first 8 bytes of the record data.
+    /// For PERF_RECORD_SAMPLE records, the record is the size injected by the kernel (4 bytes),
+    /// then message type (4 bytes), then timestamp(8 bytes).
+    /// 
+    /// The ring must not be in the heap.
+    /// 
     /// A timestamp of 0 is assigned in the following cases:
     /// - Non-sample records (e.g., PERF_RECORD_LOST)
-    /// - Malformed sample records (less than 8 bytes)
+    /// - Malformed sample records (less than 16 bytes including the size field)
     /// - Failed timestamp reads
     /// This ensures such records are processed as soon as possible.
     fn maintain_heap_entry(&mut self, idx: usize) -> Result<(), ReaderError> {
-        let in_heap = self.in_heap[idx];
-
         // If the ring is empty, remove its entry if it's in the heap
         let bytes_remaining = self.rings[idx].bytes_remaining();
         if bytes_remaining == 0 {
-            if self.in_heap[idx] {
-                // Remove from heap (BinaryHeap doesn't have a direct remove method,
-                // so we need to rebuild without that element)
-                self.in_heap[idx] = false;
-                let ring_index = idx;
-                self.heap.retain(|entry| entry.ring_index != ring_index);
-            }
+            // empty, will not add to the heap
             return Ok(());
         };
 
@@ -198,9 +205,9 @@ impl Reader {
         let mut timestamp = 0;
         if self.rings[idx].peek_type() == PERF_RECORD_SAMPLE {
             // Sample records have an 8-byte timestamp after the header
-            // Skip the first 8 bytes (sample record) and read the timestamp
+            // Skip the first 8 bytes (RECORD_SAMPLE's size and our message type) and read the timestamp
             let mut buf = [0u8; 8];
-            if self.rings[idx].peek_copy(&mut buf, 4).is_ok() {
+            if self.rings[idx].peek_copy(&mut buf, offset_of!(SampleHeader, timestamp) as u16).is_ok() {
                 timestamp = u64::from_le_bytes(buf);
             }
         }
@@ -212,17 +219,9 @@ impl Reader {
             ring_index: idx,
         };
 
-        if in_heap {
-            // Since BinaryHeap doesn't have a direct way to update entries,
-            // we remove and re-add
-            let ring_index = idx;
-            self.heap.retain(|entry| entry.ring_index != ring_index);
-            self.heap.push(entry);
-        } else {
-            // Add new entry
-            self.heap.push(entry);
-            self.in_heap[idx] = true;
-        }
+        // Add new entry
+        self.heap.push(entry);
+        self.in_heap[idx] = true;
 
         Ok(())
     }
@@ -291,13 +290,13 @@ mod tests {
         assert!(matches!(reader.pop(), Err(ReaderError::NotActive)));
 
         // Create events with timestamps
-        let mut event1 = vec![0u8; 16]; // 8 bytes for timestamp + "event1"
-        event1[0..8].copy_from_slice(&100u64.to_le_bytes()); // timestamp 100
-        event1[8..16].copy_from_slice(b"event1  ");
+        let mut event1 = vec![0u8; 20]; // 8 bytes for timestamp + "event1"
+        event1[4..12].copy_from_slice(&100u64.to_le_bytes()); // timestamp 100
+        event1[12..20].copy_from_slice(b"event1  ");
 
-        let mut event2 = vec![0u8; 16]; // 8 bytes for timestamp + "event2"
-        event2[0..8].copy_from_slice(&200u64.to_le_bytes()); // timestamp 200
-        event2[8..16].copy_from_slice(b"event2  ");
+        let mut event2 = vec![0u8; 20]; // 8 bytes for timestamp + "event2"
+        event2[4..12].copy_from_slice(&200u64.to_le_bytes()); // timestamp 200
+        event2[12..20].copy_from_slice(b"event2  ");
 
         // Write events to rings
         ring1.start_write_batch();
@@ -400,13 +399,13 @@ mod tests {
             unsafe { PerfRing::init_contiguous(&mut data2, n_pages, page_size).unwrap() };
 
         // Test 1: Show that events within a single ring maintain their order regardless of type
-        let mut event1 = vec![0u8; 16];
-        event1[0..8].copy_from_slice(&100u64.to_le_bytes()); // timestamp 100
-        event1[8..16].copy_from_slice(b"event1  ");
+        let mut event1 = vec![0u8; 20];
+        event1[4..12].copy_from_slice(&100u64.to_le_bytes()); // timestamp 100
+        event1[12..20].copy_from_slice(b"event1  ");
 
-        let mut event2 = vec![0u8; 16]; // Lost event data
-        event2[0..8].copy_from_slice(&0u64.to_le_bytes()); // timestamp doesn't matter for lost events
-        event2[8..16].copy_from_slice(b"lost!   ");
+        let mut event2 = vec![0u8; 20]; // Lost event data
+        event2[4..12].copy_from_slice(&0u64.to_le_bytes()); // timestamp doesn't matter for lost events
+        event2[12..20].copy_from_slice(b"lost!   ");
 
         // Write both events to ring1
         ring1.start_write_batch();
@@ -448,9 +447,9 @@ mod tests {
         // Test 2: Show that lost events from one ring are processed before normal events from another ring
         // Ring1: Normal event with timestamp 100
         // Ring2: Lost event (should get timestamp 0)
-        let mut normal_event = vec![0u8; 16];
-        normal_event[0..8].copy_from_slice(&100u64.to_le_bytes()); // timestamp 100
-        normal_event[8..16].copy_from_slice(b"normal  ");
+        let mut normal_event = vec![0u8; 20];
+        normal_event[4..12].copy_from_slice(&100u64.to_le_bytes()); // timestamp 100
+        normal_event[12..20].copy_from_slice(b"normal  ");
 
         let mut lost_event = vec![0u8; 16];
         lost_event[8..16].copy_from_slice(b"lost!   ");

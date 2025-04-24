@@ -9,9 +9,9 @@ libbpf-cargo = "0.24"
 vmlinux = { git = "https://github.com/libbpf/vmlinux.h.git", rev = "83a228cf37fc65f2d14e4896a04922b5ee531a94" }
 
 [dependencies]
-anyhow = "1.0"
-libbpf-rs = "0.24" 
-libc = "0.2"
+anyhow = { workspace = true }
+libbpf-rs = { workspace = true }
+libc = { workspace = true }
 plain = "0.2"
-time = { version = "0.3", features = ["formatting", "local-offset", "macros"]}
-clap = { version = "4.0.32", default-features = false, features = ["std", "derive", "help", "usage"] }
+time = { workspace = true }
+clap = { workspace = true }

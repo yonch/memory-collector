@@ -11,6 +11,7 @@ mod mmap_storage;
 mod reader;
 mod ring;
 mod helpers;
+mod dispatcher;
 pub mod map_reader;
 
 pub use memory_storage::*;
@@ -19,6 +20,7 @@ pub use mmap_storage::*;
 pub use reader::*;
 pub use ring::*;
 pub use helpers::*;
+pub use dispatcher::*;
 
 use std::os::unix::io::RawFd;
 use thiserror::Error;

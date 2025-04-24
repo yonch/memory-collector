@@ -369,6 +369,7 @@ dependencies = [
  "libc",
  "page_size",
  "perf-event-open-sys",
+ "plain",
  "thiserror",
 ]
 
