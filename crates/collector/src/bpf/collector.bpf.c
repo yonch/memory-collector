@@ -2,8 +2,9 @@
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_core_read.h>
-#include "collector.h"
 
+#include "collector.h"
+#include "sync_timer.bpf.h"
 // Map to track which tasks have had metadata reported
 struct {
     __uint(type, BPF_MAP_TYPE_TASK_STORAGE);
@@ -165,5 +166,12 @@ int handle_process_free(struct trace_event_raw_sched_process_template *ctx)
     
     return 0;
 }
+
+void sync_timer_callback(void)
+{
+    // TODO
+}
+
+DEFINE_SYNC_TIMER(collect, sync_timer_callback);
 
 char LICENSE[] SEC("license") = "GPL"; 

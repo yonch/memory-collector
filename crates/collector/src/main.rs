@@ -14,6 +14,9 @@ use time::OffsetDateTime;
 // Import the perf_events crate components
 use perf_events::{Dispatcher, PerfMapReader};
 
+// Import our sync_timer module
+mod sync_timer;
+
 mod collector {
     include!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -103,6 +106,9 @@ fn main() -> Result<()> {
 
     // Load & verify program
     let mut skel = open_skel.load()?;
+
+    // Initialize the sync timer
+    sync_timer::initialize_sync_timer(&skel.progs.sync_timer_init_collect)?;
 
     // Attach the tracepoints
     skel.attach()?;
