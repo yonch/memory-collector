@@ -1,16 +1,15 @@
 # RMID Allocator
 
-This package provides an eBPF-based implementation of a Resource Monitoring ID (RMID) allocator. It manages RMIDs used to track memory usage of processes, with features including:
+This package provides an eBPF-based implementation of a Resource Monitoring ID (RMID) allocator as a header-only library. It manages RMIDs used to track memory usage of processes, with features including:
 
 - RMID allocation and deallocation
 - Minimum free time enforcement (2ms by default)
 
 ## Implementation Details
 
-The RMID allocator is implemented as a C/BPF library with the following components:
+The RMID allocator is implemented as a header-only C/BPF library with all functions being `static __always_inline` to ensure compatibility with eBPF verifier restrictions (especially for code that runs under locks):
 
-- `rmid_allocator.bpf.h`: Header file containing type definitions and function declarations
-- `rmid_allocator.bpf.c`: Implementation of the RMID allocator functions
+- `rmid_allocator.bpf.h`: Complete header-only implementation with type definitions and function implementations
 
 The allocator uses a struct-based approach:
 - `rmid_allocator`: Struct containing all allocator state including:
@@ -67,7 +66,7 @@ if (rmid_is_allocated(&allocator, rmid)) {
 
 ## Building
 
-To use the RMID allocator in your BPF program, add `rmid_allocator.bpf.c` to your bpf2go's `//go:generate` clause
+To use the RMID allocator in your BPF program, simply include the header file.
 
 ## Testing
 

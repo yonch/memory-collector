@@ -1,0 +1,16 @@
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/collector",
+    "crates/perf_events",
+]
+
+[workspace.dependencies]
+collector = { path = "crates/collector" }
+perf_events = { path = "crates/perf_events" }
+
+libbpf-rs = "0.24.8"
