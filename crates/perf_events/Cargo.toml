@@ -6,10 +6,11 @@ description = "eBPF perf ring buffer implementation"
 license = "MIT"
 
 [dependencies]
-thiserror = "1.0"
-page_size = "0.5"
+thiserror = { workspace = true }
+page_size = { workspace = true }
 libbpf-rs = { workspace = true }
+plain = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
-perf-event-open-sys = "5.0" 
+libc = { workspace = true }
+perf-event-open-sys = { workspace = true }

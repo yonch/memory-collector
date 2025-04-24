@@ -11,7 +11,8 @@ mod mmap_storage;
 mod reader;
 mod ring;
 mod helpers;
-pub mod map_reader;
+mod dispatcher;
+mod map_reader;
 
 pub use memory_storage::*;
 #[cfg(target_os = "linux")]
@@ -19,6 +20,8 @@ pub use mmap_storage::*;
 pub use reader::*;
 pub use ring::*;
 pub use helpers::*;
+pub use dispatcher::*;
+pub use map_reader::*;
 
 use std::os::unix::io::RawFd;
 use thiserror::Error;

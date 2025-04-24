@@ -175,6 +175,7 @@ dependencies = [
  "libbpf-cargo",
  "libbpf-rs",
  "libc",
+ "perf_events",
  "plain",
  "time",
  "vmlinux",
@@ -369,6 +370,7 @@ dependencies = [
  "libc",
  "page_size",
  "perf-event-open-sys",
+ "plain",
  "thiserror",
 ]
 
