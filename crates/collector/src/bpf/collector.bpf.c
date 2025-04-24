@@ -27,6 +27,11 @@ struct {
     __uint(value_size, sizeof(u32));
 } events SEC(".maps");
 
+// Dummy instances to make skeleton generation work
+enum msg_type msg_type_ = 0;
+struct task_metadata_msg task_metadata_msg_ = {0};
+struct task_free_msg task_free_msg_ = {0};
+
 // Initialize value for task storage
 static const __u64 TASK_METADATA_INIT = 0;  // 0 = not reported yet
 // Value to store in the exited_leaders map
@@ -50,14 +55,17 @@ static __always_inline int send_task_metadata(void *ctx, struct task_struct *tas
     
     struct task_metadata_msg msg = {};
     
-    msg.timestamp = bpf_ktime_get_ns();
-    msg.type = MSG_TYPE_TASK_METADATA;
+    msg.header.timestamp = bpf_ktime_get_ns();
+    msg.header.type = MSG_TYPE_TASK_METADATA;
+    // size field is filled by the kernel
     msg.pid = task->pid;
     
     bpf_probe_read_kernel_str(&msg.comm, sizeof(msg.comm), task->comm);
     
+    // Skip the size field (first 4 bytes) when sending
     return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
-                                 &msg, sizeof(msg));
+                                ((void*)&msg) + sizeof(__u32), 
+                                sizeof(msg) - sizeof(__u32));
 }
 
 // Send task free event to userspace
@@ -65,12 +73,15 @@ static __always_inline int send_task_free(void *ctx, __u32 pid)
 {
     struct task_free_msg msg = {};
     
-    msg.timestamp = bpf_ktime_get_ns();
-    msg.type = MSG_TYPE_TASK_FREE;
+    msg.header.timestamp = bpf_ktime_get_ns();
+    msg.header.type = MSG_TYPE_TASK_FREE;
+    // size field is filled by the kernel
     msg.pid = pid;
     
+    // Skip the size field (first 4 bytes) when sending
     return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
-                                 &msg, sizeof(msg));
+                                ((void*)&msg) + sizeof(__u32), 
+                                sizeof(msg) - sizeof(__u32));
 }
 
 // Check and report task metadata if needed

@@ -175,6 +175,7 @@ dependencies = [
  "libbpf-cargo",
  "libbpf-rs",
  "libc",
+ "perf_events",
  "plain",
  "time",
  "vmlinux",
