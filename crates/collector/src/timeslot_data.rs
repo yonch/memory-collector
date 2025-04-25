@@ -7,7 +7,7 @@ pub struct TimeslotData {
     /// Timestamp at the end of this timeslot
     pub start_timestamp: u64,
     /// Map from PID to task data (metadata + metrics)
-    tasks: HashMap<u32, TaskData>,
+    pub tasks: HashMap<u32, TaskData>,
 }
 
 /// Combines task metadata with metrics

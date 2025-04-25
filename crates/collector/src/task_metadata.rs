@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 /// Represents metadata for a single task
+#[derive(Clone)]
 pub struct TaskMetadata {
     pub pid: u32,
     pub comm: [u8; 16],

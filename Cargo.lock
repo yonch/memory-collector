@@ -185,6 +185,7 @@ dependencies = [
  "perf_events",
  "plain",
  "time",
+ "timeslot",
  "vmlinux",
 ]
 

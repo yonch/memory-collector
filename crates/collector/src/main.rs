@@ -35,6 +35,7 @@ use collector::*;
 // Re-export the Metric struct
 pub use metrics::Metric;
 use task_metadata::{TaskCollection, TaskMetadata};
+use timeslot_data::TimeslotData;
 
 unsafe impl Plain for collector::types::task_metadata_msg {}
 unsafe impl Plain for collector::types::task_free_msg {}
@@ -58,6 +59,7 @@ struct AppState {
     min_tracker: MinTracker,
     last_min_slot: Option<u64>,
     task_collection: TaskCollection,
+    current_timeslot: TimeslotData,
 }
 
 fn format_time() -> String {
@@ -80,14 +82,6 @@ fn handle_task_metadata(_ring_index: usize, data: &[u8], app_state: &Rc<RefCell<
         }
     };
 
-    let comm = match str::from_utf8(&event.comm) {
-        Ok(s) => s.trim_end_matches(char::from(0)),
-        Err(_) => "<invalid utf8>",
-    };
-
-    let now = format_time();
-    println!("{} TASK_NEW: pid={:<7} comm={:<16}", now, event.pid, comm);
-    
     // Create task metadata and add to collection
     let metadata = TaskMetadata::new(event.pid, event.comm);
     let mut state = app_state.borrow_mut();
@@ -103,9 +97,6 @@ fn handle_task_free(_ring_index: usize, data: &[u8], app_state: &Rc<RefCell<AppS
             return;
         }
     };
-
-    let now = format_time();
-    println!("{} TASK_EXIT: pid={:<7}", now, event.pid);
     
     // Queue the task for removal
     let mut state = app_state.borrow_mut();
@@ -113,7 +104,7 @@ fn handle_task_free(_ring_index: usize, data: &[u8], app_state: &Rc<RefCell<AppS
 }
 
 // Handle performance measurement events
-fn handle_perf_measurement(_ring_index: usize, data: &[u8]) {
+fn handle_perf_measurement(_ring_index: usize, data: &[u8], app_state: &Rc<RefCell<AppState>>) {
     let event: &collector::types::perf_measurement_msg = match plain::from_bytes(data) {
         Ok(event) => event,
         Err(e) => {
@@ -122,16 +113,20 @@ fn handle_perf_measurement(_ring_index: usize, data: &[u8]) {
         }
     };
 
-    let now = format_time();
-    println!(
-        "{} PERF: pid={:<7} cycles={:<12} instructions={:<12} llc_misses={:<8} duration_ns={:<12}",
-        now,
-        event.pid,
+    // Create metric from the performance measurements
+    let metric = Metric::from_deltas(
         event.cycles_delta,
         event.instructions_delta,
         event.llc_misses_delta,
-        event.time_delta_ns
+        event.time_delta_ns,
     );
+
+    // Look up task metadata and update timeslot data
+    let mut state = app_state.borrow_mut();
+    let pid = event.pid;
+    
+    let metadata = state.task_collection.lookup(pid).cloned();
+    state.current_timeslot.update(pid, metadata, metric);
 }
 
 // Handle timer finished processing events
@@ -160,13 +155,44 @@ fn handle_timer_finished_processing(
     // Check if the minimum time slot has changed
     if let Some(min_slot) = state.min_tracker.get_min() {
         if state.last_min_slot.map_or(true, |last| last != min_slot) {
+            // Print out the current timeslot data before switching
             let now = format_time();
             println!(
-                "{} MIN_TIMESLOT: All CPUs have processed up to time slot {}, timestamp {}",
+                "{} TIMESLOT_COMPLETE: timestamp={} task_count={}",
                 now,
-                min_slot / 100_000_000,
-                min_slot
+                state.current_timeslot.start_timestamp,
+                state.current_timeslot.task_count()
             );
+            
+            // Print details for each task
+            for (pid, task_data) in state.current_timeslot.iter_tasks() {
+                let comm = if let Some(ref metadata) = task_data.metadata {
+                    match str::from_utf8(&metadata.comm) {
+                        Ok(s) => s.trim_end_matches(char::from(0)),
+                        Err(_) => "<invalid utf8>",
+                    }
+                } else {
+                    "<unknown>"
+                };
+                
+                // if comm is "collector" print the metrics
+                if comm == "collector" {
+                    println!(
+                        "  PID={:<7} COMM={:<16} cycles={:<12} instructions={:<12} llc_misses={:<8} time_ns={:<12}",
+                        pid,
+                        comm,
+                        task_data.metrics.cycles,
+                        task_data.metrics.instructions,
+                        task_data.metrics.llc_misses,
+                        task_data.metrics.time_ns
+                    );
+                }
+            }
+            
+            println!("{}", "-".repeat(60));
+            
+            // Create a new timeslot with the current minimum timestamp
+            state.current_timeslot = TimeslotData::new(min_slot);
             state.last_min_slot = Some(min_slot);
             
             // End of time slot - flush queued removals
@@ -227,12 +253,12 @@ fn main() -> Result<()> {
     // Attach the tracepoints
     skel.attach()?;
 
-    println!("Successfully started! Tracing task lifecycle events...");
-    println!("{:<23} {:<9} {:<16}", "TIME", "EVENT", "DETAILS");
+    println!("Successfully started! Tracing and aggregating task performance...");
+    println!("Metrics will be reported at the end of each timeslot.");
     println!("{}", "-".repeat(60));
 
     // Set up the perf map reader for the events map
-    let buffer_pages = 2;
+    let buffer_pages = 32;
     let watermark_bytes = 0; // Wake up on every event
     let mut perf_map_reader =
         PerfMapReader::new(&mut skel.maps.events, buffer_pages, watermark_bytes)
@@ -245,9 +271,10 @@ fn main() -> Result<()> {
 
     // Create application state with flattened timer state
     let app_state = Rc::new(RefCell::new(AppState {
-        min_tracker: MinTracker::new(100_000_000, num_cpus),
+        min_tracker: MinTracker::new(1_000_000, num_cpus),
         last_min_slot: None,
         task_collection: TaskCollection::new(),
+        current_timeslot: TimeslotData::new(0), // Start with timestamp 0
     }));
 
     // Create a dispatcher to handle events
@@ -270,9 +297,13 @@ fn main() -> Result<()> {
         },
     );
 
+    // App state clone for the perf measurement callback
+    let app_state_clone = app_state.clone();
     dispatcher.subscribe(
         types::msg_type::MSG_TYPE_PERF_MEASUREMENT as u32,
-        handle_perf_measurement,
+        move |ring_index, data| {
+            handle_perf_measurement(ring_index, data, &app_state_clone)
+        },
     );
 
     // App state clone for the timer callback
