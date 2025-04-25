@@ -36,11 +36,47 @@ struct {
     __uint(max_entries, 1);
 } timer_fired SEC(".maps");
 
+// Declare the perf event arrays for hardware counters
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+} cycles SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+} instructions SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+} llc_misses SEC(".maps");
+
+// Structure to store previous counter values per CPU
+struct prev_counters {
+    __u64 cycles;
+    __u64 instructions;
+    __u64 llc_misses;
+    __u64 timestamp;
+};
+
+// Per-CPU map to store previous counter values
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct prev_counters);
+} prev_counters_map SEC(".maps");
+
 // Dummy instances to make skeleton generation work
 enum msg_type msg_type_ = 0;
 struct task_metadata_msg task_metadata_msg_ = {0};
 struct task_free_msg task_free_msg_ = {0};
 struct timer_finished_processing_msg timer_finished_processing_msg_ = {0};
+struct perf_measurement_msg perf_measurement_msg_ = {0};
 
 // Initialize value for task storage
 static const __u64 TASK_METADATA_INIT = 0;  // 0 = not reported yet
@@ -94,6 +130,33 @@ static __always_inline int send_task_free(void *ctx, __u32 pid)
                                 sizeof(msg) - sizeof(__u32));
 }
 
+// Helper function to compute delta with wraparound handling
+static __always_inline __u64 compute_delta(__u64 current, __u64 previous) {
+    return current - previous;
+}
+
+// Send perf measurement event to userspace
+static __always_inline int send_perf_measurement(void *ctx, __u32 pid, __u64 cycles_delta, 
+                                               __u64 instructions_delta, __u64 llc_misses_delta,
+                                               __u64 time_delta_ns, __u64 timestamp)
+{
+    struct perf_measurement_msg msg = {};
+    
+    msg.header.timestamp = timestamp;
+    msg.header.type = MSG_TYPE_PERF_MEASUREMENT;
+    // size field is filled by the kernel
+    msg.pid = pid;
+    msg.cycles_delta = cycles_delta;
+    msg.instructions_delta = instructions_delta;
+    msg.llc_misses_delta = llc_misses_delta;
+    msg.time_delta_ns = time_delta_ns;
+    
+    // Skip the size field (first 4 bytes) when sending
+    return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
+                                ((void*)&msg) + sizeof(__u32), 
+                                sizeof(msg) - sizeof(__u32));
+}
+
 // Check and report task metadata if needed
 static __always_inline int check_and_send_metadata(void *ctx, struct task_struct *task)
 {
@@ -125,15 +188,77 @@ static __always_inline int check_and_send_metadata(void *ctx, struct task_struct
     return 0;
 }
 
+// Collect and report performance measurements
+static __always_inline int collect_and_send_perf_measurements(void *ctx, struct task_struct *task)
+{
+    // Skip if null task
+    if (!task)
+        return 0;
+    
+    __u32 pid = task->tgid;
+    
+    // Get previous counters
+    __u32 zero = 0;
+    struct prev_counters *prev = bpf_map_lookup_elem(&prev_counters_map, &zero);
+    if (!prev) {
+        return 0;  // Should never happen since it's a per-CPU array
+    }
+    
+    // Read current counter values
+    struct bpf_perf_event_value cycles_val = {};
+    struct bpf_perf_event_value instructions_val = {};
+    struct bpf_perf_event_value llc_misses_val = {};
+    
+    __u64 cycles_delta = 0;
+    __u64 instructions_delta = 0;
+    __u64 llc_misses_delta = 0;
+    __u64 now = bpf_ktime_get_ns();
+    __u64 time_delta_ns = 0;
+    
+    int err = bpf_perf_event_read_value(&cycles, BPF_F_CURRENT_CPU, &cycles_val, sizeof(cycles_val));
+    if (err == 0) {
+        cycles_delta = compute_delta(cycles_val.counter, prev->cycles);
+        prev->cycles = cycles_val.counter;
+    }
+    
+    err = bpf_perf_event_read_value(&instructions, BPF_F_CURRENT_CPU, &instructions_val, sizeof(instructions_val));
+    if (err == 0) {
+        instructions_delta = compute_delta(instructions_val.counter, prev->instructions);
+        prev->instructions = instructions_val.counter;
+    }
+    
+    err = bpf_perf_event_read_value(&llc_misses, BPF_F_CURRENT_CPU, &llc_misses_val, sizeof(llc_misses_val));
+    if (err == 0) {
+        llc_misses_delta = compute_delta(llc_misses_val.counter, prev->llc_misses);
+        prev->llc_misses = llc_misses_val.counter;
+    }
+    
+    // Compute time delta and update timestamp
+    // If prev->timestamp is 0, this is the first event, don't emit it
+    if (prev->timestamp != 0) {
+        time_delta_ns = compute_delta(now, prev->timestamp);
+        send_perf_measurement(ctx, pid, cycles_delta, instructions_delta, 
+                              llc_misses_delta, time_delta_ns, now);
+    }
+    prev->timestamp = now;
+    
+    return 0;
+}
+
 SEC("tp_btf/sched_switch")
 int handle_sched_switch(u64 *ctx)
 {
     struct task_struct *prev = (struct task_struct *)ctx[1];
     struct task_struct *next = (struct task_struct *)ctx[2];
     
-    // Check for task metadata for both prev and next task
-    check_and_send_metadata(ctx, prev);
-    check_and_send_metadata(ctx, next);
+    // Get current task (simpler approach as requested)
+    struct task_struct *current_task = bpf_get_current_task_btf();
+    
+    // Check and send metadata if needed
+    check_and_send_metadata(ctx, current_task);
+    
+    // Collect and send performance measurements
+    collect_and_send_perf_measurements(ctx, current_task);
     
     return 0;
 }
@@ -217,6 +342,15 @@ int handle_hrtimer_expire_exit(void *ctx)
     // Reset the flag
     __u8 value = 0;
     bpf_map_update_elem(&timer_fired, &key, &value, BPF_ANY);
+
+    // Get current task
+    struct task_struct *current_task = bpf_get_current_task_btf();
+    
+    // Check and send metadata if needed
+    check_and_send_metadata(ctx, current_task);
+
+    // Collect and send performance measurements before sending timer finished message
+    collect_and_send_perf_measurements(ctx, current_task);
     
     // Send the timer processing finished message
     send_timer_finished_processing(ctx);

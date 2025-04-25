@@ -9,6 +9,7 @@ enum msg_type {
     MSG_TYPE_TASK_METADATA = 1,
     MSG_TYPE_TASK_FREE = 2,
     MSG_TYPE_TIMER_FINISHED_PROCESSING = 3,
+    MSG_TYPE_PERF_MEASUREMENT = 4,
 };
 
 // Sample header structure that matches the one in reader.rs
@@ -35,6 +36,16 @@ struct task_free_msg {
 struct timer_finished_processing_msg {
     struct sample_header header; // Common header
     // No additional data needed, timestamp in header is sufficient
+};
+
+// Structure for performance measurement messages
+struct perf_measurement_msg {
+    struct sample_header header; // Common header
+    __u32 pid;                   // Process ID
+    __u64 cycles_delta;          // CPU cycles delta
+    __u64 instructions_delta;    // Instructions delta
+    __u64 llc_misses_delta;      // LLC misses delta
+    __u64 time_delta_ns;         // Time delta in nanoseconds
 };
 
 #endif /* __COLLECTOR_H */ 
