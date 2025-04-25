@@ -64,29 +64,29 @@ mod tests {
     #[test]
     fn test_task_collection() {
         let mut collection = TaskCollection::new();
-        
+
         // Add tasks
         let task1 = TaskMetadata::new(1, [0; 16]);
         let task2 = TaskMetadata::new(2, [0; 16]);
         collection.add(task1);
         collection.add(task2);
-        
+
         // Lookup
         assert!(collection.lookup(1).is_some());
         assert!(collection.lookup(2).is_some());
         assert!(collection.lookup(3).is_none());
-        
+
         // Queue removal
         collection.queue_removal(1);
-        
+
         // Task should still be available before flush
         assert!(collection.lookup(1).is_some());
-        
+
         // Flush removals
         collection.flush_removals();
-        
+
         // Task should be gone after flush
         assert!(collection.lookup(1).is_none());
         assert!(collection.lookup(2).is_some());
     }
-} 
+}

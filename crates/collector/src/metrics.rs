@@ -34,4 +34,4 @@ impl Metric {
             time_ns,
         }
     }
-} 
+}

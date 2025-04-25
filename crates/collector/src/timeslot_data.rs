@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::metrics::Metric;
 use crate::task_metadata::TaskMetadata;
+use std::collections::HashMap;
 
 /// Represents data collected for a specific timeslot
 pub struct TimeslotData {
@@ -34,10 +34,7 @@ impl TimeslotData {
             task_data.metrics.add(&metrics);
         } else {
             // Create new entry
-            self.tasks.insert(pid, TaskData {
-                metadata,
-                metrics,
-            });
+            self.tasks.insert(pid, TaskData { metadata, metrics });
         }
     }
 
@@ -60,9 +57,6 @@ impl TimeslotData {
 impl TaskData {
     /// Creates a new task data entry
     pub fn new(metadata: Option<TaskMetadata>, metrics: Metric) -> Self {
-        Self {
-            metadata,
-            metrics,
-        }
+        Self { metadata, metrics }
     }
-} 
+}
