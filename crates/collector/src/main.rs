@@ -19,6 +19,7 @@ use perf_events::{Dispatcher, HardwareCounter, PerfMapReader};
 
 // Import our sync_timer module
 mod sync_timer;
+mod metrics;
 
 mod collector {
     include!(concat!(
@@ -28,6 +29,8 @@ mod collector {
 }
 
 use collector::*;
+// Re-export the Metric struct
+pub use metrics::Metric;
 
 unsafe impl Plain for collector::types::task_metadata_msg {}
 unsafe impl Plain for collector::types::task_free_msg {}
