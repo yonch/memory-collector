@@ -8,6 +8,7 @@
 enum msg_type {
     MSG_TYPE_TASK_METADATA = 1,
     MSG_TYPE_TASK_FREE = 2,
+    MSG_TYPE_TIMER_FINISHED_PROCESSING = 3,
 };
 
 // Sample header structure that matches the one in reader.rs
@@ -30,5 +31,10 @@ struct task_free_msg {
     __u32 pid;                   // Process ID
 };
 
+// Structure for timer finished processing messages
+struct timer_finished_processing_msg {
+    struct sample_header header; // Common header
+    // No additional data needed, timestamp in header is sufficient
+};
 
 #endif /* __COLLECTOR_H */ 

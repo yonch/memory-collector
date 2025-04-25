@@ -188,6 +188,78 @@ pub fn open_events(
     }
 }
 
+/// Types of hardware performance counters
+#[derive(Debug, Clone, Copy)]
+pub enum HardwareCounter {
+    /// CPU cycles
+    Cycles,
+    /// CPU instructions
+    Instructions,
+    /// Last Level Cache misses
+    LLCMisses,
+}
+
+/// Opens a hardware performance counter for each CPU and updates the provided map with the file descriptors.
+///
+/// # Arguments
+///
+/// * `map` - A mutable reference to a libbpf-rs map to store the file descriptors
+/// * `counter_type` - Type of hardware counter to open
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(PerfEventError)` on failure
+///
+/// # Example
+///
+/// ```no_run
+/// use perf_events::{self, HardwareCounter};
+/// use libbpf_rs::MapMut;
+///
+/// fn example(cycles_map: &mut MapMut, instr_map: &mut MapMut) -> Result<(), perf_events::PerfEventError> {
+///     // Open cycles counter
+///     perf_events::open_perf_counter(cycles_map, HardwareCounter::Cycles)?;
+///     
+///     // Open instructions counter
+///     perf_events::open_perf_counter(instr_map, HardwareCounter::Instructions)?;
+///     
+///     // Start the events
+///     perf_events::start_events(cycles_map)?;
+///     perf_events::start_events(instr_map)?;
+///     
+///     Ok(())
+/// }
+/// ```
+pub fn open_perf_counter(
+    map: &mut MapMut,
+    counter_type: HardwareCounter,
+) -> Result<(), PerfEventError> {
+    // Create and configure perf event attributes
+    let mut attr = sys::bindings::perf_event_attr::default();
+    attr.size = std::mem::size_of::<sys::bindings::perf_event_attr>() as u32;
+    
+    // Set common attributes
+    attr.type_ = sys::bindings::PERF_TYPE_HARDWARE;
+    attr.read_format = (sys::bindings::PERF_FORMAT_TOTAL_TIME_ENABLED | sys::bindings::PERF_FORMAT_TOTAL_TIME_RUNNING) as u64;
+    
+    // Set counter-specific configuration
+    match counter_type {
+        HardwareCounter::Cycles => {
+            attr.config = sys::bindings::PERF_COUNT_HW_CPU_CYCLES as u64;
+        },
+        HardwareCounter::Instructions => {
+            attr.config = sys::bindings::PERF_COUNT_HW_INSTRUCTIONS as u64;
+        },
+        HardwareCounter::LLCMisses => {
+            attr.config = sys::bindings::PERF_COUNT_HW_CACHE_MISSES as u64;
+        },
+    }
+    
+    // Open the events
+    open_events(map, &mut attr)
+}
+
 /// Enables all perf events stored in the map.
 ///
 /// # Arguments
