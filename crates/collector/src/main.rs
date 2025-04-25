@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fs::File;
 use std::rc::Rc;
 use std::str;
 use std::thread;
@@ -20,11 +21,13 @@ use bpf::{
 
 // Import local modules
 mod metrics;
+mod parquet_writer;
 mod task_metadata;
 mod timeslot_data;
 
 // Re-export the Metric struct
 pub use metrics::Metric;
+use parquet_writer::ParquetWriter;
 use task_metadata::{TaskCollection, TaskMetadata};
 use timeslot_data::TimeslotData;
 
@@ -38,6 +41,10 @@ struct Command {
     /// Track duration in seconds (0 = unlimited)
     #[arg(short, long, default_value = "0")]
     duration: u64,
+
+    /// Output file for parquet data
+    #[arg(short, long, default_value = "metrics.parquet")]
+    output: String,
 }
 
 // Application state containing task collection and timer tracking
@@ -46,6 +53,7 @@ struct AppState {
     last_min_slot: Option<u64>,
     task_collection: TaskCollection,
     current_timeslot: TimeslotData,
+    parquet_writer: Option<ParquetWriter<File>>,
 }
 
 impl AppState {
@@ -128,51 +136,27 @@ impl AppState {
         }
 
         // Check if the minimum time slot has changed
-        if let Some(min_slot) = self.min_tracker.get_min() {
-            if self.last_min_slot.map_or(true, |last| last != min_slot) {
-                // Print out the current timeslot data before switching
-                let now = format_time();
-                println!(
-                    "{} TIMESLOT_COMPLETE: timestamp={} task_count={}",
-                    now,
-                    self.current_timeslot.start_timestamp,
-                    self.current_timeslot.task_count()
-                );
-
-                // Print details for each task
-                for (pid, task_data) in self.current_timeslot.iter_tasks() {
-                    let comm = if let Some(ref metadata) = task_data.metadata {
-                        match str::from_utf8(&metadata.comm) {
-                            Ok(s) => s.trim_end_matches(char::from(0)),
-                            Err(_) => "<invalid utf8>",
-                        }
-                    } else {
-                        "<unknown>"
-                    };
-
-                    // if comm is "collector" print the metrics
-                    if comm == "collector" {
-                        println!(
-                            "  PID={:<7} COMM={:<16} cycles={:<12} instructions={:<12} llc_misses={:<8} time_ns={:<12}",
-                            pid,
-                            comm,
-                            task_data.metrics.cycles,
-                            task_data.metrics.instructions,
-                            task_data.metrics.llc_misses,
-                            task_data.metrics.time_ns
-                        );
+        let new_min_slot = self.min_tracker.get_min();
+        if new_min_slot != self.last_min_slot {
+            // only write to parquet if we have a full timeslot
+            if self.last_min_slot.is_some() {
+                // Write the completed timeslot to Parquet file if writer exists
+                if let Some(writer) = &mut self.parquet_writer {
+                    if let Err(e) = writer.write(&self.current_timeslot) {
+                        eprintln!("Error writing timeslot to Parquet: {:?}", e);
                     }
                 }
-
-                println!("{}", "-".repeat(60));
-
-                // Replace the current timeslot with a new one
-                self.current_timeslot = TimeslotData::new(min_slot);
-                self.last_min_slot = Some(min_slot);
-
-                // End of time slot - flush queued removals
-                self.task_collection.flush_removals();
             }
+
+            // Replace the current timeslot with a new one
+            self.last_min_slot = new_min_slot;
+
+            if let Some(min_slot) = new_min_slot {
+                self.current_timeslot = TimeslotData::new(min_slot);
+            }
+
+            // End of time slot - flush queued removals
+            self.task_collection.flush_removals();
         }
         Ok(())
     }
@@ -207,12 +191,31 @@ fn main() -> Result<()> {
         .map(|p| p.get())
         .unwrap_or(1);
 
+    // Create parquet writer
+    let parquet_writer = match File::create(&opts.output) {
+        Ok(file) => match ParquetWriter::new(file) {
+            Ok(writer) => {
+                println!("Writing metrics to {}", opts.output);
+                Some(writer)
+            }
+            Err(e) => {
+                eprintln!("Failed to create ParquetWriter: {:?}", e);
+                None
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to create output file {}: {:?}", opts.output, e);
+            None
+        }
+    };
+
     // Create application state with flattened timer state
     let app_state = Rc::new(RefCell::new(AppState {
         min_tracker: MinTracker::new(1_000_000, num_cpus),
         last_min_slot: None,
         task_collection: TaskCollection::new(),
         current_timeslot: TimeslotData::new(0), // Start with timestamp 0
+        parquet_writer,
     }));
 
     {
@@ -295,6 +298,13 @@ fn main() -> Result<()> {
     while opts.duration <= 0 || start_time.elapsed() < duration {
         // Poll for events with a 10ms timeout
         bpf_loader.poll_events(10)?;
+    }
+
+    // Close the parquet writer if it exists
+    if let Some(writer) = app_state.borrow_mut().parquet_writer.take() {
+        if let Err(e) = writer.close() {
+            eprintln!("Error closing parquet writer: {:?}", e);
+        }
     }
 
     Ok(())
