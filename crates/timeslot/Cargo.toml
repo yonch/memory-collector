@@ -1,0 +1,11 @@
+[package]
+name = "timeslot"
+version = "0.1.0"
+edition = "2021"
+description = "Time slot tracking for synchronization across CPU cores"
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rstest = "0.18" 

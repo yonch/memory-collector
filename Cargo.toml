@@ -7,11 +7,13 @@ resolver = "2"
 members = [
     "crates/collector",
     "crates/perf_events",
+    "crates/timeslot",
 ]
 
 [workspace.dependencies]
 collector = { path = "crates/collector" }
 perf_events = { path = "crates/perf_events" }
+timeslot = { path = "crates/timeslot" }
 
 libbpf-rs = "0.24.8"
 plain = "0.2"

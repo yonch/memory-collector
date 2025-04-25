@@ -1,6 +1,8 @@
 use std::mem::MaybeUninit;
 use std::str;
 use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 use anyhow::Result;
 use clap::Parser;
@@ -10,6 +12,7 @@ use libbpf_rs::skel::SkelBuilder;
 use plain::Plain;
 use time::macros::format_description;
 use time::OffsetDateTime;
+use timeslot::MinTracker;
 
 // Import the perf_events crate components
 use perf_events::{Dispatcher, PerfMapReader};
@@ -40,6 +43,12 @@ struct Command {
     /// Track duration in seconds (0 = unlimited)
     #[arg(short, long, default_value = "0")]
     duration: u64,
+}
+
+// Global state for the timer tracking
+struct TimerState {
+    min_tracker: MinTracker,
+    last_min_slot: Option<u64>,
 }
 
 fn format_time() -> String {
@@ -86,7 +95,7 @@ fn handle_task_free(_ring_index: usize, data: &[u8]) {
 }
 
 // Handle timer finished processing events
-fn handle_timer_finished_processing(_ring_index: usize, data: &[u8]) {
+fn handle_timer_finished_processing(ring_index: usize, data: &[u8], timer_state: &Arc<Mutex<TimerState>>) {
     let event: &collector::types::timer_finished_processing_msg = match plain::from_bytes(data) {
         Ok(event) => event,
         Err(e) => {
@@ -95,11 +104,26 @@ fn handle_timer_finished_processing(_ring_index: usize, data: &[u8]) {
         }
     };
 
-    let now = format_time();
-    println!(
-        "{} TIMER: timer finished processing at {}",
-        now, event.header.timestamp
-    );
+    // Update the min tracker with the CPU ID and timestamp
+    let timestamp = event.header.timestamp;
+    let mut state = timer_state.lock().unwrap();
+    
+    if let Err(e) = state.min_tracker.update(ring_index, timestamp) {
+        eprintln!("Failed to update min tracker: {:?}", e);
+        return;
+    }
+    
+    // Check if the minimum time slot has changed
+    if let Some(min_slot) = state.min_tracker.get_min() {
+        if state.last_min_slot.map_or(true, |last| last != min_slot) {
+            let now = format_time();
+            println!(
+                "{} MIN_TIMESLOT: All CPUs have processed up to time slot {}, timestamp {}",
+                now, min_slot / 100_000_000, min_slot
+            );
+            state.last_min_slot = Some(min_slot);
+        }
+    }
 }
 
 // Handle lost events
@@ -142,6 +166,18 @@ fn main() -> Result<()> {
         PerfMapReader::new(&mut skel.maps.events, buffer_pages, watermark_bytes)
             .map_err(|e| anyhow::anyhow!("Failed to create PerfMapReader: {}", e))?;
 
+    // Get number of CPUs using available_parallelism
+    let num_cpus = thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(1);
+    
+    // Create the timer state with MinTracker
+    // Use 100ms time slots (convert to nanoseconds)
+    let timer_state = Arc::new(Mutex::new(TimerState {
+        min_tracker: MinTracker::new(100_000_000, num_cpus),
+        last_min_slot: None,
+    }));
+
     // Create a dispatcher to handle events
     let mut dispatcher = Dispatcher::new();
 
@@ -151,10 +187,14 @@ fn main() -> Result<()> {
         handle_task_metadata,
     );
     dispatcher.subscribe(types::msg_type::MSG_TYPE_TASK_FREE as u32, handle_task_free);
+    
+    // Timer state clone for the callback
+    let timer_state_clone = timer_state.clone();
     dispatcher.subscribe(
         types::msg_type::MSG_TYPE_TIMER_FINISHED_PROCESSING as u32,
-        handle_timer_finished_processing,
+        move |ring_index, data| handle_timer_finished_processing(ring_index, data, &timer_state_clone),
     );
+    
     dispatcher.subscribe_lost_samples(handle_lost_events);
 
     // Get the reader from the map reader
