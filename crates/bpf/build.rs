@@ -27,4 +27,4 @@ fn main() {
         .unwrap();
     println!("cargo:rerun-if-changed={SRC}");
     println!("cargo:rerun-if-changed=src/bpf/collector.h");
-} 
+}

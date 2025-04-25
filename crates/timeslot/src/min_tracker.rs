@@ -7,7 +7,7 @@ pub enum Error {
     /// The provided CPU ID was outside the valid range
     #[error("CPU ID {0} is out of range (max: {1})")]
     CpuIdOutOfRange(usize, usize),
-    
+
     /// A timestamp update was attempted that would go backward in time
     #[error("Non-monotonic timestamp update for CPU {0}: previous={1}, new={2}")]
     NonMonotonicTimestamp(usize, u64, u64),
@@ -15,7 +15,7 @@ pub enum Error {
 
 /// Tracks the minimum time slot that all CPUs have reported as complete.
 ///
-/// `MinTracker` is designed to track CPU progress through time slots and 
+/// `MinTracker` is designed to track CPU progress through time slots and
 /// determine the minimum time slot that all CPUs have completed. This is useful
 /// for synchronization in multi-CPU systems where you need to know when all CPUs
 /// have processed data up to a certain point in time.
@@ -56,29 +56,29 @@ pub enum Error {
 /// // Non-boundary timestamps are mapped to their time slots
 /// tracker.update(0, 5432).unwrap(); // Maps to time slot 5000
 /// tracker.update(1, 3789).unwrap(); // Maps to time slot 3000
-/// 
+///
 /// // The minimum time slot is 3000
 /// assert_eq!(tracker.get_min(), Some(3000));
 /// ```
 pub struct MinTracker {
     /// Size of each time slot in nanoseconds
     time_slot_size: u64,
-    
+
     /// Latest timestamp reported by each CPU
     cpu_timestamps: Vec<Option<u64>>,
-    
+
     /// Map of time slots to count of CPUs reporting that time slot as their latest
     time_slot_counts: BTreeMap<u64, usize>,
-    
+
     /// Count of CPUs that have not yet reported a timestamp
     uninitialized_cpus: usize,
 }
 
 impl MinTracker {
     /// Creates a new MinTracker.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `time_slot_size` - The size of each time slot in nanoseconds
     /// * `num_cpus` - The number of CPUs to track
     ///
@@ -111,7 +111,7 @@ impl MinTracker {
     ///
     /// # Returns
     ///
-    /// * `Result<(), Error>` - Returns an error if the timestamp is not monotonically 
+    /// * `Result<(), Error>` - Returns an error if the timestamp is not monotonically
     ///   increasing or if the CPU ID is out of range
     ///
     /// # Examples
@@ -120,7 +120,7 @@ impl MinTracker {
     /// use timeslot::MinTracker;
     ///
     /// let mut tracker = MinTracker::new(1000, 2);
-    /// 
+    ///
     /// // Update CPU 0 with timestamp 5000
     /// tracker.update(0, 5000).unwrap();
     ///
@@ -131,26 +131,29 @@ impl MinTracker {
     /// # Errors
     ///
     /// Returns an error if:
-    /// 
+    ///
     /// * The CPU ID is out of range (`CpuIdOutOfRange`)
     /// * The timestamp update is not monotonically increasing (`NonMonotonicTimestamp`)
     pub fn update(&mut self, cpu_id: usize, timestamp: u64) -> Result<(), Error> {
         // Check if the CPU ID is valid
         if cpu_id >= self.cpu_timestamps.len() {
-            return Err(Error::CpuIdOutOfRange(cpu_id, self.cpu_timestamps.len() - 1));
+            return Err(Error::CpuIdOutOfRange(
+                cpu_id,
+                self.cpu_timestamps.len() - 1,
+            ));
         }
 
         // Get the current timestamp for this CPU
         let prev_timestamp = self.cpu_timestamps[cpu_id];
-        
+
         // Calculate the time slot for the new timestamp
         let new_slot = timestamp / self.time_slot_size;
-        
+
         match prev_timestamp {
             None => {
                 // First report from this CPU
                 self.uninitialized_cpus -= 1;
-                
+
                 // Increment the count for the new time slot
                 *self.time_slot_counts.entry(new_slot).or_insert(0) += 1;
             }
@@ -159,10 +162,10 @@ impl MinTracker {
                 if prev > timestamp {
                     return Err(Error::NonMonotonicTimestamp(cpu_id, prev, timestamp));
                 }
-                
+
                 // Calculate the previous time slot
                 let current_slot = prev / self.time_slot_size;
-                
+
                 // Only update if the time slot has changed
                 if current_slot != new_slot {
                     // Decrement the count for the previous time slot
@@ -172,16 +175,16 @@ impl MinTracker {
                             self.time_slot_counts.remove(&current_slot);
                         }
                     }
-                    
+
                     // Increment the count for the new time slot
                     *self.time_slot_counts.entry(new_slot).or_insert(0) += 1;
                 }
             }
         }
-        
+
         // Update the CPU's timestamp
         self.cpu_timestamps[cpu_id] = Some(timestamp);
-        
+
         Ok(())
     }
 
@@ -202,7 +205,7 @@ impl MinTracker {
     /// use timeslot::MinTracker;
     ///
     /// let mut tracker = MinTracker::new(1000, 2);
-    /// 
+    ///
     /// // Not all CPUs have reported yet
     /// tracker.update(0, 5000).unwrap();
     /// assert_eq!(tracker.get_min(), None);
@@ -216,7 +219,7 @@ impl MinTracker {
         if self.uninitialized_cpus > 0 {
             return None;
         }
-        
+
         // Find the minimum time slot with a non-zero count
         self.time_slot_counts.keys().next().map(|&min_slot| {
             // Return the time slot boundary
@@ -233,16 +236,20 @@ mod tests {
     #[test]
     fn test_initialization() {
         let tracker = MinTracker::new(1000, 4);
-        assert_eq!(tracker.get_min(), None, "All CPUs should report before get_min returns a value");
+        assert_eq!(
+            tracker.get_min(),
+            None,
+            "All CPUs should report before get_min returns a value"
+        );
     }
 
     #[test]
     fn test_single_cpu_update() {
         let mut tracker = MinTracker::new(1000, 1);
-        
+
         // First update should initialize the CPU
         tracker.update(0, 5000).unwrap();
-        
+
         // Now get_min should return the time slot
         assert_eq!(tracker.get_min(), Some(5000 / 1000 * 1000));
     }
@@ -250,14 +257,14 @@ mod tests {
     #[test]
     fn test_multiple_cpus_initialization() {
         let mut tracker = MinTracker::new(1000, 3);
-        
+
         // Update CPUs one by one
         tracker.update(0, 5000).unwrap();
         assert_eq!(tracker.get_min(), None);
-        
+
         tracker.update(1, 3000).unwrap();
         assert_eq!(tracker.get_min(), None);
-        
+
         // After all CPUs report, get_min should return the minimum time slot
         tracker.update(2, 4000).unwrap();
         assert_eq!(tracker.get_min(), Some(3000 / 1000 * 1000));
@@ -266,14 +273,14 @@ mod tests {
     #[test]
     fn test_monotonic_requirement() {
         let mut tracker = MinTracker::new(1000, 1);
-        
+
         // First update
         tracker.update(0, 5000).unwrap();
-        
+
         // Non-monotonic update should fail
         let result = tracker.update(0, 4000);
         assert!(result.is_err());
-        
+
         if let Err(Error::NonMonotonicTimestamp(cpu_id, prev, new)) = result {
             assert_eq!(cpu_id, 0);
             assert_eq!(prev, 5000);
@@ -286,11 +293,11 @@ mod tests {
     #[test]
     fn test_cpu_id_out_of_range() {
         let mut tracker = MinTracker::new(1000, 2);
-        
+
         // CPU ID 2 is out of range for a tracker with 2 CPUs
         let result = tracker.update(2, 5000);
         assert!(result.is_err());
-        
+
         if let Err(Error::CpuIdOutOfRange(cpu_id, max)) = result {
             assert_eq!(cpu_id, 2);
             assert_eq!(max, 1);
@@ -310,25 +317,25 @@ mod tests {
     ) {
         let num_cpus = updates.iter().map(|(cpu, _)| cpu + 1).max().unwrap_or(0);
         let mut tracker = MinTracker::new(time_slot_size, num_cpus);
-        
+
         for (cpu, timestamp) in updates {
             tracker.update(cpu, timestamp).unwrap();
         }
-        
+
         assert_eq!(tracker.get_min(), expected_min);
     }
 
     #[test]
     fn test_large_time_slot_jumps() {
         let mut tracker = MinTracker::new(1000, 2);
-        
+
         tracker.update(0, 5000).unwrap();
         tracker.update(1, 3000).unwrap();
-        
+
         // Large jump in time for CPU 0
         tracker.update(0, 50000).unwrap();
         assert_eq!(tracker.get_min(), Some(3000 / 1000 * 1000));
-        
+
         // Now update CPU 1 to a higher value
         tracker.update(1, 40000).unwrap();
         assert_eq!(tracker.get_min(), Some(40000 / 1000 * 1000));
@@ -337,18 +344,18 @@ mod tests {
     #[test]
     fn test_non_boundary_timestamps() {
         let mut tracker = MinTracker::new(1000, 2);
-        
+
         // Update with non-boundary timestamps
         tracker.update(0, 5432).unwrap(); // Should map to time slot 5000
         tracker.update(1, 3789).unwrap(); // Should map to time slot 3000
-        
+
         // get_min should return the minimum time slot
         assert_eq!(tracker.get_min(), Some(3000));
-        
+
         // Update with more non-boundary timestamps
         tracker.update(0, 7123).unwrap(); // Should map to time slot 7000
         tracker.update(1, 8456).unwrap(); // Should map to time slot 8000
-        
+
         // get_min should return the updated minimum time slot
         assert_eq!(tracker.get_min(), Some(7000));
     }
@@ -356,21 +363,21 @@ mod tests {
     #[test]
     fn test_multiple_updates_same_time_slot() {
         let mut tracker = MinTracker::new(1000, 2);
-        
+
         // First updates
         tracker.update(0, 5432).unwrap(); // Time slot 5
         tracker.update(1, 3789).unwrap(); // Time slot 3
-        
+
         // Update CPU 0 again but still in the same time slot
         tracker.update(0, 5999).unwrap(); // Still in time slot 5
-        
+
         // Minimum should still be 3000
         assert_eq!(tracker.get_min(), Some(3000));
-        
+
         // Update CPU 1 to a new time slot
         tracker.update(1, 6100).unwrap(); // Now in time slot 6
-        
+
         // Minimum should now be 5000
         assert_eq!(tracker.get_min(), Some(5000));
     }
-} 
+}
