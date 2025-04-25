@@ -1,8 +1,8 @@
 use std::mem::MaybeUninit;
 use std::str;
-use std::time::Duration;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
@@ -15,7 +15,7 @@ use time::OffsetDateTime;
 use timeslot::MinTracker;
 
 // Import the perf_events crate components
-use perf_events::{Dispatcher, PerfMapReader};
+use perf_events::{Dispatcher, HardwareCounter, PerfMapReader};
 
 // Import our sync_timer module
 mod sync_timer;
@@ -32,6 +32,7 @@ use collector::*;
 unsafe impl Plain for collector::types::task_metadata_msg {}
 unsafe impl Plain for collector::types::task_free_msg {}
 unsafe impl Plain for collector::types::timer_finished_processing_msg {}
+unsafe impl Plain for collector::types::perf_measurement_msg {}
 
 /// Linux process monitoring tool
 #[derive(Debug, Parser)]
@@ -94,8 +95,34 @@ fn handle_task_free(_ring_index: usize, data: &[u8]) {
     println!("{} TASK_EXIT: pid={:<7}", now, event.pid);
 }
 
+// Handle performance measurement events
+fn handle_perf_measurement(_ring_index: usize, data: &[u8]) {
+    let event: &collector::types::perf_measurement_msg = match plain::from_bytes(data) {
+        Ok(event) => event,
+        Err(e) => {
+            eprintln!("Failed to parse perf measurement event: {:?}", e);
+            return;
+        }
+    };
+
+    let now = format_time();
+    println!(
+        "{} PERF: pid={:<7} cycles={:<12} instructions={:<12} llc_misses={:<8} duration_ns={:<12}",
+        now,
+        event.pid,
+        event.cycles_delta,
+        event.instructions_delta,
+        event.llc_misses_delta,
+        event.time_delta_ns
+    );
+}
+
 // Handle timer finished processing events
-fn handle_timer_finished_processing(ring_index: usize, data: &[u8], timer_state: &Arc<Mutex<TimerState>>) {
+fn handle_timer_finished_processing(
+    ring_index: usize,
+    data: &[u8],
+    timer_state: &Arc<Mutex<TimerState>>,
+) {
     let event: &collector::types::timer_finished_processing_msg = match plain::from_bytes(data) {
         Ok(event) => event,
         Err(e) => {
@@ -107,19 +134,21 @@ fn handle_timer_finished_processing(ring_index: usize, data: &[u8], timer_state:
     // Update the min tracker with the CPU ID and timestamp
     let timestamp = event.header.timestamp;
     let mut state = timer_state.lock().unwrap();
-    
+
     if let Err(e) = state.min_tracker.update(ring_index, timestamp) {
         eprintln!("Failed to update min tracker: {:?}", e);
         return;
     }
-    
+
     // Check if the minimum time slot has changed
     if let Some(min_slot) = state.min_tracker.get_min() {
         if state.last_min_slot.map_or(true, |last| last != min_slot) {
             let now = format_time();
             println!(
                 "{} MIN_TIMESLOT: All CPUs have processed up to time slot {}, timestamp {}",
-                now, min_slot / 100_000_000, min_slot
+                now,
+                min_slot / 100_000_000,
+                min_slot
             );
             state.last_min_slot = Some(min_slot);
         }
@@ -149,6 +178,29 @@ fn main() -> Result<()> {
     // Load & verify program
     let mut skel = open_skel.load()?;
 
+    // Initialize perf event rings for the hardware counters
+    if let Err(e) = perf_events::open_perf_counter(&mut skel.maps.cycles, HardwareCounter::Cycles) {
+        return Err(anyhow::anyhow!("Failed to open cycles counter: {:?}", e));
+    }
+
+    if let Err(e) =
+        perf_events::open_perf_counter(&mut skel.maps.instructions, HardwareCounter::Instructions)
+    {
+        return Err(anyhow::anyhow!(
+            "Failed to open instructions counter: {:?}",
+            e
+        ));
+    }
+
+    if let Err(e) =
+        perf_events::open_perf_counter(&mut skel.maps.llc_misses, HardwareCounter::LLCMisses)
+    {
+        return Err(anyhow::anyhow!(
+            "Failed to open LLC misses counter: {:?}",
+            e
+        ));
+    }
+
     // Initialize the sync timer
     sync_timer::initialize_sync_timer(&skel.progs.sync_timer_init_collect)?;
 
@@ -170,7 +222,7 @@ fn main() -> Result<()> {
     let num_cpus = thread::available_parallelism()
         .map(|p| p.get())
         .unwrap_or(1);
-    
+
     // Create the timer state with MinTracker
     // Use 100ms time slots (convert to nanoseconds)
     let timer_state = Arc::new(Mutex::new(TimerState {
@@ -187,14 +239,20 @@ fn main() -> Result<()> {
         handle_task_metadata,
     );
     dispatcher.subscribe(types::msg_type::MSG_TYPE_TASK_FREE as u32, handle_task_free);
-    
+    dispatcher.subscribe(
+        types::msg_type::MSG_TYPE_PERF_MEASUREMENT as u32,
+        handle_perf_measurement,
+    );
+
     // Timer state clone for the callback
     let timer_state_clone = timer_state.clone();
     dispatcher.subscribe(
         types::msg_type::MSG_TYPE_TIMER_FINISHED_PROCESSING as u32,
-        move |ring_index, data| handle_timer_finished_processing(ring_index, data, &timer_state_clone),
+        move |ring_index, data| {
+            handle_timer_finished_processing(ring_index, data, &timer_state_clone)
+        },
     );
-    
+
     dispatcher.subscribe_lost_samples(handle_lost_events);
 
     // Get the reader from the map reader
