@@ -28,4 +28,4 @@ time = { version = "0.3", features = ["formatting", "local-offset", "macros"]}
 clap = { version = "4.5.37", default-features = false, features = ["std", "derive", "help", "usage"] }
 arrow-array = "55.0"
 arrow-schema = "55.0"
-parquet = { version = "55.0", default-features = false, features = ["arrow"] }
+parquet = { version = "55.0", default-features = false, features = ["arrow", "snap"] }

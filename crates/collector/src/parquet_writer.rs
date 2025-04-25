@@ -6,6 +6,8 @@ use arrow_array::builder::{Int32Builder, Int64Builder, StringBuilder};
 use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use parquet::arrow::arrow_writer::ArrowWriter;
+use parquet::basic::Compression;
+use parquet::file::properties::WriterProperties;
 
 use crate::timeslot_data::TimeslotData;
 
@@ -29,8 +31,13 @@ impl<W: Write + Send> ParquetWriter<W> {
             Field::new("duration", DataType::Int64, false),
         ]));
 
-        // Create an ArrowWriter with the schema
-        let arrow_writer = ArrowWriter::try_new(writer, schema.clone(), None)
+        // Create writer properties with Snappy compression
+        let props = WriterProperties::builder()
+            .set_compression(Compression::SNAPPY)
+            .build();
+
+        // Create an ArrowWriter with the schema and compression properties
+        let arrow_writer = ArrowWriter::try_new(writer, schema.clone(), Some(props))
             .map_err(|e| anyhow!("Failed to create Arrow writer: {}", e))?;
 
         Ok(Self {
