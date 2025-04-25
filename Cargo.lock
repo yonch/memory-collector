@@ -80,6 +80,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
 
 [[package]]
+name = "bpf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "libbpf-cargo",
+ "libbpf-rs",
+ "libc",
+ "nix 0.27.1",
+ "perf_events",
+ "plain",
+ "vmlinux",
+]
+
+[[package]]
 name = "camino"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -177,6 +191,7 @@ name = "collector"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bpf",
  "clap",
  "libbpf-cargo",
  "libbpf-rs",

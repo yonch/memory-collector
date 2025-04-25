@@ -8,12 +8,14 @@ members = [
     "crates/collector",
     "crates/perf_events",
     "crates/timeslot",
+    "crates/bpf",
 ]
 
 [workspace.dependencies]
 collector = { path = "crates/collector" }
 perf_events = { path = "crates/perf_events" }
 timeslot = { path = "crates/timeslot" }
+bpf = { path = "crates/bpf" }
 
 libbpf-rs = "0.24.8"
 plain = "0.2"

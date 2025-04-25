@@ -1,46 +1,32 @@
-use std::mem::MaybeUninit;
-use std::str;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
+use std::str;
 use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
-use libbpf_rs::skel::OpenSkel;
-use libbpf_rs::skel::Skel;
-use libbpf_rs::skel::SkelBuilder;
-use plain::Plain;
 use time::macros::format_description;
 use time::OffsetDateTime;
 use timeslot::MinTracker;
 
 // Import the perf_events crate components
-use perf_events::{Dispatcher, HardwareCounter, PerfMapReader};
 
-// Import our sync_timer module
-mod sync_timer;
+// Import the bpf crate components
+use bpf::{
+    msg_type, BpfLoader, PerfMeasurementMsg, TaskFreeMsg, TaskMetadataMsg,
+    TimerFinishedProcessingMsg,
+};
+
+// Import local modules
 mod metrics;
 mod task_metadata;
 mod timeslot_data;
 
-mod collector {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/bpf/collector.skel.rs"
-    ));
-}
-
-use collector::*;
 // Re-export the Metric struct
 pub use metrics::Metric;
 use task_metadata::{TaskCollection, TaskMetadata};
 use timeslot_data::TimeslotData;
-
-unsafe impl Plain for collector::types::task_metadata_msg {}
-unsafe impl Plain for collector::types::task_free_msg {}
-unsafe impl Plain for collector::types::timer_finished_processing_msg {}
-unsafe impl Plain for collector::types::perf_measurement_msg {}
 
 /// Linux process monitoring tool
 #[derive(Debug, Parser)]
@@ -62,6 +48,141 @@ struct AppState {
     current_timeslot: TimeslotData,
 }
 
+impl AppState {
+    // Handle task metadata events
+    fn handle_task_metadata(&mut self, _ring_index: usize, data: &[u8]) -> Result<()> {
+        let event: &TaskMetadataMsg = match plain::from_bytes(data) {
+            Ok(event) => event,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to parse task metadata event: {:?}",
+                    e
+                ));
+            }
+        };
+
+        // Create task metadata and add to collection
+        let metadata = TaskMetadata::new(event.pid, event.comm);
+        self.task_collection.add(metadata);
+        Ok(())
+    }
+
+    // Handle task free events
+    fn handle_task_free(&mut self, _ring_index: usize, data: &[u8]) -> Result<()> {
+        let event: &TaskFreeMsg = match plain::from_bytes(data) {
+            Ok(event) => event,
+            Err(e) => {
+                return Err(anyhow::anyhow!("Failed to parse task free event: {:?}", e));
+            }
+        };
+
+        // Queue the task for removal
+        self.task_collection.queue_removal(event.pid);
+        Ok(())
+    }
+
+    // Handle performance measurement events
+    fn handle_perf_measurement(&mut self, _ring_index: usize, data: &[u8]) -> Result<()> {
+        let event: &PerfMeasurementMsg = match plain::from_bytes(data) {
+            Ok(event) => event,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to parse perf measurement event: {:?}",
+                    e
+                ));
+            }
+        };
+
+        // Create metric from the performance measurements
+        let metric = Metric::from_deltas(
+            event.cycles_delta,
+            event.instructions_delta,
+            event.llc_misses_delta,
+            event.time_delta_ns,
+        );
+
+        // Look up task metadata and update timeslot data
+        let pid = event.pid;
+        let metadata = self.task_collection.lookup(pid).cloned();
+        self.current_timeslot.update(pid, metadata, metric);
+        Ok(())
+    }
+
+    // Handle timer finished processing events
+    fn handle_timer_finished_processing(&mut self, ring_index: usize, data: &[u8]) -> Result<()> {
+        let event: &TimerFinishedProcessingMsg = match plain::from_bytes(data) {
+            Ok(event) => event,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to parse timer finished processing event: {:?}",
+                    e
+                ));
+            }
+        };
+
+        // Update the min tracker with the CPU ID and timestamp
+        let timestamp = event.header.timestamp;
+
+        if let Err(e) = self.min_tracker.update(ring_index, timestamp) {
+            return Err(anyhow::anyhow!("Failed to update min tracker: {:?}", e));
+        }
+
+        // Check if the minimum time slot has changed
+        if let Some(min_slot) = self.min_tracker.get_min() {
+            if self.last_min_slot.map_or(true, |last| last != min_slot) {
+                // Print out the current timeslot data before switching
+                let now = format_time();
+                println!(
+                    "{} TIMESLOT_COMPLETE: timestamp={} task_count={}",
+                    now,
+                    self.current_timeslot.start_timestamp,
+                    self.current_timeslot.task_count()
+                );
+
+                // Print details for each task
+                for (pid, task_data) in self.current_timeslot.iter_tasks() {
+                    let comm = if let Some(ref metadata) = task_data.metadata {
+                        match str::from_utf8(&metadata.comm) {
+                            Ok(s) => s.trim_end_matches(char::from(0)),
+                            Err(_) => "<invalid utf8>",
+                        }
+                    } else {
+                        "<unknown>"
+                    };
+
+                    // if comm is "collector" print the metrics
+                    if comm == "collector" {
+                        println!(
+                            "  PID={:<7} COMM={:<16} cycles={:<12} instructions={:<12} llc_misses={:<8} time_ns={:<12}",
+                            pid,
+                            comm,
+                            task_data.metrics.cycles,
+                            task_data.metrics.instructions,
+                            task_data.metrics.llc_misses,
+                            task_data.metrics.time_ns
+                        );
+                    }
+                }
+
+                println!("{}", "-".repeat(60));
+
+                // Replace the current timeslot with a new one
+                self.current_timeslot = TimeslotData::new(min_slot);
+                self.last_min_slot = Some(min_slot);
+
+                // End of time slot - flush queued removals
+                self.task_collection.flush_removals();
+            }
+        }
+        Ok(())
+    }
+
+    // Handle lost events
+    fn handle_lost_events(&self, ring_index: usize, _data: &[u8]) {
+        eprintln!("Lost events notification on ring {}", ring_index);
+    }
+}
+
 fn format_time() -> String {
     if let Ok(now) = OffsetDateTime::now_local() {
         let format = format_description!("[hour]:[minute]:[second].[subsecond digits:3]");
@@ -72,197 +193,14 @@ fn format_time() -> String {
     }
 }
 
-// Handle task metadata events
-fn handle_task_metadata(_ring_index: usize, data: &[u8], app_state: &Rc<RefCell<AppState>>) {
-    let event: &collector::types::task_metadata_msg = match plain::from_bytes(data) {
-        Ok(event) => event,
-        Err(e) => {
-            eprintln!("Failed to parse task metadata event: {:?}", e);
-            return;
-        }
-    };
-
-    // Create task metadata and add to collection
-    let metadata = TaskMetadata::new(event.pid, event.comm);
-    let mut state = app_state.borrow_mut();
-    state.task_collection.add(metadata);
-}
-
-// Handle task free events
-fn handle_task_free(_ring_index: usize, data: &[u8], app_state: &Rc<RefCell<AppState>>) {
-    let event: &collector::types::task_free_msg = match plain::from_bytes(data) {
-        Ok(event) => event,
-        Err(e) => {
-            eprintln!("Failed to parse task free event: {:?}", e);
-            return;
-        }
-    };
-    
-    // Queue the task for removal
-    let mut state = app_state.borrow_mut();
-    state.task_collection.queue_removal(event.pid);
-}
-
-// Handle performance measurement events
-fn handle_perf_measurement(_ring_index: usize, data: &[u8], app_state: &Rc<RefCell<AppState>>) {
-    let event: &collector::types::perf_measurement_msg = match plain::from_bytes(data) {
-        Ok(event) => event,
-        Err(e) => {
-            eprintln!("Failed to parse perf measurement event: {:?}", e);
-            return;
-        }
-    };
-
-    // Create metric from the performance measurements
-    let metric = Metric::from_deltas(
-        event.cycles_delta,
-        event.instructions_delta,
-        event.llc_misses_delta,
-        event.time_delta_ns,
-    );
-
-    // Look up task metadata and update timeslot data
-    let mut state = app_state.borrow_mut();
-    let pid = event.pid;
-    
-    let metadata = state.task_collection.lookup(pid).cloned();
-    state.current_timeslot.update(pid, metadata, metric);
-}
-
-// Handle timer finished processing events
-fn handle_timer_finished_processing(
-    ring_index: usize,
-    data: &[u8],
-    app_state: &Rc<RefCell<AppState>>,
-) {
-    let event: &collector::types::timer_finished_processing_msg = match plain::from_bytes(data) {
-        Ok(event) => event,
-        Err(e) => {
-            eprintln!("Failed to parse timer finished processing event: {:?}", e);
-            return;
-        }
-    };
-
-    // Update the min tracker with the CPU ID and timestamp
-    let timestamp = event.header.timestamp;
-    let mut state = app_state.borrow_mut();
-
-    if let Err(e) = state.min_tracker.update(ring_index, timestamp) {
-        eprintln!("Failed to update min tracker: {:?}", e);
-        return;
-    }
-
-    // Check if the minimum time slot has changed
-    if let Some(min_slot) = state.min_tracker.get_min() {
-        if state.last_min_slot.map_or(true, |last| last != min_slot) {
-            // Print out the current timeslot data before switching
-            let now = format_time();
-            println!(
-                "{} TIMESLOT_COMPLETE: timestamp={} task_count={}",
-                now,
-                state.current_timeslot.start_timestamp,
-                state.current_timeslot.task_count()
-            );
-            
-            // Print details for each task
-            for (pid, task_data) in state.current_timeslot.iter_tasks() {
-                let comm = if let Some(ref metadata) = task_data.metadata {
-                    match str::from_utf8(&metadata.comm) {
-                        Ok(s) => s.trim_end_matches(char::from(0)),
-                        Err(_) => "<invalid utf8>",
-                    }
-                } else {
-                    "<unknown>"
-                };
-                
-                // if comm is "collector" print the metrics
-                if comm == "collector" {
-                    println!(
-                        "  PID={:<7} COMM={:<16} cycles={:<12} instructions={:<12} llc_misses={:<8} time_ns={:<12}",
-                        pid,
-                        comm,
-                        task_data.metrics.cycles,
-                        task_data.metrics.instructions,
-                        task_data.metrics.llc_misses,
-                        task_data.metrics.time_ns
-                    );
-                }
-            }
-            
-            println!("{}", "-".repeat(60));
-            
-            // Create a new timeslot with the current minimum timestamp
-            state.current_timeslot = TimeslotData::new(min_slot);
-            state.last_min_slot = Some(min_slot);
-            
-            // End of time slot - flush queued removals
-            state.task_collection.flush_removals();
-        }
-    }
-}
-
-// Handle lost events
-fn handle_lost_events(ring_index: usize, _data: &[u8]) {
-    eprintln!("Lost events notification on ring {}", ring_index);
-}
-
 fn main() -> Result<()> {
     let opts = Command::parse();
 
-    // Allow the current process to lock memory for eBPF resources
-    let _ = libbpf_rs::set_print(None);
-
-    // Open BPF program
-    let mut skel_builder = CollectorSkelBuilder::default();
-    if opts.verbose {
-        skel_builder.obj_builder.debug(true);
-    }
-
-    let mut open_object = MaybeUninit::uninit();
-    let open_skel = skel_builder.open(&mut open_object)?;
-
-    // Load & verify program
-    let mut skel = open_skel.load()?;
-
-    // Initialize perf event rings for the hardware counters
-    if let Err(e) = perf_events::open_perf_counter(&mut skel.maps.cycles, HardwareCounter::Cycles) {
-        return Err(anyhow::anyhow!("Failed to open cycles counter: {:?}", e));
-    }
-
-    if let Err(e) =
-        perf_events::open_perf_counter(&mut skel.maps.instructions, HardwareCounter::Instructions)
-    {
-        return Err(anyhow::anyhow!(
-            "Failed to open instructions counter: {:?}",
-            e
-        ));
-    }
-
-    if let Err(e) =
-        perf_events::open_perf_counter(&mut skel.maps.llc_misses, HardwareCounter::LLCMisses)
-    {
-        return Err(anyhow::anyhow!(
-            "Failed to open LLC misses counter: {:?}",
-            e
-        ));
-    }
+    // Create a BPF loader with the specified verbosity
+    let mut bpf_loader = BpfLoader::new(opts.verbose)?;
 
     // Initialize the sync timer
-    sync_timer::initialize_sync_timer(&skel.progs.sync_timer_init_collect)?;
-
-    // Attach the tracepoints
-    skel.attach()?;
-
-    println!("Successfully started! Tracing and aggregating task performance...");
-    println!("Metrics will be reported at the end of each timeslot.");
-    println!("{}", "-".repeat(60));
-
-    // Set up the perf map reader for the events map
-    let buffer_pages = 32;
-    let watermark_bytes = 0; // Wake up on every event
-    let mut perf_map_reader =
-        PerfMapReader::new(&mut skel.maps.events, buffer_pages, watermark_bytes)
-            .map_err(|e| anyhow::anyhow!("Failed to create PerfMapReader: {}", e))?;
+    bpf_loader.start_sync_timer()?;
 
     // Get number of CPUs using available_parallelism
     let num_cpus = thread::available_parallelism()
@@ -277,48 +215,77 @@ fn main() -> Result<()> {
         current_timeslot: TimeslotData::new(0), // Start with timestamp 0
     }));
 
-    // Create a dispatcher to handle events
-    let mut dispatcher = Dispatcher::new();
+    {
+        let dispatcher = bpf_loader.dispatcher_mut();
+        // Register handlers for each message type with app state
+        let app_state_clone = app_state.clone();
+        dispatcher.subscribe(
+            msg_type::MSG_TYPE_TASK_METADATA as u32,
+            move |ring_index, data| {
+                if let Err(e) = app_state_clone
+                    .borrow_mut()
+                    .handle_task_metadata(ring_index, data)
+                {
+                    eprintln!("Error handling task metadata: {:?}", e);
+                }
+            },
+        );
 
-    // Register handlers for each message type with app state
-    let app_state_clone = app_state.clone();
-    dispatcher.subscribe(
-        types::msg_type::MSG_TYPE_TASK_METADATA as u32,
-        move |ring_index, data| {
-            handle_task_metadata(ring_index, data, &app_state_clone)
-        },
-    );
+        let app_state_clone = app_state.clone();
+        dispatcher.subscribe(
+            msg_type::MSG_TYPE_TASK_FREE as u32,
+            move |ring_index, data| {
+                if let Err(e) = app_state_clone
+                    .borrow_mut()
+                    .handle_task_free(ring_index, data)
+                {
+                    eprintln!("Error handling task free: {:?}", e);
+                }
+            },
+        );
 
-    let app_state_clone = app_state.clone();
-    dispatcher.subscribe(
-        types::msg_type::MSG_TYPE_TASK_FREE as u32,
-        move |ring_index, data| {
-            handle_task_free(ring_index, data, &app_state_clone)
-        },
-    );
+        // App state clone for the perf measurement callback
+        let app_state_clone = app_state.clone();
+        dispatcher.subscribe(
+            msg_type::MSG_TYPE_PERF_MEASUREMENT as u32,
+            move |ring_index, data| {
+                if let Err(e) = app_state_clone
+                    .borrow_mut()
+                    .handle_perf_measurement(ring_index, data)
+                {
+                    eprintln!("Error handling perf measurement: {:?}", e);
+                }
+            },
+        );
 
-    // App state clone for the perf measurement callback
-    let app_state_clone = app_state.clone();
-    dispatcher.subscribe(
-        types::msg_type::MSG_TYPE_PERF_MEASUREMENT as u32,
-        move |ring_index, data| {
-            handle_perf_measurement(ring_index, data, &app_state_clone)
-        },
-    );
+        // App state clone for the timer callback
+        let app_state_clone = app_state.clone();
+        dispatcher.subscribe(
+            msg_type::MSG_TYPE_TIMER_FINISHED_PROCESSING as u32,
+            move |ring_index, data| {
+                if let Err(e) = app_state_clone
+                    .borrow_mut()
+                    .handle_timer_finished_processing(ring_index, data)
+                {
+                    eprintln!("Error handling timer finished: {:?}", e);
+                }
+            },
+        );
 
-    // App state clone for the timer callback
-    let app_state_clone = app_state.clone();
-    dispatcher.subscribe(
-        types::msg_type::MSG_TYPE_TIMER_FINISHED_PROCESSING as u32,
-        move |ring_index, data| {
-            handle_timer_finished_processing(ring_index, data, &app_state_clone)
-        },
-    );
+        let app_state_clone = app_state.clone();
+        dispatcher.subscribe_lost_samples(move |ring_index, data| {
+            app_state_clone
+                .borrow()
+                .handle_lost_events(ring_index, data);
+        });
+    }
 
-    dispatcher.subscribe_lost_samples(handle_lost_events);
+    // Attach BPF programs
+    bpf_loader.attach()?;
 
-    // Get the reader from the map reader
-    let reader = perf_map_reader.reader_mut();
+    println!("Successfully started! Tracing and aggregating task performance...");
+    println!("Metrics will be reported at the end of each timeslot.");
+    println!("{}", "-".repeat(60));
 
     // Process events
     let duration = Duration::from_secs(opts.duration);
@@ -326,17 +293,8 @@ fn main() -> Result<()> {
 
     // Run for the specified duration
     while opts.duration <= 0 || start_time.elapsed() < duration {
-        // Start a read batch
-        reader.start()?;
-
-        // Dispatch all available events
-        dispatcher.dispatch_all(reader)?;
-
-        // Finish the read batch
-        reader.finish()?;
-
-        // Short sleep to avoid busy-waiting
-        std::thread::sleep(Duration::from_millis(10));
+        // Poll for events with a 10ms timeout
+        bpf_loader.poll_events(10)?;
     }
 
     Ok(())
