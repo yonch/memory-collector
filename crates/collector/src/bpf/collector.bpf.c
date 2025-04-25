@@ -28,10 +28,19 @@ struct {
     __uint(value_size, sizeof(u32));
 } events SEC(".maps");
 
+// Per-CPU array to track timer firing state
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u8));
+    __uint(max_entries, 1);
+} timer_fired SEC(".maps");
+
 // Dummy instances to make skeleton generation work
 enum msg_type msg_type_ = 0;
 struct task_metadata_msg task_metadata_msg_ = {0};
 struct task_free_msg task_free_msg_ = {0};
+struct timer_finished_processing_msg timer_finished_processing_msg_ = {0};
 
 // Initialize value for task storage
 static const __u64 TASK_METADATA_INIT = 0;  // 0 = not reported yet
@@ -167,9 +176,52 @@ int handle_process_free(struct trace_event_raw_sched_process_template *ctx)
     return 0;
 }
 
+// Send timer finished processing event to userspace
+static __always_inline int send_timer_finished_processing(void *ctx)
+{
+    struct timer_finished_processing_msg msg = {};
+    
+    msg.header.timestamp = bpf_ktime_get_ns();
+    msg.header.type = MSG_TYPE_TIMER_FINISHED_PROCESSING;
+    
+    // Skip the size field (first 4 bytes) when sending
+    return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
+                                ((void*)&msg) + sizeof(__u32), 
+                                sizeof(msg) - sizeof(__u32));
+}
+
 void sync_timer_callback(void)
 {
-    // TODO
+    // Set the timer fired flag for this CPU
+    __u32 key = 0;
+    __u8 value = 1;
+    __u32 cpu = bpf_get_smp_processor_id();
+    
+    bpf_map_update_elem(&timer_fired, &key, &value, BPF_ANY);
+}
+
+/* HR Timer expire exit tracepoint handler */
+SEC("tracepoint/timer/hrtimer_expire_exit")
+int handle_hrtimer_expire_exit(void *ctx)
+{
+    __u32 cpu = bpf_get_smp_processor_id();
+    __u32 key = 0;
+    
+    // Check if our timer fired on this CPU
+    __u8 *fired = bpf_map_lookup_percpu_elem(&timer_fired, &key, cpu);
+    if (!fired || *fired == 0) {
+        // Not our timer or no timer fired
+        return 0;
+    }
+    
+    // Reset the flag
+    __u8 value = 0;
+    bpf_map_update_elem(&timer_fired, &key, &value, BPF_ANY);
+    
+    // Send the timer processing finished message
+    send_timer_finished_processing(ctx);
+    
+    return 0;
 }
 
 DEFINE_SYNC_TIMER(collect, sync_timer_callback);

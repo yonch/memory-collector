@@ -28,6 +28,7 @@ use collector::*;
 
 unsafe impl Plain for collector::types::task_metadata_msg {}
 unsafe impl Plain for collector::types::task_free_msg {}
+unsafe impl Plain for collector::types::timer_finished_processing_msg {}
 
 /// Linux process monitoring tool
 #[derive(Debug, Parser)]
@@ -84,6 +85,23 @@ fn handle_task_free(_ring_index: usize, data: &[u8]) {
     println!("{} TASK_EXIT: pid={:<7}", now, event.pid);
 }
 
+// Handle timer finished processing events
+fn handle_timer_finished_processing(_ring_index: usize, data: &[u8]) {
+    let event: &collector::types::timer_finished_processing_msg = match plain::from_bytes(data) {
+        Ok(event) => event,
+        Err(e) => {
+            eprintln!("Failed to parse timer finished processing event: {:?}", e);
+            return;
+        }
+    };
+
+    let now = format_time();
+    println!(
+        "{} TIMER: timer finished processing at {}",
+        now, event.header.timestamp
+    );
+}
+
 // Handle lost events
 fn handle_lost_events(ring_index: usize, _data: &[u8]) {
     eprintln!("Lost events notification on ring {}", ring_index);
@@ -133,6 +151,10 @@ fn main() -> Result<()> {
         handle_task_metadata,
     );
     dispatcher.subscribe(types::msg_type::MSG_TYPE_TASK_FREE as u32, handle_task_free);
+    dispatcher.subscribe(
+        types::msg_type::MSG_TYPE_TIMER_FINISHED_PROCESSING as u32,
+        handle_timer_finished_processing,
+    );
     dispatcher.subscribe_lost_samples(handle_lost_events);
 
     // Get the reader from the map reader
