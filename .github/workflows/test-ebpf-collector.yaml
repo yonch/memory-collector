@@ -1,6 +1,12 @@
 name: test-ebpf-collector
 on: 
   workflow_dispatch:  # Manual trigger for testing
+    inputs:
+      instance-type:
+        description: 'EC2 instance type to use'
+        required: false
+        default: 'm7i.xlarge'
+        type: string
   push:
     branches:
       - main
@@ -9,8 +15,13 @@ on:
       - Cargo.toml
       - .github/workflows/test-ebpf-collector.yaml
 
+permissions:
+  id-token: write # Required for requesting the JWT
+  actions: write # To cancel the workflow if getting the AWS instance fails
+
 jobs:
-  test-ebpf:
+  build-collector:
+    name: Build eBPF collector
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -20,13 +31,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang libelf-dev unzip
-
-      - name: Install pqrs
-        run: |
-          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
-          unzip pqrs.zip
-          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
-          rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,11 +49,70 @@ jobs:
       - name: Build collector
         run: |
           cargo build
+          mkdir -p artifacts
+          cp target/debug/collector artifacts/
+
+      - name: Upload collector binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-binary
+          path: artifacts/collector
+
+  setup-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      runner-label: ${{ steps.start-runner.outputs.runner-label }}
+      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Start AWS Runner
+        id: start-runner
+        uses: ./.github/actions/aws-runner
+        with:
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
+
+  cancel-on-failure:
+    needs: setup-runner
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Cancel workflow
+        uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
+
+  test-ebpf:
+    needs: [build-collector, setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 10
+    steps:
+      - name: Install pqrs
+        run: |
+          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
+          unzip pqrs.zip
+          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
+          rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
+
+      - name: Download collector binary
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-binary
+          path: ./
+
+      - name: Make collector executable
+        run: chmod +x ./collector
 
       - name: Run eBPF collector
         run: |
           # Run with sudo since eBPF programs require elevated privileges
-          sudo ./target/debug/collector
+          sudo ./collector
 
       - name: Verify parquet output
         run: |
@@ -68,4 +131,22 @@ jobs:
         with:
           name: metrics-parquet
           path: metrics.parquet
-          if-no-files-found: error 
+          if-no-files-found: error
+
+  cleanup-runner:
+    name: Stop EC2 runner
+    needs: [setup-runner, test-ebpf]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if previous jobs fail
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Stop AWS Runner
+        uses: ./.github/actions/aws-runner/cleanup
+        with:
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }} 
