@@ -4,7 +4,7 @@ author: 'Memory Collector Team'
 
 inputs:
   instance-type:
-    description: 'EC2 instance type to use'
+    description: 'EC2 instance types to use as a comma-separated list (e.g., "m7i.xlarge,c5.xlarge,r5.large"). Will try instances in sequence until one succeeds. If capacity is unavailable for the first type, it will try the next, and so on.'
     required: false
     default: 'm7i.xlarge'
   market-type:
@@ -50,10 +50,10 @@ inputs:
 outputs:
   runner-label:
     description: 'The label of the created runner (for use in runs-on)'
-    value: ${{ steps.start-ec2-runner.outputs.label }}
+    value: ${{ steps.start-ec2-runner-5.outputs.label || steps.start-ec2-runner-4.outputs.label || steps.start-ec2-runner-3.outputs.label || steps.start-ec2-runner-2.outputs.label || steps.start-ec2-runner-1.outputs.label }}
   ec2-instance-id:
     description: 'The ID of the created EC2 instance'
-    value: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    value: ${{ steps.start-ec2-runner-5.outputs.ec2-instance-id || steps.start-ec2-runner-4.outputs.ec2-instance-id || steps.start-ec2-runner-3.outputs.ec2-instance-id || steps.start-ec2-runner-2.outputs.ec2-instance-id || steps.start-ec2-runner-1.outputs.ec2-instance-id }}
 
 runs:
   using: 'composite'
@@ -65,14 +65,34 @@ runs:
         aws-region: ${{ inputs.aws-region }}
         role-session-name: github-runner-session
 
-    - name: Start EC2 runner
-      id: start-ec2-runner
+    - name: Parse instance types
+      id: parse-instance-types
+      shell: bash
+      run: |
+        # Split the comma-separated list into individual types
+        IFS=',' read -ra TYPES <<< "${{ inputs.instance-type }}"
+        
+        # Extract individual types
+        echo "TYPE_1=${TYPES[0]:-m7i.xlarge}" >> $GITHUB_OUTPUT
+        echo "TYPE_2=${TYPES[1]:-}" >> $GITHUB_OUTPUT
+        echo "TYPE_3=${TYPES[2]:-}" >> $GITHUB_OUTPUT
+        echo "TYPE_4=${TYPES[3]:-}" >> $GITHUB_OUTPUT
+        echo "TYPE_5=${TYPES[4]:-}" >> $GITHUB_OUTPUT
+        
+        echo "HAS_TYPE_2=$([ -n "${TYPES[1]:-}" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+        echo "HAS_TYPE_3=$([ -n "${TYPES[2]:-}" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+        echo "HAS_TYPE_4=$([ -n "${TYPES[3]:-}" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+        echo "HAS_TYPE_5=$([ -n "${TYPES[4]:-}" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+    - name: Start EC2 runner (Type 1)
+      id: start-ec2-runner-1
       uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
+      continue-on-error: true
       with:
         mode: start
         github-token: ${{ inputs.github-token }}
         ec2-image-id: ${{ inputs.aws-image-id }}
-        ec2-instance-type: ${{ inputs.instance-type }}
+        ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_1 }}
         market-type: ${{ inputs.market-type }}
         subnet-id: ${{ inputs.subnet-id }}
         security-group-id: ${{ inputs.security-group-id }}
@@ -88,4 +108,118 @@ runs:
             {"Key": "SHA", "Value": "${{ github.sha }}"},
             {"Key": "Branch", "Value": "${{ github.ref_name }}"},
             {"Key": "Actor", "Value": "${{ github.actor }}"}
-          ] 
+          ]
+
+    - name: Start EC2 runner (Type 2)
+      id: start-ec2-runner-2
+      if: ${{ steps.parse-instance-types.outputs.HAS_TYPE_2 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' }}
+      uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
+      continue-on-error: true
+      with:
+        mode: start
+        github-token: ${{ inputs.github-token }}
+        ec2-image-id: ${{ inputs.aws-image-id }}
+        ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_2 }}
+        market-type: ${{ inputs.market-type }}
+        subnet-id: ${{ inputs.subnet-id }}
+        security-group-id: ${{ inputs.security-group-id }}
+        ec2-volume-size: ${{ inputs.volume-size }}
+        pre-runner-script: ${{ inputs.pre-runner-script }}
+        aws-resource-tags: >
+          [
+            {"Key": "Name", "Value": "${{ inputs.runner-name-prefix }}"},
+            {"Key": "Repository", "Value": "${{ github.repository }}"},
+            {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+            {"Key": "RunId", "Value": "${{ github.run_id }}"},
+            {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+            {"Key": "SHA", "Value": "${{ github.sha }}"},
+            {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+            {"Key": "Actor", "Value": "${{ github.actor }}"}
+          ]
+
+    - name: Start EC2 runner (Type 3)
+      id: start-ec2-runner-3
+      if: ${{ steps.parse-instance-types.outputs.HAS_TYPE_3 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' }}
+      uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
+      continue-on-error: true
+      with:
+        mode: start
+        github-token: ${{ inputs.github-token }}
+        ec2-image-id: ${{ inputs.aws-image-id }}
+        ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_3 }}
+        market-type: ${{ inputs.market-type }}
+        subnet-id: ${{ inputs.subnet-id }}
+        security-group-id: ${{ inputs.security-group-id }}
+        ec2-volume-size: ${{ inputs.volume-size }}
+        pre-runner-script: ${{ inputs.pre-runner-script }}
+        aws-resource-tags: >
+          [
+            {"Key": "Name", "Value": "${{ inputs.runner-name-prefix }}"},
+            {"Key": "Repository", "Value": "${{ github.repository }}"},
+            {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+            {"Key": "RunId", "Value": "${{ github.run_id }}"},
+            {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+            {"Key": "SHA", "Value": "${{ github.sha }}"},
+            {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+            {"Key": "Actor", "Value": "${{ github.actor }}"}
+          ]
+
+    - name: Start EC2 runner (Type 4)
+      id: start-ec2-runner-4
+      if: ${{ steps.parse-instance-types.outputs.HAS_TYPE_4 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' && steps.start-ec2-runner-3.outcome == 'failure' }}
+      uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
+      continue-on-error: true
+      with:
+        mode: start
+        github-token: ${{ inputs.github-token }}
+        ec2-image-id: ${{ inputs.aws-image-id }}
+        ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_4 }}
+        market-type: ${{ inputs.market-type }}
+        subnet-id: ${{ inputs.subnet-id }}
+        security-group-id: ${{ inputs.security-group-id }}
+        ec2-volume-size: ${{ inputs.volume-size }}
+        pre-runner-script: ${{ inputs.pre-runner-script }}
+        aws-resource-tags: >
+          [
+            {"Key": "Name", "Value": "${{ inputs.runner-name-prefix }}"},
+            {"Key": "Repository", "Value": "${{ github.repository }}"},
+            {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+            {"Key": "RunId", "Value": "${{ github.run_id }}"},
+            {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+            {"Key": "SHA", "Value": "${{ github.sha }}"},
+            {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+            {"Key": "Actor", "Value": "${{ github.actor }}"}
+          ]
+
+    - name: Start EC2 runner (Type 5)
+      id: start-ec2-runner-5
+      if: ${{ steps.parse-instance-types.outputs.HAS_TYPE_5 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' && steps.start-ec2-runner-3.outcome == 'failure' && steps.start-ec2-runner-4.outcome == 'failure' }}
+      uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
+      with:
+        mode: start
+        github-token: ${{ inputs.github-token }}
+        ec2-image-id: ${{ inputs.aws-image-id }}
+        ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_5 }}
+        market-type: ${{ inputs.market-type }}
+        subnet-id: ${{ inputs.subnet-id }}
+        security-group-id: ${{ inputs.security-group-id }}
+        ec2-volume-size: ${{ inputs.volume-size }}
+        pre-runner-script: ${{ inputs.pre-runner-script }}
+        aws-resource-tags: >
+          [
+            {"Key": "Name", "Value": "${{ inputs.runner-name-prefix }}"},
+            {"Key": "Repository", "Value": "${{ github.repository }}"},
+            {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+            {"Key": "RunId", "Value": "${{ github.run_id }}"},
+            {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+            {"Key": "SHA", "Value": "${{ github.sha }}"},
+            {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+            {"Key": "Actor", "Value": "${{ github.actor }}"}
+          ]
+
+    - name: Check if any runner succeeded
+      shell: bash
+      if: ${{ steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' && steps.start-ec2-runner-3.outcome == 'failure' && steps.start-ec2-runner-4.outcome == 'failure' && steps.start-ec2-runner-5.outcome == 'failure' }}
+      run: |
+        echo "All EC2 runner attempts failed. Please check AWS capacity availability or try different instance types."
+        exit 1 

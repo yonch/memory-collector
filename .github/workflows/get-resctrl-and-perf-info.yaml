@@ -25,7 +25,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          instance-type: 'm7i.metal-24xl'
+          instance-type: 'm7i.metal-24xl,c7i.metal-24xl'
           aws-image-id: 'ami-0cb91c7de36eed2cb'  # Ubuntu Server 24.04 LTS (HVM), SSD Volume Type
           pre-runner-script: |
             sudo yum update -y && \
