@@ -154,8 +154,8 @@ jobs:
       - name: Stop AWS Runner
         uses: ./.github/actions/aws-runner/cleanup
         with:
-          runner-label: ${{ needs.start-runner.outputs.runner-label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }} 
