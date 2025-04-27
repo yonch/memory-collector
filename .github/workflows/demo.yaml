@@ -60,7 +60,7 @@ jobs:
           done
           echo "Kubernetes API is available!"
 
-      - name: Wait for nodes and kube-system pods
+      - name: Wait for nodes
         run: |
           echo "Waiting for at least one node to be registered..."
           until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
@@ -69,6 +69,15 @@ jobs:
           done
           echo "Node(s) registered, waiting for Ready status..."
           kubectl wait --for=condition=Ready nodes --all --timeout=300s      
+
+      - name: Wait for kube-system pods
+        run: |
+          echo "Waiting for at least one kube-system pod to be registered..."
+          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for kube-system pod registration..."
+          done
+          echo "Kube-system pod(s) registered, waiting for Ready status..."
           kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
 
       - name: Get Default objects in kube-system
