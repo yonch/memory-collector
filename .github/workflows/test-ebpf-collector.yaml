@@ -112,7 +112,7 @@ jobs:
       - name: Run eBPF collector
         run: |
           # Run with sudo since eBPF programs require elevated privileges
-          sudo ./collector
+          sudo ./collector -d 10
 
       - name: Verify parquet output
         run: |
