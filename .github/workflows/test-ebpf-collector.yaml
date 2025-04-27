@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - src/**
+      - crates/**
       - Cargo.toml
       - .github/workflows/test-ebpf-collector.yaml
 
@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang unzip
+          sudo apt-get install -y clang libelf-dev unzip
 
       - name: Install pqrs
         run: |
