@@ -78,4 +78,19 @@ runs:
         security-group-id: ${{ inputs.security-group-id }}
         ec2-volume-size: ${{ inputs.volume-size }}
         pre-runner-script: ${{ inputs.pre-runner-script }}
-        aws-resource-tags: ${{ inputs.aws-resource-tags != '' && inputs.aws-resource-tags || format('[{"Key": "Name", "Value": "{0}"}, {"Key": "Repository", "Value": "{1}"}, {"Key": "Workflow", "Value": "{2}"}, {"Key": "RunId", "Value": "{3}"}, {"Key": "RunNumber", "Value": "{4}"}, {"Key": "SHA", "Value": "{5}"}, {"Key": "Branch", "Value": "{6}"}, {"Key": "Actor", "Value": "{7}"}]', inputs.runner-name-prefix, github.repository, github.workflow, github.run_id, github.run_number, github.sha, github.ref_name, github.actor) }} 
+        aws-resource-tags: >-
+          ${{ 
+            inputs.aws-resource-tags != '' && 
+            inputs.aws-resource-tags || 
+            format(
+              '[{"Key": "Name", "Value": "%s"}, {"Key": "Repository", "Value": "%s"}, {"Key": "Workflow", "Value": "%s"}, {"Key": "RunId", "Value": "%s"}, {"Key": "RunNumber", "Value": "%s"}, {"Key": "SHA", "Value": "%s"}, {"Key": "Branch", "Value": "%s"}, {"Key": "Actor", "Value": "%s"}]',
+              inputs.runner-name-prefix, 
+              github.repository, 
+              github.workflow, 
+              github.run_id, 
+              github.run_number, 
+              github.sha, 
+              github.ref_name, 
+              github.actor
+            ) 
+          }} 
