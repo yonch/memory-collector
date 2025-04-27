@@ -96,7 +96,7 @@ jobs:
       - name: Install pqrs
         run: |
           curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
-          unzip pqrs.zip
+          python3 -m zipfile -e pqrs.zip .
           sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
           rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
 
