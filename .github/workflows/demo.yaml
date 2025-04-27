@@ -114,6 +114,13 @@ jobs:
 
       - name: Install OpenTelemetry Demo
         run: |
+          ls -la $HOME
+          echo "KUBECONFIG: $KUBECONFIG"
+          echo "HOME: $HOME"
+          echo "PWD: $(pwd)"
+          echo "USER: $USER"
+          ls -la /etc/rancher/k3s
+          kubectl get pods
           helm install $RELEASE_NAME open-telemetry/opentelemetry-demo
 
       - name: Wait for all Pods to be Ready
