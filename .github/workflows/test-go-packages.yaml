@@ -1,4 +1,4 @@
-name: Test Go Packages
+name: test-go-packages
 
 on:
   push:

@@ -1,166 +1,121 @@
-name: Test eBPF Collector
+name: test-ebpf-collector
 on: 
   workflow_dispatch:  # Manual trigger for testing
     inputs:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'c5.9xlarge'
+        default: 'm7i.xlarge'
         type: string
   push:
     branches:
       - main
     paths:
-      - cmd/collector/**
+      - crates/**
+      - Cargo.toml
       - .github/workflows/test-ebpf-collector.yaml
 
 permissions:
   id-token: write # Required for requesting the JWT
+  actions: write # To cancel the workflow if getting the AWS instance fails
 
 jobs:
-  start-runner:
-    name: Start EC2 runner
+  build-collector:
+    name: Build eBPF collector
     runs-on: ubuntu-latest
-    outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: start
-          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          ec2-image-id: ami-0cb91c7de36eed2cb  # Ubuntu 24.04 LTS in us-east-2
-          ec2-instance-type: ${{ inputs.instance-type || 'm5zn.6xlarge' }} # or c5.9xlarge
-          market-type: spot
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          aws-resource-tags: >
-            [
-              {"Key": "Name", "Value": "github-runner"},
-              {"Key": "Repository", "Value": "${{ github.repository }}"},
-              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
-              {"Key": "RunId", "Value": "${{ github.run_id }}"},
-              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
-              {"Key": "SHA", "Value": "${{ github.sha }}"},
-              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
-              {"Key": "Actor", "Value": "${{ github.actor }}"}
-            ]
-
-  test-ebpf:
-    needs: start-runner
-    runs-on: ${{ needs.start-runner.outputs.label }}
-    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Disable IPv6
-        run: |
-          # Disable IPv6 via sysctl
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
-
-          # Force apt to use IPv4
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
-
       - name: Install dependencies
         run: |
-          # Update all archive URLs to use HTTPS in both old and new locations
-          sudo find /etc/apt/sources.list /etc/apt/sources.list.d/ -type f -exec sed -i 's/http:/https:/g' {} +
           sudo apt-get update
-          sudo apt-get install -y build-essential linux-headers-$(uname -r) \
-            golang-go llvm clang libbpf-dev git vim curl kmod unzip
+          sudo apt-get install -y clang libelf-dev unzip
 
-      - name: Install pqrs
-        run: |
-          # Download latest pqrs release
-          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
-          unzip pqrs.zip
-          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
-          rm pqrs.zip
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-      - name: Build kernel module
-        working-directory: module
-        run: |
-          # Try to compile and capture the warning message
-          make 2>&1 | tee compile_output.txt || true
-          
-          # Extract gcc version from the warning message
-          KERNEL_GCC_VERSION=$(grep "The kernel was built by:" compile_output.txt | grep -oP 'gcc-\K\d+' || echo "")
-          echo "Detected kernel compiler version: ${KERNEL_GCC_VERSION}"
-          
-          # Install specific gcc version if detected
-          if [ ! -z "$KERNEL_GCC_VERSION" ]; then
-            echo "Installing gcc-${KERNEL_GCC_VERSION}"
-            sudo apt-get install -y gcc-${KERNEL_GCC_VERSION}
-            
-            # Configure as default gcc
-            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${KERNEL_GCC_VERSION} 100
-            sudo update-alternatives --set gcc /usr/bin/gcc-${KERNEL_GCC_VERSION}
-          else
-            echo "Warning: Could not detect kernel compiler version"
-          fi
-          
-          # Verify gcc version
-          gcc --version
-          
-          # Now try the actual build
-          make
-
-          ls -l build/collector.ko
+      - name: Cargo cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build collector
-        working-directory: cmd/collector
         run: |
-          export HOME=/tmp
-          echo "HOME: $HOME"
-          export GOCACHE=$HOME/golang/pkg/mod
-          echo "GOCACHE: $GOCACHE"
+          cargo build
+          mkdir -p artifacts
+          cp target/debug/collector artifacts/
 
-          mkdir -p $GOCACHE
-          go env -w GOMODCACHE=$GOCACHE
-
-          # Set up asm link for go2bpf
-          arch=$(uname -m) && \
-              case ${arch} in \
-                  aarch64) ln -sf /usr/include/aarch64-linux-gnu/asm /usr/include/asm ;; \
-                  x86_64)  ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm ;; \
-                  *)       echo "Unsupported architecture: ${arch}" && exit 1 ;; \
-              esac
-          go generate
-          go build -v
-          ls -l collector
-
-      - name: Load kernel module
-        working-directory: module
-        run: |
-          sudo insmod build/collector.ko
-          lsmod | grep collector
-
-      - name: Run eBPF collector
-        working-directory: cmd/collector
-        run: |
-          sudo ./collector
-
-      - name: Upload parquet file
+      - name: Upload collector binary
         uses: actions/upload-artifact@v4
         with:
-          name: metrics-parquet
-          path: cmd/collector/metrics.parquet
-          if-no-files-found: error
+          name: collector-binary
+          path: artifacts/collector
+
+  setup-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      runner-label: ${{ steps.start-runner.outputs.runner-label }}
+      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Start AWS Runner
+        id: start-runner
+        uses: ./.github/actions/aws-runner
+        with:
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          aws-image-id: 'ami-04f167a56786e4b09'  # Ubuntu 24.04 LTS in us-east-2
+
+  cancel-on-failure:
+    needs: setup-runner
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Cancel workflow
+        uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
+
+  test-ebpf:
+    needs: [build-collector, setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 10
+    steps:
+      - name: Install pqrs
+        run: |
+          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
+          python3 -m zipfile -e pqrs.zip .
+          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
+          sudo chmod +x /usr/local/bin/pqrs
+          rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
+
+      - name: Download collector binary
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-binary
+          path: ./
+
+      - name: Make collector executable
+        run: chmod +x ./collector
+
+      - name: Run eBPF collector
+        run: |
+          # Run with sudo since eBPF programs require elevated privileges
+          sudo ./collector -d 10
 
       - name: Verify parquet output
-        working-directory: cmd/collector
         run: |
           # Print parquet file contents as CSV
           echo "Parquet file contents:"
@@ -172,29 +127,27 @@ jobs:
             exit 1
           fi
 
-      - name: Unload kernel module
-        working-directory: module
-        run: |
-          sudo rmmod collector
-          ! lsmod | grep collector
+      - name: Upload parquet file
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-parquet
+          path: metrics.parquet
+          if-no-files-found: error
 
-  stop-runner:
+  cleanup-runner:
     name: Stop EC2 runner
-    needs: [start-runner, test-ebpf]
+    needs: [setup-runner, test-ebpf]
     runs-on: ubuntu-latest
-    if: always()
+    if: always()  # Run even if previous jobs fail
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Stop AWS Runner
+        uses: ./.github/actions/aws-runner/cleanup
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: stop
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }} 
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }} 

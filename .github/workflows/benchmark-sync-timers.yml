@@ -1,4 +1,4 @@
-name: eBPF Sync Timer Benchmark
+name: benchmark-sync-timers
 
 on:
   workflow_dispatch:  # Manual trigger for testing
@@ -61,45 +61,30 @@ jobs:
           name: benchmark-binary
           path: cmd/sync_timer_benchmark/output/*
 
-  start-runner:
+  setup-runner:
     name: Start EC2 runner
     runs-on: ubuntu-latest
     outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+      runner-label: ${{ steps.start-runner.outputs.runner-label }}
+      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Start AWS Runner
+        id: start-runner
+        uses: ./.github/actions/aws-runner
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
-          ec2-instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
-          market-type: spot
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          aws-resource-tags: >
-            [
-              {"Key": "Name", "Value": "github-runner"},
-              {"Key": "Repository", "Value": "${{ github.repository }}"},
-              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
-              {"Key": "RunId", "Value": "${{ github.run_id }}"},
-              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
-              {"Key": "SHA", "Value": "${{ github.sha }}"},
-              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
-              {"Key": "Actor", "Value": "${{ github.actor }}"}
-            ]
+          instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
 
   cancel-on-failure:
-    needs: start-runner
+    needs: setup-runner
     runs-on: ubuntu-latest
     if: failure()
     steps:
@@ -107,8 +92,8 @@ jobs:
         uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
 
   benchmark:
-    needs: [build-benchmark, start-runner]
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    needs: [build-benchmark, setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: ${{ inputs.benchmark-duration == '1' && 5 || inputs.benchmark-duration == '10' && 7 || inputs.benchmark-duration == '100' && 20 || 7 }}
     steps:
       - name: Disable IPv6
@@ -187,23 +172,20 @@ jobs:
           path: plots/*.pdf
           if-no-files-found: error
 
-  stop-runner:
+  cleanup-runner:
     name: Stop EC2 runner
-    needs: [start-runner, benchmark]
+    needs: [setup-runner, benchmark]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Stop AWS Runner
+        uses: ./.github/actions/aws-runner/cleanup
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: stop
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }} 
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }} 
