@@ -1,5 +1,5 @@
 name: build-collector
-run-name: Building eBPF Collector by @${{ github.actor }}
+run-name: Build collector by @${{ github.actor }}
 
 on:
   workflow_dispatch:
