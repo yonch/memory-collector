@@ -18,7 +18,13 @@ jobs:
       - name: Start AWS Runner
         id: start-runner
         uses: ./.github/actions/aws-runner
-        # Uses default configuration
+        with:
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          # Other configurations use defaults
         
   run-test:
     name: Test on EC2 runner
@@ -45,4 +51,7 @@ jobs:
         uses: ./.github/actions/aws-runner/cleanup
         with:
           runner-label: ${{ needs.setup-runner.outputs.runner-label }}
-          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }} 
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }} 
