@@ -1,0 +1,13 @@
+components:
+  load-generator:
+    env:
+      - name: LOCUST_CSV
+        value: "/tmp/locust_results/stats"
+      - name: LOCUST_CSV_FULL_HISTORY
+        value: "true"
+      - name: LOCUST_HEADLESS
+        value: "false"  # Keep the web UI accessible
+    # Create a volume mount for the CSV files
+    mountedEmptyDirs:
+      - name: locust-results
+        mountPath: /tmp/locust_results 
