@@ -1,6 +1,6 @@
-use std::{cmp::Ordering as CmpOrdering, mem::offset_of};
-use std::collections::BinaryHeap;
 use plain::Plain;
+use std::collections::BinaryHeap;
+use std::{cmp::Ordering as CmpOrdering, mem::offset_of};
 use thiserror::Error;
 
 use crate::{PerfRing, PerfRingError, PERF_RECORD_SAMPLE};
@@ -185,9 +185,9 @@ impl Reader {
     /// Manages the heap entry for a ring
     /// For PERF_RECORD_SAMPLE records, the record is the size injected by the kernel (4 bytes),
     /// then message type (4 bytes), then timestamp(8 bytes).
-    /// 
+    ///
     /// The ring must not be in the heap.
-    /// 
+    ///
     /// A timestamp of 0 is assigned in the following cases:
     /// - Non-sample records (e.g., PERF_RECORD_LOST)
     /// - Malformed sample records (less than 16 bytes including the size field)
@@ -207,7 +207,10 @@ impl Reader {
             // Sample records have an 8-byte timestamp after the header
             // Skip the first 8 bytes (RECORD_SAMPLE's size and our message type) and read the timestamp
             let mut buf = [0u8; 8];
-            if self.rings[idx].peek_copy(&mut buf, offset_of!(SampleHeader, timestamp) as u16).is_ok() {
+            if self.rings[idx]
+                .peek_copy(&mut buf, offset_of!(SampleHeader, timestamp) as u16)
+                .is_ok()
+            {
                 timestamp = u64::from_le_bytes(buf);
             }
         }
@@ -283,10 +286,7 @@ mod tests {
             reader.peek_timestamp(),
             Err(ReaderError::NotActive)
         ));
-        assert!(matches!(
-            reader.current_ring(),
-            Err(ReaderError::NotActive)
-        ));
+        assert!(matches!(reader.current_ring(), Err(ReaderError::NotActive)));
         assert!(matches!(reader.pop(), Err(ReaderError::NotActive)));
 
         // Create events with timestamps
@@ -370,10 +370,7 @@ mod tests {
             reader.peek_timestamp(),
             Err(ReaderError::NotActive)
         ));
-        assert!(matches!(
-            reader.current_ring(),
-            Err(ReaderError::NotActive)
-        ));
+        assert!(matches!(reader.current_ring(), Err(ReaderError::NotActive)));
         assert!(matches!(reader.pop(), Err(ReaderError::NotActive)));
     }
 

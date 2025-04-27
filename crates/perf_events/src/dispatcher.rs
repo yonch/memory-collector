@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::{PerfRingError, Reader, ReaderError, SampleHeader, PERF_RECORD_LOST, PERF_RECORD_SAMPLE};
+use crate::{
+    PerfRingError, Reader, ReaderError, SampleHeader, PERF_RECORD_LOST, PERF_RECORD_SAMPLE,
+};
 
 /// Errors that can occur during dispatch operations
 #[derive(Error, Debug)]
@@ -96,10 +98,11 @@ impl Dispatcher {
             PERF_RECORD_SAMPLE => {
                 // The message format after the perf header is defined by the SampleHeader struct
 
-                let header : &SampleHeader = plain::from_bytes(&event_data).map_err(|_e|
+                let header: &SampleHeader = plain::from_bytes(&event_data).map_err(|_e| {
                     DispatchError::InvalidFormat(
                         "Sample event too small to contain message type and timestamp".to_string(),
-                    ))?;
+                    )
+                })?;
 
                 // Check if we have subscribers for this message type
                 if let Some(subscribers) = self.sample_subscribers.get_mut(&header.type_) {
@@ -169,7 +172,6 @@ mod tests {
     }
     unsafe impl Plain for TestMessage {}
 
-
     // Create a test message
     fn create_test_message(msg_type: u32, timestamp: u64, data: &[u8]) -> Vec<u8> {
         let mut message = Vec::with_capacity(size_of::<TestMessage>());
@@ -200,12 +202,12 @@ mod tests {
 
         // Create the reader
         let mut reader = Reader::new();
-        reader.add_ring(
-            unsafe { PerfRing::init_contiguous(&mut data1, n_pages, page_size).unwrap() }
-        ).unwrap();
-        reader.add_ring(
-            unsafe { PerfRing::init_contiguous(&mut data2, n_pages, page_size).unwrap() }
-        ).unwrap();
+        reader
+            .add_ring(unsafe { PerfRing::init_contiguous(&mut data1, n_pages, page_size).unwrap() })
+            .unwrap();
+        reader
+            .add_ring(unsafe { PerfRing::init_contiguous(&mut data2, n_pages, page_size).unwrap() })
+            .unwrap();
 
         // Create the dispatcher
         let mut dispatcher = Dispatcher::new();
@@ -245,19 +247,19 @@ mod tests {
 
         // Write test messages
         ring1.start_write_batch();
-        
+
         // FOO message
         let foo_msg = create_test_message(MSG_TYPE_FOO, 100, b"FOO DATA");
         ring1.write(&foo_msg, PERF_RECORD_SAMPLE).unwrap();
-        
+
         // BAR message
         let bar_msg = create_test_message(MSG_TYPE_BAR, 200, b"BAR DATA");
         ring1.write(&bar_msg, PERF_RECORD_SAMPLE).unwrap();
-        
+
         // Lost event
         let lost_data = [0u8; 8];
         ring1.write(&lost_data, PERF_RECORD_LOST).unwrap();
-        
+
         ring1.finish_write_batch();
 
         // Write another message to ring2
@@ -295,14 +297,13 @@ mod tests {
         let n_pages = 2u32;
         let mut data = vec![0u8; (page_size * (1 + u64::from(n_pages))) as usize];
 
-        let mut ring =
-            unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() };
+        let mut ring = unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() };
 
         // Create the reader
         let mut reader = Reader::new();
-        reader.add_ring(
-            unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() }
-        ).unwrap();
+        reader
+            .add_ring(unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() })
+            .unwrap();
 
         // Create the dispatcher
         let mut dispatcher = Dispatcher::new();
@@ -335,14 +336,13 @@ mod tests {
         let n_pages = 2u32;
         let mut data = vec![0u8; (page_size * (1 + u64::from(n_pages))) as usize];
 
-        let mut ring =
-            unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() };
+        let mut ring = unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() };
 
         // Create the reader
         let mut reader = Reader::new();
-        reader.add_ring(
-            unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() }
-        ).unwrap();
+        reader
+            .add_ring(unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() })
+            .unwrap();
 
         // Handler with instance methods
         struct MyHandler {
@@ -392,7 +392,7 @@ mod tests {
         ring.start_write_batch();
         let foo_msg = create_test_message(MSG_TYPE_FOO, 100, b"FOO DATA");
         ring.write(&foo_msg, PERF_RECORD_SAMPLE).unwrap();
-        
+
         let bar_msg = create_test_message(MSG_TYPE_BAR, 200, b"BAR DATA");
         ring.write(&bar_msg, PERF_RECORD_SAMPLE).unwrap();
         ring.finish_write_batch();
@@ -419,14 +419,13 @@ mod tests {
         let n_pages = 2u32;
         let mut data = vec![0u8; (page_size * (1 + u64::from(n_pages))) as usize];
 
-        let mut ring =
-            unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() };
+        let mut ring = unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() };
 
         // Create the reader
         let mut reader = Reader::new();
-        reader.add_ring(
-            unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() }
-        ).unwrap();
+        reader
+            .add_ring(unsafe { PerfRing::init_contiguous(&mut data, n_pages, page_size).unwrap() })
+            .unwrap();
 
         // Create the dispatcher
         let mut dispatcher = Dispatcher::new();
@@ -455,4 +454,4 @@ mod tests {
         // Finish reading
         reader.finish().unwrap();
     }
-} 
+}

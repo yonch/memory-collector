@@ -6,8 +6,8 @@
 use std::io;
 use std::slice;
 
-use libbpf_rs::{MapCore as _, MapMut};
 use crate::{MmapStorage, PerfRing, PerfRingError, Reader, ReaderError, Storage, StorageError};
+use libbpf_rs::{MapCore as _, MapMut};
 
 use crate::helpers::{self, PerfEventError};
 

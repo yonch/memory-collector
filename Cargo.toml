@@ -8,12 +8,14 @@ members = [
     "crates/collector",
     "crates/perf_events",
     "crates/timeslot",
+    "crates/bpf",
 ]
 
 [workspace.dependencies]
 collector = { path = "crates/collector" }
 perf_events = { path = "crates/perf_events" }
 timeslot = { path = "crates/timeslot" }
+bpf = { path = "crates/bpf" }
 
 libbpf-rs = "0.24.8"
 plain = "0.2"
@@ -24,3 +26,6 @@ perf-event-open-sys = "5.0"
 anyhow = "1.0"
 time = { version = "0.3", features = ["formatting", "local-offset", "macros"]}
 clap = { version = "4.5.37", default-features = false, features = ["std", "derive", "help", "usage"] }
+arrow-array = "55.0"
+arrow-schema = "55.0"
+parquet = { version = "55.0", default-features = false, features = ["arrow", "snap"] }

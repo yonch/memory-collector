@@ -1,5 +1,5 @@
 [package]
-name = "collector"
+name = "bpf"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -13,12 +13,5 @@ anyhow = { workspace = true }
 libbpf-rs = { workspace = true }
 libc = { workspace = true }
 plain = { workspace = true }
-time = { workspace = true }
-clap = { workspace = true }
-perf_events = { workspace = true }
 nix = { version = "0.27.1", features = ["sched"] }
-timeslot = { workspace = true }
-bpf = { workspace = true }
-arrow-array = { workspace = true }
-arrow-schema = { workspace = true }
-parquet = { workspace = true }
+perf_events = { workspace = true } 

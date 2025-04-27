@@ -2,7 +2,7 @@
 //!
 //! A crate for tracking and synchronizing time slots across multiple CPU cores.
 //!
-//! This crate is designed to help systems that need to know when all CPU cores have 
+//! This crate is designed to help systems that need to know when all CPU cores have
 //! completed processing a given time slot, making it safe to process and emit metrics
 //! for that time slot.
 //!
