@@ -5,56 +5,41 @@ permissions:
   id-token: write
 
 jobs:
-  start-runner:
+  setup-runner:
     name: Start EC2 runner
     runs-on: ubuntu-latest
     outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+      runner-label: ${{ steps.start-runner.outputs.runner-label }}
+      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Start AWS Runner
+        id: start-runner
+        uses: ./.github/actions/aws-runner
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          ec2-image-id: ami-0884d2865dbe9de4b # Ubuntu 22.04 LTS in us-east-2
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
+          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           # See this Intel VTune documentation that lists the instances that support
           # hardware events:
           # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-vtune-amplifier-functionality-on-aws-instances.html
-          ec2-instance-type: c5.9xlarge
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          instance-type: 'c5.9xlarge'
+          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           pre-runner-script: |
             sudo apt update -y && \
             sudo apt install docker git libicu -y
             sudo systemctl enable docker
-          aws-resource-tags: >
-            [
-              {"Key": "Name", "Value": "github-runner"},
-              {"Key": "Repository", "Value": "${{ github.repository }}"},
-              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
-              {"Key": "RunId", "Value": "${{ github.run_id }}"},
-              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
-              {"Key": "SHA", "Value": "${{ github.sha }}"},
-              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
-              {"Key": "Actor", "Value": "${{ github.actor }}"}
-            ]
-          market-type: spot
 
   # We set `perf_event_paranoid=0` so that we can run the cpi-count program and
   # tests without elevated privileges.
   ensure-perf-event-paranoid:
     name: Ensure `perf_event_paranoid` is set
-    needs: start-runner
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    needs: setup-runner
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     steps:
       - name: Check current value
         run: cat /proc/sys/kernel/perf_event_paranoid
@@ -65,16 +50,16 @@ jobs:
 
   print-available-events:
     name: Print available events that can be used with `perf -e`
-    needs: [start-runner, ensure-perf-event-paranoid]
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    needs: [setup-runner, ensure-perf-event-paranoid]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     steps:
       - name: Print available events
         run: perf list
 
   run-tests:
     name: Run tests
-    needs: [start-runner, ensure-perf-event-paranoid, print-available-events]
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    needs: [setup-runner, ensure-perf-event-paranoid, print-available-events]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     permissions:
       contents: read
     steps:
@@ -111,23 +96,20 @@ jobs:
       - name: Run tests
         run: go test -count=1 ./...
 
-  stop-runner:
+  cleanup-runner:
     name: Stop EC2 runner
-    needs: [start-runner, ensure-perf-event-paranoid, run-tests]
+    needs: [setup-runner, ensure-perf-event-paranoid, run-tests]
     runs-on: ubuntu-latest
     if: always() # Run even if previous jobs fail
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Stop AWS Runner
+        uses: ./.github/actions/aws-runner/cleanup
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: stop
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}

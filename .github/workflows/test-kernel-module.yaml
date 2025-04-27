@@ -32,46 +32,31 @@ permissions:
   id-token: write # Required for requesting the JWT
 
 jobs:
-  start-runner:
+  setup-runner:
     name: Start EC2 runner
     runs-on: ubuntu-latest
     outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+      runner-label: ${{ steps.start-runner.outputs.runner-label }}
+      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Start AWS Runner
+        id: start-runner
+        uses: ./.github/actions/aws-runner
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: start
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          ec2-image-id: ami-0884d2865dbe9de4b  # Ubuntu 22.04 LTS in us-east-2
-          ec2-instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}  # m7i.metal-24xl for RDT, c5.9xlarge for perf support
-          market-type: spot
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          aws-resource-tags: >
-            [
-              {"Key": "Name", "Value": "github-runner"},
-              {"Key": "Repository", "Value": "${{ github.repository }}"},
-              {"Key": "Workflow", "Value": "${{ github.workflow }}"},
-              {"Key": "RunId", "Value": "${{ github.run_id }}"},
-              {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
-              {"Key": "SHA", "Value": "${{ github.sha }}"},
-              {"Key": "Branch", "Value": "${{ github.ref_name }}"},
-              {"Key": "Actor", "Value": "${{ github.actor }}"}
-            ]
+          instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
 
   test-module:
-    needs: start-runner
-    runs-on: ${{ needs.start-runner.outputs.label }}
+    needs: setup-runner
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     # for benchmarks, timeout is 5 min base + 0.15 × duration
     timeout-minutes: ${{  inputs.run-benchmarks == false && 2 || inputs.benchmark-duration == '1' && 5 || inputs.benchmark-duration == '10' && 7 || inputs.benchmark-duration == '100' && 20 || 7 }}
     steps:
@@ -284,23 +269,20 @@ jobs:
           path: module/plots/*.pdf
           if-no-files-found: error
 
-  stop-runner:
+  cleanup-runner:
     name: Stop EC2 runner
-    needs: [start-runner, test-module]
+    needs: [setup-runner, test-module]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Stop AWS Runner
+        uses: ./.github/actions/aws-runner/cleanup
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: github-runner-session
-
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2.3.8
-        with:
-          mode: stop
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }} 
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }} 
