@@ -51,6 +51,20 @@ jobs:
         run: |
           systemctl status k3s  
       
+      - name: Wait for Kubernetes API
+        run: |
+          echo "Waiting for Kubernetes API..."
+          until kubectl get nodes &>/dev/null; do
+            sleep 1
+            echo "Still waiting..."
+          done
+          echo "Kubernetes API is available!"
+
+      - name: Wait for nodes and kube-system pods
+        run: |
+          kubectl wait --for=condition=Ready nodes --all --timeout=300s      
+          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
+
       - name: Get Default objects in kube-system
         run: | 
           kubectl get all -n kube-system
