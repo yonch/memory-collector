@@ -40,6 +40,7 @@ jobs:
   k3-deployment:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 10
     steps:
 
       - name: Download kustomize binary
@@ -74,6 +75,7 @@ jobs:
   microservice-deployment:
     needs: [setup-runner,k3-deployment]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 10
     env:
       USERS: 3000000
       RATE: 10000
