@@ -115,23 +115,19 @@ jobs:
 
       - name: Install OpenTelemetry Demo
         run: |
-          ls -la $HOME
-          ls -a $HOME/.kube
-          echo kubeconfig:
-          cat $HOME/.kube/config || true
-          echo "KUBECONFIG: $KUBECONFIG"
-          echo "HOME: $HOME"
-          echo "PWD: $(pwd)"
-          echo "USER: $USER"
-          ls -la /etc/rancher/k3s
-          kubectl get pods
-          helm install $RELEASE_NAME open-telemetry/opentelemetry-demo
+          helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/OpenTelemetry-demo/values.yaml
+
+      - name: Describe all Deployments
+        run: |
+          kubectl describe deployments
 
       - name: Wait for all Pods to be Ready
         run: |
           if ! kubectl wait --for=condition=Ready pods --all --timeout=300s; then
             echo "Error: Not all pods reached Ready state within timeout"
             kubectl get pods
+            echo "--------------------------------"
+            kubectl describe pods
             exit 1
           fi
 
