@@ -141,7 +141,7 @@ jobs:
         run: |
           kubectl describe deployment loadgenerator
           
-      - name: Accisible URL
+      - name: Accessible URL
         run: |
           # Get accessible URL 
           echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
