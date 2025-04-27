@@ -41,7 +41,13 @@ jobs:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 10
+    env:
+      HOME: /root
     steps:
+      - name: Create HOME directory
+        run: |
+          mkdir -p $HOME
+
       - name: Install K3 Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
@@ -92,6 +98,7 @@ jobs:
       USERS: 3000000
       RATE: 10000
       RELEASE_NAME: otel-demo
+      HOME: /root
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
