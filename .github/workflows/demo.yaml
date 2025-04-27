@@ -99,6 +99,7 @@ jobs:
       RATE: 10000
       RELEASE_NAME: otel-demo
       HOME: /root
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -115,6 +116,9 @@ jobs:
       - name: Install OpenTelemetry Demo
         run: |
           ls -la $HOME
+          ls -a $HOME/.kube
+          echo kubeconfig:
+          cat $HOME/.kube/config || true
           echo "KUBECONFIG: $KUBECONFIG"
           echo "HOME: $HOME"
           echo "PWD: $(pwd)"
