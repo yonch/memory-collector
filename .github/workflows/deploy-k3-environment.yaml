@@ -37,113 +37,6 @@ jobs:
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '16'
 
-  init-ebpf:
-    needs: setup-runner
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Disable IPv6
-        run: |
-          # Disable IPv6 via sysctl
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
-
-          # Force apt to use IPv4
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
-
-      - name: Install dependencies
-        run: |
-          # Update all archive URLs to use HTTPS in both old and new locations
-          sudo find /etc/apt/sources.list /etc/apt/sources.list.d/ -type f -exec sed -i 's/http:/https:/g' {} +
-          sudo apt-get update
-          sudo apt-get install -y build-essential linux-headers-$(uname -r) \
-            llvm clang libbpf-dev git vim curl kmod unzip
-          wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
-          sudo tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
-          echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile
-          source /etc/profile
-          go version
-
-      - name: Install pqrs
-        run: |
-          # Download latest pqrs release
-          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
-          unzip pqrs.zip
-          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
-          rm pqrs.zip
-
-      - name: Build kernel module
-        working-directory: module
-        run: |
-          # Try to compile and capture the warning message
-          make 2>&1 | tee compile_output.txt || true
-          
-          # Extract gcc version from the warning message
-          KERNEL_GCC_VERSION=$(grep "The kernel was built by:" compile_output.txt | grep -oP 'gcc-\K\d+' || echo "")
-          echo "Detected kernel compiler version: ${KERNEL_GCC_VERSION}"
-          
-          # Install specific gcc version if detected
-          if [ ! -z "$KERNEL_GCC_VERSION" ]; then
-            echo "Installing gcc-${KERNEL_GCC_VERSION}"
-            sudo apt-get install -y gcc-${KERNEL_GCC_VERSION}
-            
-            # Configure as default gcc
-            sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${KERNEL_GCC_VERSION} 100
-            sudo update-alternatives --set gcc /usr/bin/gcc-${KERNEL_GCC_VERSION}
-          else
-            echo "Warning: Could not detect kernel compiler version"
-          fi
-          
-          # Verify gcc version
-          gcc --version
-          
-          # Now try the actual build
-          make
-
-          ls -l build/collector.ko
-
-      - name: Listing Folders
-        run: |
-          # Move into the cloned repository
-          source /etc/profile
-          go version
-          ls -al
-          pwd
-          apt-cache policy golang-go
-
-      - name: Build collector
-        working-directory: cmd/collector
-        run: |
-          source /etc/profile
-          export HOME=/tmp
-          echo "HOME: $HOME"
-          export GOCACHE=$HOME/golang/pkg/mod
-          echo "GOCACHE: $GOCACHE"
-
-          mkdir -p $GOCACHE
-          go env -w GOMODCACHE=$GOCACHE
-
-          # Set up asm link for go2bpf
-          arch=$(uname -m) && \
-              case ${arch} in \
-                  aarch64) ln -sf /usr/include/aarch64-linux-gnu/asm /usr/include/asm ;; \
-                  x86_64)  ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm ;; \
-                  *)       echo "Unsupported architecture: ${arch}" && exit 1 ;; \
-              esac
-          go generate
-          go build -v
-          ls -l collector
-
-      - name: Load kernel module
-        working-directory: module
-        run: |
-          sudo insmod build/collector.ko
-          lsmod | grep collector
-      
   k3-deployment:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
@@ -179,7 +72,7 @@ jobs:
 
 
   microservice-deployment:
-    needs: [setup-runner,init-ebpf, k3-deployment]
+    needs: [setup-runner,k3-deployment]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     env:
       USERS: 3000000
@@ -244,48 +137,6 @@ jobs:
         run: |
           # Get accessible URL 
           echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
-  test-ebpf:
-    needs: [setup-runner,init-ebpf, k3-deployment, microservice-deployment]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 10
-    steps:
-
-      - name: Listing Folders
-        run: |
-          # Move into the cloned repository
-          ls -al
-          pwd
-      
-      - name: Run eBPF collector
-        working-directory: cmd/collector
-        run: |
-          sudo ./collector
-
-      - name: Upload parquet file
-        uses: actions/upload-artifact@v4
-        with:
-          name: metrics-parquet
-          path: cmd/collector/metrics.parquet
-          if-no-files-found: error
-
-      - name: Verify parquet output
-        working-directory: cmd/collector
-        run: |
-          # Print parquet file contents as CSV
-          echo "Parquet file contents:"
-          pqrs cat --csv metrics.parquet
-          
-          # Verify file exists and has content
-          if [ ! -s metrics.parquet ]; then
-            echo "Error: metrics.parquet is empty or does not exist"
-            exit 1
-          fi
-
-      - name: Unload kernel module
-        working-directory: module
-        run: |
-          sudo rmmod collector
-          ! lsmod | grep collector
 
   stop-runner:
     name: Stop EC2 runner
