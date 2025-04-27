@@ -1,4 +1,4 @@
-name: Test eBPF Collector
+name: test-ebpf-collector
 on: 
   workflow_dispatch:  # Manual trigger for testing
   push:

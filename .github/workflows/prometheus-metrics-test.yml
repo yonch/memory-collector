@@ -1,5 +1,4 @@
-name: Prometheus Metrics Integration Test
-
+name: prometheus-metrics-test
 on:
   push:
     branches: [ "main" ]

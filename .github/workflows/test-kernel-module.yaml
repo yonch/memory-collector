@@ -1,4 +1,4 @@
-name: Test Kernel Module
+name: test-kernel-module
 on: 
   workflow_dispatch:  # Manual trigger for testing
     inputs:

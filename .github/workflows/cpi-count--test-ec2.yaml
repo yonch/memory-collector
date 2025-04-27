@@ -1,4 +1,4 @@
-name: Test CPI Count on AWS EC2
+name: cpi-count--test-ec2
 on: workflow_dispatch
 
 permissions:

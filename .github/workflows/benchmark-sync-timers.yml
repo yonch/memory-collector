@@ -1,4 +1,4 @@
-name: eBPF Sync Timer Benchmark
+name: benchmark-sync-timers
 
 on:
   workflow_dispatch:  # Manual trigger for testing

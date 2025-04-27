@@ -1,4 +1,4 @@
-name: Workflow for AWS ResCtrl Checker
+name: resctrl-checker--test-ec2
 on: workflow_dispatch
 
 # Add permissions needed for OIDC authentication
