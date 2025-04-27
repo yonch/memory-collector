@@ -80,6 +80,8 @@ jobs:
       USERS: 3000000
       RATE: 10000
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Clone Repository
         run: |
