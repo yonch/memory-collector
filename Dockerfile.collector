@@ -38,6 +38,13 @@ RUN cargo build --release
 # Now copy the actual source code
 COPY crates ./crates/
 
+# Ensure source files are recompiled
+RUN     touch crates/collector/src/lib.rs \
+    && touch crates/perf_events/src/lib.rs \
+    && touch crates/timeslot/src/lib.rs \
+    && touch crates/bpf/src/lib.rs \
+    && touch crates/collector/src/main.rs
+
 # Build the actual application
 RUN cargo build --release
 
