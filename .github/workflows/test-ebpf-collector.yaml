@@ -78,7 +78,7 @@ jobs:
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
-          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
+          aws-image-id: 'ami-04f167a56786e4b09'  # Ubuntu 24.04 LTS in us-east-2
 
   cancel-on-failure:
     needs: setup-runner
