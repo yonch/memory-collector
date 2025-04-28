@@ -5,7 +5,7 @@ use arrow_array::builder::{Int32Builder, Int64Builder, StringBuilder};
 use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use chrono::Utc;
-use log::debug;
+use log::{debug, info};
 use object_store::{path::Path, ObjectStore};
 use parquet::arrow::arrow_writer::ArrowWriterOptions;
 use parquet::arrow::async_writer::{AsyncArrowWriter, ParquetObjectWriter};
@@ -221,6 +221,20 @@ impl ParquetWriter {
 
             // Update size tracking
             self.update_current_writer_size()?;
+
+            // did we exceed the quota?
+            if !self.is_below_quota() {
+                info!("Exceeded storage quota, stopping writes");
+                // close the writer
+                self.close_writer().await?;
+
+                // the actual written size might be a bit less than the quota, but now this triggered, we're done writing.
+                // force the sizes to be equal to the quota so is_below_quota returns false
+                if let Some(quota) = self.config.storage_quota {
+                    self.closed_files_size = quota;
+                }
+                return Ok(());
+            }
 
             // Check if we need to flush based on buffer size
             if self.in_memory_size >= self.config.buffer_size {
