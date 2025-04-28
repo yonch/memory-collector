@@ -28,4 +28,11 @@ time = { version = "0.3", features = ["formatting", "local-offset", "macros"]}
 clap = { version = "4.5.37", default-features = false, features = ["std", "derive", "help", "usage"] }
 arrow-array = "55.0"
 arrow-schema = "55.0"
-parquet = { version = "55.0", default-features = false, features = ["arrow", "snap"] }
+parquet = { version = "55.0", default-features = false, features = ["arrow", "snap", "object_store", "async"] }
+object_store = { version = "0.12", features = ["aws", "gcp", "azure"] }
+url = "2.5"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1.16", features = ["v4"] }
+hostname = "0.4"
+futures = "0.3"
+chrono = "0.4"

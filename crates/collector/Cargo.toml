@@ -22,3 +22,10 @@ bpf = { workspace = true }
 arrow-array = { workspace = true }
 arrow-schema = { workspace = true }
 parquet = { workspace = true }
+object_store = { workspace = true }
+url = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+hostname = { workspace = true }
+futures = { workspace = true }
+chrono = { workspace = true }
