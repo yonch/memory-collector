@@ -162,6 +162,10 @@ jobs:
         run: |
           echo "Waiting 20 seconds for Locust to generate CSV data..."
           sleep 20
+
+      - name: Print events
+        run: |
+          kubectl get events
           
       - name: Extract Locust CSV files
         run: |
