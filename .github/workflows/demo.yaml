@@ -177,9 +177,18 @@ jobs:
           echo "Load Generator Pod: $LOADGEN_POD"
 
           # Get the logs of the previous load-generator pod
+          echo "--------------------------------"
+          echo "Getting PREVIOUS logs of load-generator pod"
           kubectl logs $LOADGEN_POD --previous || true
 
+          # Get the logs of the load-generator pod
+          echo "--------------------------------"
+          echo "Getting logs of load-generator pod"
+          kubectl logs $LOADGEN_POD || true
+
           # Describe the load-generator pod
+          echo "--------------------------------"
+          echo "Describing load-generator pod"
           kubectl describe pod $LOADGEN_POD || true
 
       - name: Extract Locust CSV files
