@@ -9,6 +9,11 @@ components:
         value: "true"
       - name: LOCUST_HEADLESS
         value: "false"  # Keep the web UI accessible
+      - name: LOCUST_USERS
+        value: "10000"
+      - name: LOCUST_SPAWN_RATE
+        value: "1000"
+      
     # Create a volume mount for the CSV files
     mountedEmptyDirs:
       - name: locust-results
