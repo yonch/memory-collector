@@ -145,7 +145,7 @@ jobs:
 
       - name: Describe Load Generator Deployment
         run: |
-          kubectl describe deployment loadgenerator
+          kubectl describe deployment load-generator
           
       # - name: Accessible URL
       #   run: |
