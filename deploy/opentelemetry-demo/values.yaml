@@ -1,5 +1,7 @@
 components:
   load-generator:
+    useDefault:
+      env: true
     env:
       - name: LOCUST_CSV
         value: "/tmp/locust_results/stats"
