@@ -29,3 +29,5 @@ uuid = { workspace = true }
 hostname = { workspace = true }
 futures = { workspace = true }
 chrono = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

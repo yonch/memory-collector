@@ -1,14 +1,20 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::env;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
+use env_logger;
+use log::{debug, info};
 use timeslot::MinTracker;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
 use tokio::time::sleep;
+use url::Url;
 use uuid::Uuid;
 
 // Import the perf_events crate components
@@ -208,8 +214,39 @@ fn get_node_identity() -> String {
     Uuid::new_v4().to_string().chars().take(8).collect()
 }
 
+/// Read storage options from environment variables
+fn read_storage_options_from_env() -> HashMap<String, String> {
+    let mut options = HashMap::new();
+
+    // Add AWS environment variables to options if they're not empty
+    for (env_var, option_key) in [
+        ("AWS_ACCESS_KEY_ID", "aws_access_key_id"),
+        ("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key"),
+        ("AWS_ENDPOINT", "aws_endpoint"),
+    ] {
+        if let Ok(value) = env::var(env_var) {
+            if !value.is_empty() {
+                debug!("Using {} environment variable", env_var);
+                options.insert(option_key.to_string(), value);
+            }
+        }
+    }
+
+    info!(
+        "Read {} object store options: {:?}",
+        options.len(),
+        options.keys()
+    );
+    options
+}
+
 fn main() -> Result<()> {
+    // Initialize env_logger
+    env_logger::init();
+
     let opts = Command::parse();
+
+    info!("Starting collector with options: {:?}", opts);
 
     // Initialize tokio runtime for async operations
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -222,19 +259,35 @@ fn main() -> Result<()> {
     // Determine storage prefix URL
     let storage_url = format!("{}{}", opts.output, node_id);
 
-    // Create a config for the writer
-    let config = ParquetWriterConfig {
-        storage_prefix: "".to_string(), // Will be set by from_url
-        buffer_size: opts.parquet_buffer_size,
-        file_size_limit: opts.parquet_file_size,
-        max_row_group_size: opts.max_row_group_size,
-        storage_quota: opts.storage_quota,
-    };
-
     // Initialize writer task - fail if we can't create it
     let mut writer_task = runtime.block_on(async {
-        // Try to create writer from URL
-        let writer = ParquetWriter::from_url(&storage_url, config).await?;
+        // Parse the URL
+        let url = Url::parse(&storage_url)?;
+
+        // Get storage options from environment variables
+        let options = read_storage_options_from_env();
+
+        // Use parse_url_opts to create the object store with options
+        let (store, prefix) = object_store::parse_url_opts(&url, options)?;
+
+        // Convert Box<dyn ObjectStore> to Arc<dyn ObjectStore>
+        let store = Arc::from(store);
+
+        // Create ParquetWriterConfig with the correct prefix
+        let config = ParquetWriterConfig {
+            storage_prefix: prefix.to_string(),
+            buffer_size: opts.parquet_buffer_size,
+            file_size_limit: opts.parquet_file_size,
+            max_row_group_size: opts.max_row_group_size,
+            storage_quota: opts.storage_quota,
+        };
+
+        // Create the ParquetWriter with the store and config
+        info!(
+            "Creating ParquetWriter with storage prefix: {}",
+            config.storage_prefix
+        );
+        let writer = ParquetWriter::new(store, config).await?;
 
         // Create ParquetWriterTask with a buffer of 1000 items
         let task = ParquetWriterTask::new(writer, 1000);
@@ -243,6 +296,7 @@ fn main() -> Result<()> {
     })?;
 
     println!("Writing metrics to {}", storage_url);
+    info!("Parquet writer task initialized and ready to receive data");
 
     // Get sender from the writer task
     let object_writer_sender = writer_task.sender();

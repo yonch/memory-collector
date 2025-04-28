@@ -5,6 +5,7 @@ use arrow_array::builder::{Int32Builder, Int64Builder, StringBuilder};
 use arrow_array::{ArrayRef, RecordBatch};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use chrono::Utc;
+use log::debug;
 use object_store::{path::Path, ObjectStore};
 use parquet::arrow::arrow_writer::ArrowWriterOptions;
 use parquet::arrow::async_writer::{AsyncArrowWriter, ParquetObjectWriter};
@@ -94,30 +95,6 @@ impl ParquetWriter {
         Ok(writer)
     }
 
-    /// Create a new object store and writer instance from URL
-    pub async fn from_url(url_str: &str, config: ParquetWriterConfig) -> Result<Self> {
-        let url = url::Url::parse(url_str)?;
-        let (store, prefix) = object_store::parse_url(&url)?;
-
-        // Update config with the prefix from parse_url
-        let mut updated_config = config;
-        updated_config.storage_prefix = prefix.to_string();
-
-        Self::new(Arc::from(store), updated_config).await
-    }
-
-    /// Use local filesystem if no URL is specified
-    #[allow(dead_code)]
-    pub async fn local(prefix: &str, config: ParquetWriterConfig) -> Result<Self> {
-        let store = Arc::new(object_store::local::LocalFileSystem::new());
-
-        // Update config with the local prefix
-        let mut updated_config = config;
-        updated_config.storage_prefix = prefix.to_string();
-
-        Self::new(store, updated_config).await
-    }
-
     /// Generate a new file path with timestamp and UUID
     fn generate_file_path(&self) -> Path {
         let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
@@ -145,6 +122,7 @@ impl ParquetWriter {
 
         // Check quota before creating a new file
         if !self.is_below_quota() {
+            debug!("Not creating new file: storage quota reached");
             return Ok(());
         }
 
@@ -165,7 +143,9 @@ impl ParquetWriter {
 
         // Store the writer and path
         self.current_writer = Some(writer);
-        self.current_file_path = Some(path);
+        self.current_file_path = Some(path.clone());
+
+        debug!("Created new parquet writer for path: {}", path);
 
         // Reset size tracking for the new file
         self.update_current_writer_size()?;
@@ -326,6 +306,7 @@ impl ParquetWriter {
 
     /// Close the writer, finishing the Parquet file
     pub async fn close(mut self) -> Result<()> {
+        debug!("Closing ParquetWriter instance");
         self.close_writer().await
     }
 
@@ -333,6 +314,21 @@ impl ParquetWriter {
     async fn close_writer(&mut self) -> Result<()> {
         if let Some(writer) = self.current_writer.take() {
             let metadata = writer.close().await?;
+
+            // Log the metadata details
+            debug!(
+                "Closed parquet file at path '{}' with {} row groups, {} rows",
+                self.current_file_path
+                    .as_ref()
+                    .map(|p| p.to_string())
+                    .unwrap_or_default(),
+                metadata.row_groups.len(),
+                metadata
+                    .row_groups
+                    .iter()
+                    .map(|rg| rg.num_rows)
+                    .sum::<i64>()
+            );
 
             // Update closed files size from the metadata
             for row_group in &metadata.row_groups {
