@@ -35,7 +35,7 @@ jobs:
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
-          volume-size: '16'
+          volume-size: '40'
 
   k3-deployment:
     needs: [setup-runner]
