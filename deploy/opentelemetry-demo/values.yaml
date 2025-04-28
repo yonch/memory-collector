@@ -13,6 +13,8 @@ components:
         value: "100"
       - name: LOCUST_SPAWN_RATE
         value: "10"
+      - name: LOCUST_BROWSER_TRAFFIC_ENABLED
+        value: "false"
       
     # Create a volume mount for the CSV files
     mountedEmptyDirs:
