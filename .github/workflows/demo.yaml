@@ -117,10 +117,6 @@ jobs:
         run: |
           helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
 
-      - name: Describe all Deployments
-        run: |
-          kubectl describe deployments
-
       - name: Wait for all Pods to be Ready
         run: |
           if ! kubectl wait --for=condition=Ready pods --all --timeout=150s; then
