@@ -160,8 +160,8 @@ jobs:
           
       - name: Wait for Locust to generate CSV data
         run: |
-          echo "Waiting 180 seconds for Locust to generate CSV data..."
-          sleep 180
+          echo "Waiting 20 seconds for Locust to generate CSV data..."
+          sleep 20
           
       - name: Extract Locust CSV files
         run: |
