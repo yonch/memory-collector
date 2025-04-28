@@ -1,0 +1,22 @@
+components:
+  load-generator:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: LOCUST_CSV
+        value: "/tmp/locust_results/stats"
+      - name: LOCUST_CSV_FULL_HISTORY
+        value: "true"
+      - name: LOCUST_HEADLESS
+        value: "false"  # Keep the web UI accessible
+      - name: LOCUST_USERS
+        value: "1000"
+      - name: LOCUST_SPAWN_RATE
+        value: "100"
+      - name: LOCUST_BROWSER_TRAFFIC_ENABLED
+        value: "false"
+      
+    # Create a volume mount for the CSV files
+    mountedEmptyDirs:
+      - name: locust-results
+        mountPath: /tmp/locust_results 

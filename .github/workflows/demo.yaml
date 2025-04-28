@@ -7,6 +7,12 @@ on:
         required: false
         default: 'c5.9xlarge'
         type: string
+  push:
+    branches:
+      - main
+    paths:
+      - deploy/opentelemetry-demo/values.yaml
+      - .github/workflows/demo.yaml
 
 permissions:
   id-token: write # Required for requesting the JWT
@@ -35,89 +41,95 @@ jobs:
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
-          volume-size: '16'
+          volume-size: '40'
 
   k3-deployment:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 10
+    env:
+      HOME: /root
     steps:
-
-      - name: Download kustomize binary
-        run: | 
-          curl -LO https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.6.0/kustomize_v5.6.0_linux_amd64.tar.gz
-
-      - name: Extract kustomize
+      - name: Create HOME directory
         run: |
-          ls -al
-          tar -xvzf kustomize_v5.6.0_linux_amd64.tar.gz
-          sudo mv kustomize /usr/local/bin/
-
-      - name: Check the version of kustomize
-        run: |
-          kustomize version
+          mkdir -p $HOME
 
       - name: Install K3 Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
           curl -sfL https://get.k3s.io | sh
 
-      - name: Install K3 Cluster
+      - name: Status of K3s Installation
         run: |
-          # Status of K3s Instalation
           systemctl status k3s  
       
+      - name: Wait for Kubernetes API
+        run: |
+          echo "Waiting for Kubernetes API..."
+          until kubectl get nodes &>/dev/null; do
+            sleep 1
+            echo "Still waiting..."
+          done
+          echo "Kubernetes API is available!"
+
+      - name: Wait for nodes
+        run: |
+          echo "Waiting for at least one node to be registered..."
+          until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for node registration..."
+          done
+          echo "Node(s) registered, waiting for Ready status..."
+          kubectl wait --for=condition=Ready nodes --all --timeout=300s      
+
+      - name: Wait for kube-system pods
+        run: |
+          echo "Waiting for at least one kube-system pod to be registered..."
+          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for kube-system pod registration..."
+          done
+          echo "Kube-system pod(s) registered, waiting for Ready status..."
+          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
+
       - name: Get Default objects in kube-system
         run: | 
           kubectl get all -n kube-system
 
-
   microservice-deployment:
     needs: [setup-runner,k3-deployment]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       USERS: 3000000
       RATE: 10000
+      RELEASE_NAME: otel-demo
+      HOME: /root
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Clone Repository
+      - name: Install Helm
         run: |
-          # Set Git URL (modify or pass as argument)
-          GIT_URL="https://github.com/GoogleCloudPlatform/microservices-demo.git"
-          
-          # Clone the repository
-          git clone "$GIT_URL"
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-          # Extract the folder name from the URL (remove .git at the end if present)
-          FOLDER_NAME=$(basename "$GIT_URL" .git)
-
-          # Save the variable as an output for later steps
-          echo "FOLDER_NAME=$FOLDER_NAME" >> $GITHUB_ENV
-
-      - name: Install Micro Services
+      - name: Add OpenTelemetry Helm Repository
         run: |
+          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+          helm repo update
 
-          # copy kustomized file to location
-          cp -f kustomize/kustomization.yaml "$FOLDER_NAME/kustomize/kustomization.yaml"
-
-          # Move into the cloned repository
-          cd "$FOLDER_NAME"
-
-          # Confirm current directory
-          echo "Switched to directory: $(pwd)"
-
-          # Installs micro-services (Uncomment when ready)
-          cd kustomize && kustomize build . | kubectl apply -f -
-          
+      - name: Install OpenTelemetry Demo
+        run: |
+          helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
 
       - name: Wait for all Pods to be Ready
         run: |
-          if ! kubectl wait --for=condition=Ready pods --all --timeout=300s; then
+          if ! kubectl wait --for=condition=Ready pods --all --timeout=150s; then
             echo "Error: Not all pods reached Ready state within timeout"
             kubectl get pods
+            echo "--------------------------------"
+            kubectl describe pods
             exit 1
           fi
 
@@ -133,18 +145,75 @@ jobs:
         run: | 
           kubectl get pods -n default
       
-      - name: Describe one of deployment
+      - name: Describe Frontend Deployment
         run: |
-          kubectl describe deployment adservice
+          kubectl describe deployment frontend
 
-      - name: Describe one of deployment load generator
+      - name: Describe Load Generator Deployment
         run: |
-          kubectl describe deployment loadgenerator
+          kubectl describe deployment load-generator
           
-      - name: Accessible URL
+      # - name: Accessible URL
+      #   run: |
+      #     # Get accessible URL 
+      #     echo "http://$(kubectl get svc frontendproxy --no-headers -o wide | awk '{print $4}')"
+          
+      - name: Wait for Locust to generate CSV data
         run: |
-          # Get accessible URL 
-          echo "http://$(kubectl get svc frontend-external --no-headers -o wide | awk '{print $4}')"
+          echo "Waiting 20 seconds for Locust to generate CSV data..."
+          for i in {1..20}; do
+            echo "top at time $i"
+            kubectl top pods
+            sleep 1
+          done
+
+      - name: Print events
+        run: |
+          kubectl get events
+
+      - name: Debug load-generator pod
+        run: |
+          LOADGEN_POD=$(kubectl get pods -l app.kubernetes.io/component=load-generator -o name | cut -d/ -f2)
+          echo "Load Generator Pod: $LOADGEN_POD"
+
+          # Get the logs of the previous load-generator pod
+          echo "--------------------------------"
+          echo "Getting PREVIOUS logs of load-generator pod"
+          kubectl logs $LOADGEN_POD --previous || true
+
+          # Get the logs of the load-generator pod
+          echo "--------------------------------"
+          echo "Getting logs of load-generator pod"
+          kubectl logs $LOADGEN_POD || true
+
+          # Describe the load-generator pod
+          echo "--------------------------------"
+          echo "Describing load-generator pod"
+          kubectl describe pod $LOADGEN_POD || true
+
+      - name: Extract Locust CSV files
+        run: |
+          # Create directory for the results
+          mkdir -p locust_results
+          
+          # Get the load-generator pod name
+          LOADGEN_POD=$(kubectl get pods -l app.kubernetes.io/component=load-generator -o name | cut -d/ -f2)
+          echo "Load Generator Pod: $LOADGEN_POD"
+
+          # Copy CSV files from the pod
+          echo "Copying CSV files from pod..."
+          kubectl cp $LOADGEN_POD:/tmp/locust_results/ ./locust_results/
+          
+          # List the extracted files
+          echo "Extracted CSV files:"
+          ls -la locust_results/
+          
+      - name: Upload Locust Results as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: locust-csv-results
+          path: locust_results/
+          retention-days: 28
 
   stop-runner:
     name: Stop EC2 runner
