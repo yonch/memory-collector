@@ -189,7 +189,7 @@ jobs:
 
       - name: Wait for file rotation
         run: |
-          timeout 120s kubectl logs -f -l app.kubernetes.io/name=collector | tee /dev/stderr | grep -m 1 "Closed"
+          timeout 60s kubectl logs -f -l app.kubernetes.io/name=collector | tee --output-error=exit /dev/stderr | grep -m 1 "Closed"
           
       - name: Check for Files in S3
         run: |
