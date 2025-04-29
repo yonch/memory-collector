@@ -34,13 +34,8 @@ impl TimeslotData {
             task_data.metrics.add(&metrics);
         } else {
             // Create new entry
-            self.tasks.insert(pid, TaskData { metadata, metrics });
+            self.tasks.insert(pid, TaskData::new(metadata, metrics));
         }
-    }
-
-    /// Gets task data for a specific PID
-    pub fn get_task(&self, pid: u32) -> Option<&TaskData> {
-        self.tasks.get(&pid)
     }
 
     /// Returns an iterator over all task data
