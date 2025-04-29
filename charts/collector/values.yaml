@@ -23,12 +23,12 @@ affinity: {}
 # Security context and capabilities
 securityContext:
   # Start with minimal privileges, avoid privileged: true
-  privileged: false
+  privileged: true
   capabilities:
     add:
       - "BPF"
       - "PERFMON"
-      - "SYS_RESOURCE"
+      - "SYS_ADMIN"
   runAsUser: 0  # Required for eBPF operations
 
 # Collector configuration
