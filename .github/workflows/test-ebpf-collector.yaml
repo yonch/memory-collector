@@ -141,9 +141,30 @@ jobs:
       IRSA_BUCKET: "unvariance-collector-test-irsa"
       KEY_AUTH_BUCKET: "unvariance-collector-test-key-auth"
     steps:
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configure
+          sudo apt-get update
+
       - name: Install AWS CLI and UUID tools
         run: |
-          sudo apt-get update
           sudo apt-get install -y awscli uuid-runtime
           aws --version
 
