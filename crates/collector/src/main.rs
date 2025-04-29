@@ -431,7 +431,7 @@ fn main() -> Result<()> {
             error = bpf_error_rx => {
                 match error {
                     Ok(error_msg) => {
-                        eprintln!("{}", error_msg);
+                        log::error!("{}", error_msg);
                         "BPF polling error"
                     },
                     Err(_) => "BPF polling channel closed unexpectedly"
@@ -443,11 +443,11 @@ fn main() -> Result<()> {
                 let shutdown_reason = match result {
                     Ok(Ok(_)) => "Writer task returned unexpectedly",
                     Ok(Err(e)) => {
-                        eprintln!("Writer task error: {}", e);
+                        log::error!("Writer task error: {}", e);
                         "Writer task failed with error"
                     },
                     Err(e) => {
-                        eprintln!("Writer task panicked: {}", e);
+                        log::error!("Writer task panicked: {}", e);
                         "Writer task panicked"
                     }
                 };
@@ -460,8 +460,12 @@ fn main() -> Result<()> {
         // Signal the main thread to shutdown BPF polling
         let _ = shutdown_tx.send(());
 
-        println!("Waiting for writer task to complete...");
-        writer_task.shutdown().await?;
+        info!("Waiting for writer task to complete...");
+        let writer_task_result = writer_task.shutdown().await;
+        if let Err(e) = writer_task_result {
+            log::error!("Writer task error: {}", e);
+            return Result::<_>::Err(anyhow::anyhow!("Writer task error: {}", e));
+        }
 
         Result::<_>::Ok(())
     });
@@ -488,9 +492,9 @@ fn main() -> Result<()> {
 
     // Clean up: wait for monitoring task to complete
     if let Err(e) = runtime.block_on(monitoring_handle) {
-        eprintln!("Error in monitoring task: {:?}", e);
+        log::error!("Error in monitoring task: {:?}", e);
     }
 
-    println!("Shutdown complete");
+    info!("Shutdown complete");
     Ok(())
 }
