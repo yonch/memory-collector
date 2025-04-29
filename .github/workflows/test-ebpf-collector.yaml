@@ -107,12 +107,12 @@ jobs:
       - name: Run eBPF collector
         run: |
           # Run with sudo since eBPF programs require elevated privileges
-          sudo ./collector -d 10 -o file:///tmp/metrics
+          sudo ./collector -d 10 --storage-type local --prefix "/tmp/metrics-"
 
       - name: Verify parquet output
         run: |
-          # Get the parquet file name based ont he prefix /tmp/metrics
-          parquet_file=$(find /tmp -name "metrics*.parquet")
+          # Get the parquet file name based on the prefix /tmp/metrics
+          parquet_file=$(find /tmp -name "metrics-*.parquet")
 
           # Print parquet file contents as CSV
           echo "Parquet file contents:"
@@ -122,7 +122,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: metrics-parquet
-          path: /tmp/metrics*.parquet
+          path: /tmp/metrics-*.parquet
           if-no-files-found: error
 
   prepare-runner:
@@ -184,14 +184,14 @@ jobs:
           
           # Run collector with S3 output using IAM role
           echo "Running collector with IAM role authentication..."
-          sudo RUST_LOG=debug ./collector -d 10 -o "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/"
+          sudo AWS_BUCKET_NAME=${IRSA_BUCKET} RUST_LOG=debug ./collector -d 10 --storage-type s3 --prefix "${IRSA_PREFIX}/"
           
           # Verify the upload succeeded
           echo "Verifying S3 upload with IAM role..."
           $AWSCLI s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/"
           
           # Get uploaded file(s)
-          IRSA_FILES=$(aws s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/" --recursive | awk '{print $4}')
+          IRSA_FILES=$($AWSCLI s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/" --recursive | awk '{print $4}')
           if [ -z "$IRSA_FILES" ]; then
             echo "No files found in IRSA bucket with prefix ${IRSA_PREFIX}"
             exit 1
@@ -221,14 +221,14 @@ jobs:
           
           # Run collector with S3 output using access keys
           echo "Running collector with Access Key authentication..."
-          sudo -E RUST_LOG=debug ./collector -d 10 -o "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/"
+          sudo -E AWS_BUCKET_NAME=${KEY_AUTH_BUCKET} RUST_LOG=debug ./collector -d 10 --storage-type s3 --prefix "${KEY_PREFIX}/"
           
           # Verify the upload succeeded
           echo "Verifying S3 upload with Access Key..."
           $AWSCLI s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/"
           
           # Get uploaded file(s)
-          KEY_FILES=$(aws s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/" --recursive | awk '{print $4}')
+          KEY_FILES=$($AWSCLI s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/" --recursive | awk '{print $4}')
           if [ -z "$KEY_FILES" ]; then
             echo "No files found in Key Auth bucket with prefix ${KEY_PREFIX}"
             exit 1
