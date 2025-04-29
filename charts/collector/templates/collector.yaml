@@ -1,0 +1,125 @@
+{{- $mode := .Values.deployment.mode -}}
+apiVersion: apps/v1
+kind: {{ if eq $mode "all" }}DaemonSet{{ else }}Deployment{{ end }}
+metadata:
+  name: {{ include "collector.fullname" . }}
+  labels:
+    {{- include "collector.labels" . | nindent 4 }}
+spec:
+  {{- if ne $mode "all" }}
+  replicas: {{ .Values.deployment.sampleSize }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "collector.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "collector.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- if ne $mode "all" }}
+      # Use pod anti-affinity to ensure no more than one collector per node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - {{ include "collector.name" . }}
+                  - key: app.kubernetes.io/instance
+                    operator: In
+                    values:
+                      - {{ .Release.Name }}
+              topologyKey: "kubernetes.io/hostname"
+        {{- with .Values.affinity }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- else }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+      serviceAccountName: {{ include "collector.serviceAccountName" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            {{- if .Values.collector.verbose }}
+            - --verbose
+            {{- end }}
+            {{- if .Values.collector.duration }}
+            - --duration={{ .Values.collector.duration }}
+            {{- end }}
+            - --storage-type={{ .Values.storage.type }}
+            - --prefix={{ .Values.storage.prefix }}
+            - --parquet-buffer-size={{ .Values.collector.parquetBufferSize }}
+            - --parquet-file-size={{ .Values.collector.parquetFileSize }}
+            - --max-row-group-size={{ .Values.collector.maxRowGroupSize }}
+            {{- if .Values.collector.storageQuota }}
+            - --storage-quota={{ .Values.collector.storageQuota }}
+            {{- end }}
+          env:
+            {{- if eq .Values.storage.type "s3" }}
+            {{- include "collector.s3EnvVars" . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if eq .Values.storage.type "local" }}
+            - name: data-volume
+              mountPath: /data
+            {{- end }}
+            - name: sys-kernel-debug
+              mountPath: /sys/kernel/debug
+            - name: sys-kernel-tracing
+              mountPath: /sys/kernel/tracing
+            - name: sys-fs-bpf
+              mountPath: /sys/fs/bpf
+            - name: tracefs
+              mountPath: /sys/kernel/debug/tracing
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+      volumes:
+        {{- if eq .Values.storage.type "local" }}
+        - name: data-volume
+          emptyDir: {}
+        {{- end }}
+        - name: sys-kernel-debug
+          hostPath:
+            path: /sys/kernel/debug
+        - name: sys-kernel-tracing
+          hostPath:
+            path: /sys/kernel/tracing
+        - name: sys-fs-bpf
+          hostPath:
+            path: /sys/fs/bpf
+        - name: tracefs
+          hostPath:
+            path: /sys/kernel/debug/tracing
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup 

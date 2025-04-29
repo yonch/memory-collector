@@ -1,0 +1,18 @@
+apiVersion: v2
+name: collector
+description: A Helm chart for the Unvariance Collector, an eBPF-based tool for collecting memory subsystem metrics
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - ebpf
+  - memory
+  - metrics
+  - parquet
+maintainers:
+  - name: Unvariance Collector Team
+home: https://github.com/unvariance/collector
+sources:
+  - https://github.com/unvariance/collector
+annotations:
+  category: Monitoring 
