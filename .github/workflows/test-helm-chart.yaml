@@ -189,7 +189,24 @@ jobs:
 
       - name: Wait for file rotation
         run: |
-          timeout 60s kubectl logs -f -l app.kubernetes.io/name=collector | tee --output-error=exit /dev/stderr | grep -m 1 "Closed"
+          # Create a process group
+          (
+            # Start kubectl logs in background
+            kubectl logs -f -l app.kubernetes.io/name=collector | tee /dev/stderr | grep -m 1 "Closed"
+            # Save grep exit status
+            grep_status=$?
+            # Kill the process group when grep finishes
+            kill -TERM 0
+            # Return the grep status
+            exit $grep_status
+          ) &
+
+          # Get the process group ID
+          pgid=$!
+
+          # Wait up to 60 seconds
+          ( sleep 60 && kill -TERM $pgid 2>/dev/null ) &
+          wait $pgid        
           
       - name: Check for Files in S3
         run: |
