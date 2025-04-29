@@ -187,24 +187,9 @@ jobs:
           kubectl get pods
           kubectl describe pods -l app.kubernetes.io/name=collector
 
-      - name: Wait for Data Collection
+      - name: Wait for file rotation
         run: |
-          echo "Waiting 120 seconds for data collection..."
-          for i in {1..24}; do
-            echo "Checking for log rotation every 5 seconds"
-            sleep 5
-            echo "displaying logs"
-            kubectl logs -l app.kubernetes.io/name=collector
-          done
-          FOUND=$(kubectl logs -l app.kubernetes.io/name=collector | grep -m 1 "Rotating")
-          if [ -n "$FOUND" ]; then
-            echo "Found the collector rotated a log file"
-            #break
-          fi
-          if [ -z "$FOUND" ]; then
-            echo "Data collection did not rotate a log file within timeout period"
-            exit 1
-          fi
+          timeout 120s kubectl logs -f -l app.kubernetes.io/name=collector | tee /dev/stderr | grep -m 1 "Rotating"
           
       - name: Check for Files in S3
         run: |
