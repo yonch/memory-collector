@@ -93,7 +93,6 @@ jobs:
     needs: [build-collector, setup-runner, prepare-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 10
-    if: false
     steps:
       - name: Download collector binary
         uses: actions/download-artifact@v4
@@ -132,16 +131,13 @@ jobs:
     steps:
       - name: Install awscli
         run: |
-          echo `which aws` || true
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           python3 -m zipfile -e awscliv2.zip .
           chmod u+x ./aws/install
           sudo ./aws/install
-          echo version:
-          /usr/local/bin/aws --version || true
-          echo which: `which aws` || true
-          ls -l /usr/local/bin/aws || true
+          echo ls: `ls -l /usr/local/bin/aws` || true
           chmod +x /usr/local/bin/aws || true
+          echo version: `/usr/local/bin/aws --version` || true
 
       - name: Install pqrs
         run: |
