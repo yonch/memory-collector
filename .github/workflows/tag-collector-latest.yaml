@@ -51,7 +51,7 @@ jobs:
             echo "FULL_SHA=$LATEST_SHA" >> $GITHUB_OUTPUT
           fi
           # Generate short SHA
-          SHORT_SHA=$(git rev-parse --short=8 ${FULL_SHA:-HEAD})
+          SHORT_SHA=$(git rev-parse --short=7 ${FULL_SHA:-HEAD})
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
