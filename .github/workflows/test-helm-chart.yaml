@@ -193,13 +193,14 @@ jobs:
           for i in {1..24}; do
             echo "Checking for log rotation every 5 seconds"
             sleep 5
+            echo "displaying logs"
             kubectl logs -l app.kubernetes.io/name=collector
-            FOUND=$(kubectl logs -l app.kubernetes.io/name=collector | grep -m 1 "Rotating")
-            if [ -n "$FOUND" ]; then
-              echo "Found the collector rotated a log file"
-              break
-            fi
           done
+          FOUND=$(kubectl logs -l app.kubernetes.io/name=collector | grep -m 1 "Rotating")
+          if [ -n "$FOUND" ]; then
+            echo "Found the collector rotated a log file"
+            #break
+          fi
           if [ -z "$FOUND" ]; then
             echo "Data collection did not rotate a log file within timeout period"
             exit 1
