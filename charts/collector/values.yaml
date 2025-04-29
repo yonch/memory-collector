@@ -38,11 +38,11 @@ collector:
   # Track duration in seconds (0 = unlimited)
   duration: 0
   # Maximum memory buffer size before flushing (bytes)
-  parquetBufferSize: 104857600  # 100MB
+  parquetBufferSize: "104857600"  # 100MB
   # Maximum size for each Parquet file before rotation (bytes)
-  parquetFileSize: 1073741824  # 1GB
+  parquetFileSize: "1073741824"  # 1GB
   # Maximum row group size (number of rows) in a Parquet Row Group
-  maxRowGroupSize: 1048576
+  maxRowGroupSize: "1048576"
   # Maximum total bytes to write to object store (optional)
   storageQuota: null
 
