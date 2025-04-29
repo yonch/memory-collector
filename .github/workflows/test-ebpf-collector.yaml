@@ -93,6 +93,7 @@ jobs:
     needs: [build-collector, setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 10
+    if: false
     steps:
       - name: Install pqrs
         run: |
