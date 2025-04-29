@@ -23,7 +23,7 @@ affinity: {}
 # Security context and capabilities
 securityContext:
   # Start with minimal privileges, avoid privileged: true
-  privileged: true
+  privileged: false
   capabilities:
     add:
       - "BPF"
