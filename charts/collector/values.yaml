@@ -28,6 +28,7 @@ securityContext:
     add:
       - "BPF"
       - "PERFMON"
+      - "SYS_ADMIN"
   runAsUser: 0  # Required for eBPF operations
 
 # Collector configuration
