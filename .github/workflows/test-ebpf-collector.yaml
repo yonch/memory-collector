@@ -132,15 +132,16 @@ jobs:
     steps:
       - name: Install awscli
         run: |
-          which aws || true
+          echo `which aws` || true
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           python3 -m zipfile -e awscliv2.zip .
           chmod u+x ./aws/install
           sudo ./aws/install
-          which aws || true
-          aws --version || true
-          ls -l `which aws` || true
-          chmod +x `which aws` || true
+          echo version:
+          /usr/local/bin/aws --version || true
+          echo which: `which aws` || true
+          ls -l /usr/local/bin/aws || true
+          chmod +x /usr/local/bin/aws || true
 
       - name: Install pqrs
         run: |
@@ -159,6 +160,7 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       IRSA_BUCKET: "unvariance-collector-test-irsa"
       KEY_AUTH_BUCKET: "unvariance-collector-test-key-auth"
+      AWSCLI: "/usr/local/bin/aws"
     steps:
 
 
@@ -186,7 +188,7 @@ jobs:
           
           # Verify the upload succeeded
           echo "Verifying S3 upload with IAM role..."
-          aws s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/"
+          $AWSCLI s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/"
           
           # Get uploaded file(s)
           IRSA_FILES=$(aws s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/" --recursive | awk '{print $4}')
@@ -198,7 +200,7 @@ jobs:
           # Download and validate first file
           FIRST_FILE=$(echo "$IRSA_FILES" | head -n 1)
           echo "Downloading and validating file: ${FIRST_FILE}"
-          aws s3 cp "s3://${IRSA_BUCKET}/${FIRST_FILE}" /tmp/irsa-test.parquet
+          $AWSCLI s3 cp "s3://${IRSA_BUCKET}/${FIRST_FILE}" /tmp/irsa-test.parquet
           
           # Validate parquet file
           echo "Validating parquet file structure:"
@@ -223,7 +225,7 @@ jobs:
           
           # Verify the upload succeeded
           echo "Verifying S3 upload with Access Key..."
-          aws s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/"
+          $AWSCLI s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/"
           
           # Get uploaded file(s)
           KEY_FILES=$(aws s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/" --recursive | awk '{print $4}')
@@ -235,7 +237,7 @@ jobs:
           # Download and validate first file
           FIRST_FILE=$(echo "$KEY_FILES" | head -n 1)
           echo "Downloading and validating file: ${FIRST_FILE}"
-          aws s3 cp "s3://${KEY_AUTH_BUCKET}/${FIRST_FILE}" /tmp/key-auth-test.parquet
+          $AWSCLI s3 cp "s3://${KEY_AUTH_BUCKET}/${FIRST_FILE}" /tmp/key-auth-test.parquet
           
           # Validate parquet file
           echo "Validating parquet file structure:"
