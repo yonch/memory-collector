@@ -132,10 +132,15 @@ jobs:
     steps:
       - name: Install awscli
         run: |
+          which aws || true
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           python3 -m zipfile -e awscliv2.zip .
           chmod u+x ./aws/install
           sudo ./aws/install
+          which aws || true
+          aws --version || true
+          ls -l `which aws` || true
+          chmod +x `which aws` || true
 
       - name: Install pqrs
         run: |
