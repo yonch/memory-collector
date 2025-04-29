@@ -259,41 +259,36 @@ fn main() -> Result<()> {
     // Determine storage prefix URL
     let storage_url = format!("{}{}", opts.output, node_id);
 
-    // Initialize writer task - fail if we can't create it
-    let mut writer_task = runtime.block_on(async {
-        // Parse the URL
-        let url = Url::parse(&storage_url)?;
+    // Parse the URL
+    let url = Url::parse(&storage_url)?;
 
-        // Get storage options from environment variables
-        let options = read_storage_options_from_env();
+    // Get storage options from environment variables
+    let options = read_storage_options_from_env();
 
-        // Use parse_url_opts to create the object store with options
-        let (store, prefix) = object_store::parse_url_opts(&url, options)?;
+    // Use parse_url_opts to create the object store with options
+    let (store, prefix) = object_store::parse_url_opts(&url, options)?;
 
-        // Convert Box<dyn ObjectStore> to Arc<dyn ObjectStore>
-        let store = Arc::from(store);
+    // Convert Box<dyn ObjectStore> to Arc<dyn ObjectStore>
+    let store = Arc::from(store);
 
-        // Create ParquetWriterConfig with the correct prefix
-        let config = ParquetWriterConfig {
-            storage_prefix: prefix.to_string(),
-            buffer_size: opts.parquet_buffer_size,
-            file_size_limit: opts.parquet_file_size,
-            max_row_group_size: opts.max_row_group_size,
-            storage_quota: opts.storage_quota,
-        };
+    // Create ParquetWriterConfig with the correct prefix
+    let config = ParquetWriterConfig {
+        storage_prefix: prefix.to_string(),
+        buffer_size: opts.parquet_buffer_size,
+        file_size_limit: opts.parquet_file_size,
+        max_row_group_size: opts.max_row_group_size,
+        storage_quota: opts.storage_quota,
+    };
 
-        // Create the ParquetWriter with the store and config
-        info!(
-            "Creating ParquetWriter with storage prefix: {}",
-            config.storage_prefix
-        );
-        let writer = ParquetWriter::new(store, config)?;
+    // Create the ParquetWriter with the store and config
+    info!(
+        "Creating ParquetWriter with storage prefix: {}",
+        config.storage_prefix
+    );
+    let writer = ParquetWriter::new(store, config)?;
 
-        // Create ParquetWriterTask with a buffer of 1000 items
-        let task = ParquetWriterTask::new(writer, 1000);
-
-        Result::<_>::Ok(task)
-    })?;
+    // Create ParquetWriterTask with a buffer of 1000 items
+    let mut writer_task = ParquetWriterTask::new(writer, 1000);
 
     println!("Writing metrics to {}", storage_url);
     info!("Parquet writer task initialized and ready to receive data");
