@@ -83,6 +83,10 @@ spec:
             {{- if eq .Values.storage.type "s3" }}
             {{- include "collector.s3EnvVars" . | nindent 12 }}
             {{- end }}
+            {{- if .Values.collector.verbose }}
+            - name: RUST_LOG
+              value: "debug"
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
