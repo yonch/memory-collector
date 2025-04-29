@@ -50,11 +50,6 @@ impl TaskCollection {
             self.tasks.remove(&pid);
         }
     }
-
-    /// Get an iterator over all tasks
-    pub fn iter(&self) -> impl Iterator<Item = &TaskMetadata> {
-        self.tasks.values()
-    }
 }
 
 #[cfg(test)]
