@@ -204,7 +204,7 @@ jobs:
           
           # Validate parquet file
           echo "Validating parquet file structure:"
-          pqrs info /tmp/irsa-test.parquet
+          pqrs cat --csv /tmp/irsa-test.parquet
           echo "IRSA test successful"
 
       # Test Access Key-based authentication
@@ -241,7 +241,7 @@ jobs:
           
           # Validate parquet file
           echo "Validating parquet file structure:"
-          pqrs info /tmp/key-auth-test.parquet
+          pqrs cat --csv /tmp/key-auth-test.parquet
           echo "Access Key test successful"
 
       - name: Upload test results
