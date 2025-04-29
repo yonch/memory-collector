@@ -50,6 +50,10 @@ jobs:
             echo "Using latest main SHA: $LATEST_SHA"
             echo "FULL_SHA=$LATEST_SHA" >> $GITHUB_OUTPUT
           fi
+
+      - name: Get short SHA
+        id: short-sha
+        run: |
           # Generate short SHA
           SHORT_SHA=$(git rev-parse --short=7 ${FULL_SHA:-HEAD})
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
@@ -63,12 +67,12 @@ jobs:
 
       - name: Pull existing image
         run: |
-          SOURCE_TAG="main-${{ steps.get-sha.outputs.SHORT_SHA }}"
+          SOURCE_TAG="main-${{ steps.short-sha.outputs.SHORT_SHA }}"
           docker pull "ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG}"
 
       - name: Tag and push as latest
         run: |
-          SOURCE_TAG="main-${{ steps.get-sha.outputs.SHORT_SHA }}"
+          SOURCE_TAG="main-${{ steps.short-sha.outputs.SHORT_SHA }}"
           TARGET_TAG="${{ inputs.tag }}"
           echo "Tagging ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG} as ghcr.io/${{ github.repository }}/collector:${TARGET_TAG}"
           docker tag "ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG}" "ghcr.io/${{ github.repository }}/collector:${TARGET_TAG}"
