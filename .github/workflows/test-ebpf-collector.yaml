@@ -184,7 +184,7 @@ jobs:
           
           # Run collector with S3 output using IAM role
           echo "Running collector with IAM role authentication..."
-          sudo AWS_BUCKET_NAME=${IRSA_BUCKET} RUST_LOG=debug ./collector -d 10 --storage-type s3 --prefix "${IRSA_PREFIX}/"
+          sudo -E AWS_BUCKET_NAME=${IRSA_BUCKET} RUST_LOG=debug ./collector -d 10 --storage-type s3 --prefix "${IRSA_PREFIX}/"
           
           # Verify the upload succeeded
           echo "Verifying S3 upload with IAM role..."
