@@ -287,7 +287,7 @@ fn main() -> Result<()> {
             "Creating ParquetWriter with storage prefix: {}",
             config.storage_prefix
         );
-        let writer = ParquetWriter::new(store, config).await?;
+        let writer = ParquetWriter::new(store, config)?;
 
         // Create ParquetWriterTask with a buffer of 1000 items
         let task = ParquetWriterTask::new(writer, 1000);
