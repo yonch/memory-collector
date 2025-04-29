@@ -116,7 +116,7 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       HOME: /root
-      IMAGE_REPOSITORY: ${{ inputs.image-repository || 'ghcr.io/unvariance/collector/collector' }}
+      IMAGE_REPOSITORY: ${{ inputs.image-repository || 'ghcr.io/yonch/memory-collector/collector' }}
       IMAGE_TAG: ${{ inputs.image-tag || 'latest' }}
     steps:
       - name: Checkout repository
@@ -190,10 +190,17 @@ jobs:
       - name: Wait for Data Collection
         run: |
           echo "Waiting 120 seconds for data collection..."
-          timeout 120s kubectl logs -f -l app.kubernetes.io/name=collector | tee /dev/stderr | grep -m 1 "Rotating"
-          if [ $? -eq 0 ]; then
-            echo "Found the collector rotated a log file"
-          else
+          for i in {1..24}; do
+            echo "Checking for log rotation every 5 seconds"
+            sleep 5
+            kubectl logs -l app.kubernetes.io/name=collector
+            FOUND=$(kubectl logs -l app.kubernetes.io/name=collector | grep -m 1 "Rotating")
+            if [ -n "$FOUND" ]; then
+              echo "Found the collector rotated a log file"
+              break
+            fi
+          done
+          if [ -z "$FOUND" ]; then
             echo "Data collection did not rotate a log file within timeout period"
             exit 1
           fi
