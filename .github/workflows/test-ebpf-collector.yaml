@@ -79,7 +79,7 @@ jobs:
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           iam-role-name: github-actions-runner
           instance-type: ${{ inputs.instance-type || 'm7i.xlarge,c7i.xlarge,r7i.xlarge,m6i.xlarge,m5.xlarge' }}
-          aws-image-id: 'ami-060a84cbcb5c14844'  # Amazon Linux 2023 in us-east-2
+          aws-image-id: 'ami-04f167a56786e4b09'  # Ubuntu 24.04 LTS in us-east-2
 
   cancel-on-failure:
     needs: setup-runner
@@ -92,15 +92,12 @@ jobs:
   test-ebpf:
     needs: [build-collector, setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    if: false  # Temporarily disabled
     timeout-minutes: 10
     steps:
       - name: Install pqrs
         run: |
-          sudo dnf update -y
-          sudo dnf install -y unzip
           curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
-          unzip pqrs.zip
+          python3 -m zipfile -e pqrs.zip .
           sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
           sudo chmod +x /usr/local/bin/pqrs
           rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
@@ -135,8 +132,35 @@ jobs:
           path: /tmp/metrics*.parquet
           if-no-files-found: error
 
+  prepare-runner:
+    needs: [setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 5
+    steps:
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Configure apt to use HTTPS
+        run: |
+          # # Update all archive URLs to use HTTPS
+          # sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # # Install apt-transport-https (might fail initially, hence the || true)
+          # sudo apt-get update || true
+          # sudo apt-get install -y apt-transport-https ca-certificates
+
+          sudo apt clean
+          sudo apt update
+
   test-s3-integration:
-    needs: [build-collector, setup-runner]
+    needs: [setup-runner, prepare-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 15
     env:
@@ -147,15 +171,13 @@ jobs:
 
       - name: Install AWS CLI and UUID tools
         run: |
-          sudo dnf update -y
-          sudo dnf install -y aws-cli util-linux-ng
+          sudo apt-get install -y awscli uuid-runtime
           aws --version
 
       - name: Install pqrs
         run: |
-          sudo dnf install -y unzip
           curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
-          unzip pqrs.zip
+          python3 -m zipfile -e pqrs.zip .
           sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
           sudo chmod +x /usr/local/bin/pqrs
           rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
@@ -251,7 +273,7 @@ jobs:
 
   cleanup-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, test-s3-integration]
+    needs: [setup-runner, test-ebpf, test-s3-integration]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
