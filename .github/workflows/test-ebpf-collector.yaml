@@ -77,6 +77,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          iam-role-name: github-actions-runner
           instance-type: ${{ inputs.instance-type || 'm7i.xlarge,c7i.xlarge,r7i.xlarge,m6i.xlarge,m5.xlarge' }}
           aws-image-id: 'ami-04f167a56786e4b09'  # Ubuntu 24.04 LTS in us-east-2
 
@@ -89,18 +90,10 @@ jobs:
         uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
 
   test-ebpf:
-    needs: [build-collector, setup-runner]
+    needs: [build-collector, setup-runner, prepare-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 10
     steps:
-      - name: Install pqrs
-        run: |
-          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
-          python3 -m zipfile -e pqrs.zip .
-          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
-          sudo chmod +x /usr/local/bin/pqrs
-          rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
-
       - name: Download collector binary
         uses: actions/download-artifact@v4
         with:
@@ -113,30 +106,152 @@ jobs:
       - name: Run eBPF collector
         run: |
           # Run with sudo since eBPF programs require elevated privileges
-          sudo ./collector -d 10
+          sudo ./collector -d 10 --storage-type local --prefix "/tmp/metrics-"
 
       - name: Verify parquet output
         run: |
+          # Get the parquet file name based on the prefix /tmp/metrics
+          parquet_file=$(find /tmp -name "metrics-*.parquet")
+
           # Print parquet file contents as CSV
           echo "Parquet file contents:"
-          pqrs cat --csv metrics.parquet
-          
-          # Verify file exists and has content
-          if [ ! -s metrics.parquet ]; then
-            echo "Error: metrics.parquet is empty or does not exist"
-            exit 1
-          fi
+          pqrs cat --csv $parquet_file
 
       - name: Upload parquet file
         uses: actions/upload-artifact@v4
         with:
           name: metrics-parquet
-          path: metrics.parquet
+          path: /tmp/metrics-*.parquet
+          if-no-files-found: error
+
+  prepare-runner:
+    needs: [setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 5
+    steps:
+      - name: Install awscli
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          python3 -m zipfile -e awscliv2.zip .
+          chmod u+x ./aws/install
+          sudo ./aws/install
+          echo ls: `ls -l /usr/local/bin/aws` || true
+          chmod +x /usr/local/bin/aws || true
+          echo version: `/usr/local/bin/aws --version` || true
+
+      - name: Install pqrs
+        run: |
+          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
+          python3 -m zipfile -e pqrs.zip .
+          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
+          sudo chmod +x /usr/local/bin/pqrs
+          rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
+      
+
+  test-s3-integration:
+    needs: [setup-runner, prepare-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 15
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      IRSA_BUCKET: "unvariance-collector-test-irsa"
+      KEY_AUTH_BUCKET: "unvariance-collector-test-key-auth"
+      AWSCLI: "/usr/local/bin/aws"
+    steps:
+
+
+      - name: Download collector binary
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-binary
+          path: ./
+
+      - name: Make collector executable
+        run: chmod +x ./collector
+
+      # Test IAM role-based authentication (IRSA)
+      - name: Test S3 with IAM Role Authentication
+        id: test-iam-role
+        run: |
+          # Generate a unique prefix for this test
+          IRSA_PREFIX=$(python3 -c "import uuid; print(uuid.uuid4())")
+          echo "Using IRSA prefix: $IRSA_PREFIX"
+          echo "irsa_prefix=$IRSA_PREFIX" >> $GITHUB_OUTPUT
+          
+          # Run collector with S3 output using IAM role
+          echo "Running collector with IAM role authentication..."
+          sudo -E AWS_BUCKET_NAME=${IRSA_BUCKET} RUST_LOG=debug ./collector -d 10 --storage-type s3 --prefix "${IRSA_PREFIX}/"
+          
+          # Verify the upload succeeded
+          echo "Verifying S3 upload with IAM role..."
+          $AWSCLI s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/"
+          
+          # Get uploaded file(s)
+          IRSA_FILES=$($AWSCLI s3 ls "s3://${IRSA_BUCKET}/${IRSA_PREFIX}/" --recursive | awk '{print $4}')
+          if [ -z "$IRSA_FILES" ]; then
+            echo "No files found in IRSA bucket with prefix ${IRSA_PREFIX}"
+            exit 1
+          fi
+          
+          # Download and validate first file
+          FIRST_FILE=$(echo "$IRSA_FILES" | head -n 1)
+          echo "Downloading and validating file: ${FIRST_FILE}"
+          $AWSCLI s3 cp "s3://${IRSA_BUCKET}/${FIRST_FILE}" /tmp/irsa-test.parquet
+          
+          # Validate parquet file
+          echo "Validating parquet file structure:"
+          pqrs cat --csv /tmp/irsa-test.parquet
+          echo "IRSA test successful"
+
+      # Test Access Key-based authentication
+      - name: Test S3 with Access Key Authentication
+        id: test-access-key
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+        run: |
+          # Generate a unique prefix for this test
+          KEY_PREFIX=$(python3 -c "import uuid; print(uuid.uuid4())")
+          echo "Using Key Auth prefix: $KEY_PREFIX"
+          echo "key_prefix=$KEY_PREFIX" >> $GITHUB_OUTPUT
+          
+          # Run collector with S3 output using access keys
+          echo "Running collector with Access Key authentication..."
+          sudo -E AWS_BUCKET_NAME=${KEY_AUTH_BUCKET} RUST_LOG=debug ./collector -d 10 --storage-type s3 --prefix "${KEY_PREFIX}/"
+          
+          # Verify the upload succeeded
+          echo "Verifying S3 upload with Access Key..."
+          $AWSCLI s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/"
+          
+          # Get uploaded file(s)
+          KEY_FILES=$($AWSCLI s3 ls "s3://${KEY_AUTH_BUCKET}/${KEY_PREFIX}/" --recursive | awk '{print $4}')
+          if [ -z "$KEY_FILES" ]; then
+            echo "No files found in Key Auth bucket with prefix ${KEY_PREFIX}"
+            exit 1
+          fi
+          
+          # Download and validate first file
+          FIRST_FILE=$(echo "$KEY_FILES" | head -n 1)
+          echo "Downloading and validating file: ${FIRST_FILE}"
+          $AWSCLI s3 cp "s3://${KEY_AUTH_BUCKET}/${FIRST_FILE}" /tmp/key-auth-test.parquet
+          
+          # Validate parquet file
+          echo "Validating parquet file structure:"
+          pqrs cat --csv /tmp/key-auth-test.parquet
+          echo "Access Key test successful"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: s3-test-parquet-files
+          path: |
+            /tmp/irsa-test.parquet
+            /tmp/key-auth-test.parquet
           if-no-files-found: error
 
   cleanup-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, test-ebpf]
+    needs: [setup-runner, test-ebpf, test-s3-integration]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:

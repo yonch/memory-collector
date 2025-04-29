@@ -74,7 +74,7 @@ pub struct ParquetWriter {
 
 impl ParquetWriter {
     /// Creates a new ParquetWriter with the provided object store and config
-    pub async fn new(store: Arc<dyn ObjectStore>, config: ParquetWriterConfig) -> Result<Self> {
+    pub fn new(store: Arc<dyn ObjectStore>, config: ParquetWriterConfig) -> Result<Self> {
         let schema = create_parquet_schema();
 
         let mut writer = Self {
@@ -90,7 +90,7 @@ impl ParquetWriter {
         };
 
         // Create initial file
-        writer.create_new_file().await?;
+        writer.create_new_file()?;
 
         Ok(writer)
     }
@@ -114,10 +114,13 @@ impl ParquetWriter {
     }
 
     /// Create a new file and writer
-    async fn create_new_file(&mut self) -> Result<()> {
+    fn create_new_file(&mut self) -> Result<()> {
         // Close the current writer if it exists
         if self.current_writer.is_some() {
-            self.close_writer().await?;
+            // error if we try to create a new file while there is an open writer
+            return Err(anyhow!(
+                "Cannot create new file while there is an open writer"
+            ));
         }
 
         // Check quota before creating a new file
@@ -209,7 +212,8 @@ impl ParquetWriter {
                 self.in_memory_size,
                 self.config.file_size_limit
             );
-            self.create_new_file().await?;
+            self.close_writer().await?;
+            self.create_new_file()?;
         }
 
         Ok(())
@@ -396,9 +400,7 @@ mod tests {
         // Create a test writer using an in-memory cursor
         let memory_storage = InMemory::new();
         let mut writer =
-            ParquetWriter::new(Arc::new(memory_storage), ParquetWriterConfig::default())
-                .await
-                .unwrap();
+            ParquetWriter::new(Arc::new(memory_storage), ParquetWriterConfig::default()).unwrap();
 
         // Write the timeslot and close
         let batch = writer.timeslot_to_batch(timeslot).unwrap();
@@ -442,9 +444,7 @@ mod tests {
             storage_quota: None,
         };
 
-        let mut writer = ParquetWriter::new(memory_storage.clone(), config)
-            .await
-            .unwrap();
+        let mut writer = ParquetWriter::new(memory_storage.clone(), config).unwrap();
 
         // Write the same timeslot multiple times to exceed the file size limit
         let batch = writer.timeslot_to_batch(timeslot).unwrap();

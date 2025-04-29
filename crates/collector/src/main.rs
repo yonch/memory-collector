@@ -10,11 +10,11 @@ use anyhow::Result;
 use clap::Parser;
 use env_logger;
 use log::{debug, info};
+use object_store::ObjectStore;
 use timeslot::MinTracker;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
 use tokio::time::sleep;
-use url::Url;
 use uuid::Uuid;
 
 // Import the perf_events crate components
@@ -50,10 +50,13 @@ struct Command {
     #[arg(short, long, default_value = "0")]
     duration: u64,
 
-    /// URL to storage location (e.g., s3://bucket/path/ or file:///path/to/dir/)
-    /// If not specified, will use 'file:///tmp/unvariance-metrics-' with current directory
-    #[arg(short, long, default_value = "file:///tmp/unvariance-metrics-")]
-    output: String,
+    /// Storage type (local or s3)
+    #[arg(long, default_value = "local")]
+    storage_type: String,
+
+    /// Prefix for storage path
+    #[arg(short, long, default_value = "unvariance-metrics-")]
+    prefix: String,
 
     /// Maximum memory buffer size before flushing (bytes)
     #[arg(long, default_value = "104857600")] // 100MB
@@ -201,7 +204,23 @@ impl PerfEventProcessor {
     }
 }
 
-// Find node identity for file path construction
+// Create object store based on storage type
+fn create_object_storage(storage_type: &str) -> Result<Arc<dyn ObjectStore>> {
+    match storage_type.to_lowercase().as_str() {
+        "s3" => {
+            info!("Creating S3 object store from environment variables");
+            let s3 = object_store::aws::AmazonS3Builder::from_env().build()?;
+            Ok(Arc::new(s3))
+        }
+        "local" | _ => {
+            info!("Creating local filesystem object store");
+            let local = object_store::local::LocalFileSystem::new();
+            Ok(Arc::new(local))
+        }
+    }
+}
+
+/// Find node identity for file path construction
 fn get_node_identity() -> String {
     // Try to get hostname
     if let Ok(name) = hostname::get() {
@@ -212,32 +231,6 @@ fn get_node_identity() -> String {
 
     // Fallback to a UUID if hostname is not available
     Uuid::new_v4().to_string().chars().take(8).collect()
-}
-
-/// Read storage options from environment variables
-fn read_storage_options_from_env() -> HashMap<String, String> {
-    let mut options = HashMap::new();
-
-    // Add AWS environment variables to options if they're not empty
-    for (env_var, option_key) in [
-        ("AWS_ACCESS_KEY_ID", "aws_access_key_id"),
-        ("AWS_SECRET_ACCESS_KEY", "aws_secret_access_key"),
-        ("AWS_ENDPOINT", "aws_endpoint"),
-    ] {
-        if let Ok(value) = env::var(env_var) {
-            if !value.is_empty() {
-                debug!("Using {} environment variable", env_var);
-                options.insert(option_key.to_string(), value);
-            }
-        }
-    }
-
-    info!(
-        "Read {} object store options: {:?}",
-        options.len(),
-        options.keys()
-    );
-    options
 }
 
 fn main() -> Result<()> {
@@ -256,46 +249,31 @@ fn main() -> Result<()> {
     // Get node identity for file path
     let node_id = get_node_identity();
 
-    // Determine storage prefix URL
-    let storage_url = format!("{}{}", opts.output, node_id);
+    // Create object store based on storage type
+    let store = create_object_storage(&opts.storage_type)?;
 
-    // Initialize writer task - fail if we can't create it
-    let mut writer_task = runtime.block_on(async {
-        // Parse the URL
-        let url = Url::parse(&storage_url)?;
+    // Compose storage prefix with node identity
+    let storage_prefix = format!("{}{}", opts.prefix, node_id);
 
-        // Get storage options from environment variables
-        let options = read_storage_options_from_env();
+    // Create ParquetWriterConfig with the storage prefix
+    let config = ParquetWriterConfig {
+        storage_prefix,
+        buffer_size: opts.parquet_buffer_size,
+        file_size_limit: opts.parquet_file_size,
+        max_row_group_size: opts.max_row_group_size,
+        storage_quota: opts.storage_quota,
+    };
 
-        // Use parse_url_opts to create the object store with options
-        let (store, prefix) = object_store::parse_url_opts(&url, options)?;
+    // Create the ParquetWriter with the store and config
+    info!(
+        "Writing metrics to {} storage with prefix: {}",
+        &opts.storage_type, &config.storage_prefix
+    );
+    let writer = ParquetWriter::new(store, config)?;
 
-        // Convert Box<dyn ObjectStore> to Arc<dyn ObjectStore>
-        let store = Arc::from(store);
+    // Create ParquetWriterTask with a buffer of 1000 items
+    let mut writer_task = runtime.block_on(async { ParquetWriterTask::new(writer, 1000) });
 
-        // Create ParquetWriterConfig with the correct prefix
-        let config = ParquetWriterConfig {
-            storage_prefix: prefix.to_string(),
-            buffer_size: opts.parquet_buffer_size,
-            file_size_limit: opts.parquet_file_size,
-            max_row_group_size: opts.max_row_group_size,
-            storage_quota: opts.storage_quota,
-        };
-
-        // Create the ParquetWriter with the store and config
-        info!(
-            "Creating ParquetWriter with storage prefix: {}",
-            config.storage_prefix
-        );
-        let writer = ParquetWriter::new(store, config).await?;
-
-        // Create ParquetWriterTask with a buffer of 1000 items
-        let task = ParquetWriterTask::new(writer, 1000);
-
-        Result::<_>::Ok(task)
-    })?;
-
-    println!("Writing metrics to {}", storage_url);
     info!("Parquet writer task initialized and ready to receive data");
 
     // Get sender from the writer task
@@ -453,7 +431,7 @@ fn main() -> Result<()> {
             error = bpf_error_rx => {
                 match error {
                     Ok(error_msg) => {
-                        eprintln!("{}", error_msg);
+                        log::error!("{}", error_msg);
                         "BPF polling error"
                     },
                     Err(_) => "BPF polling channel closed unexpectedly"
@@ -465,11 +443,11 @@ fn main() -> Result<()> {
                 let shutdown_reason = match result {
                     Ok(Ok(_)) => "Writer task returned unexpectedly",
                     Ok(Err(e)) => {
-                        eprintln!("Writer task error: {}", e);
+                        log::error!("Writer task error: {}", e);
                         "Writer task failed with error"
                     },
                     Err(e) => {
-                        eprintln!("Writer task panicked: {}", e);
+                        log::error!("Writer task panicked: {}", e);
                         "Writer task panicked"
                     }
                 };
@@ -482,8 +460,12 @@ fn main() -> Result<()> {
         // Signal the main thread to shutdown BPF polling
         let _ = shutdown_tx.send(());
 
-        println!("Waiting for writer task to complete...");
-        writer_task.shutdown().await?;
+        info!("Waiting for writer task to complete...");
+        let writer_task_result = writer_task.shutdown().await;
+        if let Err(e) = writer_task_result {
+            log::error!("Writer task error: {}", e);
+            return Result::<_>::Err(anyhow::anyhow!("Writer task error: {}", e));
+        }
 
         Result::<_>::Ok(())
     });
@@ -510,9 +492,9 @@ fn main() -> Result<()> {
 
     // Clean up: wait for monitoring task to complete
     if let Err(e) = runtime.block_on(monitoring_handle) {
-        eprintln!("Error in monitoring task: {:?}", e);
+        log::error!("Error in monitoring task: {:?}", e);
     }
 
-    println!("Shutdown complete");
+    info!("Shutdown complete");
     Ok(())
 }
