@@ -190,7 +190,7 @@ jobs:
       - name: Wait for Data Collection
         run: |
           echo "Waiting 120 seconds for data collection..."
-          kubectl logs -f -l app.kubernetes.io/name=collector --timeout=120s | tee /dev/stderr | grep -m 1 "Rotating"
+          timeout 120s kubectl logs -f -l app.kubernetes.io/name=collector | tee /dev/stderr | grep -m 1 "Rotating"
           if [ $? -eq 0 ]; then
             echo "Found the collector rotated a log file"
           else
