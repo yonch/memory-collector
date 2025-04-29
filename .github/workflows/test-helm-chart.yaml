@@ -7,6 +7,15 @@ on:
         required: false
         default: 'm7i.xlarge,c7i.xlarge,r7i.xlarge,m6i.xlarge,m5.xlarge'
         type: string
+      image-repository:
+        description: 'Custom image repository (e.g., ghcr.io/username/repo/collector)'
+        required: false
+        type: string
+      image-tag:
+        description: 'Custom image tag'
+        required: false
+        default: 'latest'
+        type: string
   push:
     branches:
       - main
@@ -107,6 +116,8 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       HOME: /root
+      IMAGE_REPOSITORY: ${{ inputs.image-repository || 'ghcr.io/unvariance/collector/collector' }}
+      IMAGE_TAG: ${{ inputs.image-tag || 'latest' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -138,6 +149,10 @@ jobs:
           
           # Create values override file
           cat > values-override.yaml << EOF
+          image:
+            repository: "${IMAGE_REPOSITORY}"
+            tag: "${IMAGE_TAG}"
+            
           collector:
             storageQuota: 100000  # 100,000 bytes storage quota
           
@@ -150,6 +165,9 @@ jobs:
               auth:
                 method: "iam"  # Using IAM role
           EOF
+          
+          # Print the values being used
+          echo "Using image: ${IMAGE_REPOSITORY}:${IMAGE_TAG}"
           
           # Install the helm chart
           helm upgrade --install ${RELEASE_NAME} ./charts/collector -f values-override.yaml
