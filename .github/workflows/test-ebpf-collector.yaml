@@ -114,25 +114,28 @@ jobs:
       - name: Run eBPF collector
         run: |
           # Run with sudo since eBPF programs require elevated privileges
-          sudo ./collector -d 10
+          sudo ./collector -d 10 -o file:///tmp/metrics
 
       - name: Verify parquet output
         run: |
-          # Print parquet file contents as CSV
-          echo "Parquet file contents:"
-          pqrs cat --csv metrics.parquet
-          
+          # Get the parquet file name based ont he prefix /tmp/metrics
+          parquet_file=$(find /tmp -name "metrics*.parquet")
+
           # Verify file exists and has content
-          if [ ! -s metrics.parquet ]; then
-            echo "Error: metrics.parquet is empty or does not exist"
+          if [ ! -s $parquet_file ]; then
+            echo "Error: $parquet_file is empty or does not exist"
             exit 1
           fi
+
+          # Print parquet file contents as CSV
+          echo "Parquet file contents:"
+          pqrs cat --csv $parquet_file          
 
       - name: Upload parquet file
         uses: actions/upload-artifact@v4
         with:
           name: metrics-parquet
-          path: metrics.parquet
+          path: /tmp/metrics*.parquet
           if-no-files-found: error
 
   cleanup-runner:
