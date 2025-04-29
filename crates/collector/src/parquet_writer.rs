@@ -201,7 +201,14 @@ impl ParquetWriter {
         let current_file_size = self.flushed_row_groups_size + self.in_memory_size;
 
         if current_file_size >= self.config.file_size_limit {
-            // Close the current file and create a new one
+            info!(
+                "Rotating file due to size limit: current size: {} ({} in {} row groups, {} in memory), limit: {}",
+                current_file_size,
+                self.flushed_row_groups_size,
+                self.flushed_row_groups_count,
+                self.in_memory_size,
+                self.config.file_size_limit
+            );
             self.create_new_file().await?;
         }
 
@@ -238,6 +245,7 @@ impl ParquetWriter {
 
             // Check if we need to flush based on buffer size
             if self.in_memory_size >= self.config.buffer_size {
+                info!("Flushing due to buffer size: {}, buffer size limit: {} (previously flushed {} in {} row groups)", self.in_memory_size, self.config.buffer_size, self.flushed_row_groups_size, self.flushed_row_groups_count);
                 self.flush().await?;
             }
 
