@@ -175,10 +175,12 @@ jobs:
           echo "Collector Pod: $COLLECTOR_POD"
           
           # Send SIGUSR1 to the collector to rotate files
-          kubectl exec $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
+          echo "Sending SIGUSR1 to collector"
+          kubectl exec $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1'
           
           # Wait a moment for the rotation to complete
-          kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | tee /dev/stderr | grep -m 1 "Closed" &
+          echo "Waiting for file rotation to complete"
+          kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | tee /dev/stderr --output-error=exit | grep -m 1 "Closed" &
           LOG_PID=$!
 
           timeout 20s sh -c 'wait $LOG_PID'
