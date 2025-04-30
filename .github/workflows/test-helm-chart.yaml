@@ -116,7 +116,7 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       HOME: /root
-      IMAGE_REPOSITORY: ${{ inputs.image-repository || 'ghcr.io/yonch/memory-collector/collector' }}
+      IMAGE_REPOSITORY: ${{ inputs.image-repository || 'ghcr.io/unvariance/collector/collector' }}
       IMAGE_TAG: ${{ inputs.image-tag || 'latest' }}
     steps:
       - name: Checkout repository
