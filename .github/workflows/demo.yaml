@@ -305,7 +305,7 @@ jobs:
 
       - name: Display logs while collector runs
         run: |
-          timeout 20s kubectl logs -f -l app.kubernetes.io/name=locust || true
+          timeout 20s kubectl logs -f -l app.kubernetes.io/name=load-generator || true
 
       - name: Uninstall Collector Helm Chart
         run: |
