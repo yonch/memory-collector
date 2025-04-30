@@ -164,9 +164,19 @@ jobs:
             exit 1
           fi
 
+      - name: Wait for collector to be ready
+        run: |
+          kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector -c collector | tee /dev/stderr --output-error=exit | grep -m 1 "-----" &
+          LOG_PID=$!
+          
+          sleep 20 && kill -TERM $LOG_PID &
+
+          wait $LOG_PID
+
       - name: Show Collector Pod Status
         run: |
           kubectl get pods -l app.kubernetes.io/name=collector
+          kubectl logs -l app.kubernetes.io/name=collector -c collector --tail=10
           
       - name: Send SIGUSR1 to collector to rotate files
         run: |
