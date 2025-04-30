@@ -200,7 +200,18 @@ jobs:
           echo "Using image: ${IMAGE_REPOSITORY}:${IMAGE_TAG}"
           
           # Install the helm chart
-          helm upgrade --install ${RELEASE_NAME} unvariance/collector -f values-override.yaml
+          helm install ${RELEASE_NAME} unvariance/collector \
+            --set collector.image.repository="${IMAGE_REPOSITORY}" \
+            --set collector.image.tag="${IMAGE_TAG}" \
+            --set collector.verbose=true \
+            --set collector.parquetFileSize=1000000 \
+            --set storage.type=s3 \
+            --set storage.prefix="${UUID_PREFIX}" \
+            --set storage.s3.bucket="${S3_BUCKET}" \
+            --set storage.s3.region="${AWS_REGION}" \
+            --set storage.s3.auth.method=iam \
+            --set resources.limits.cpu=1000m \
+            --set resources.requests.cpu=1000m
 
       - name: Wait for Collector Pods to be Ready
         run: |
