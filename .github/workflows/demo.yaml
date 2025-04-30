@@ -118,6 +118,17 @@ jobs:
           chmod +x /usr/local/bin/aws || true
           echo version: `/usr/local/bin/aws --version` || true
 
+      # Wait for kube-system pods after microservices installation starts
+      - name: Wait for kube-system pods
+        run: |
+          echo "Waiting for at least one kube-system pod to be registered..."
+          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for kube-system pod registration..."
+          done
+          echo "Kube-system pod(s) registered, waiting for Ready status..."
+          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
+
       # Generate UUID and deploy collector before OpenTelemetry
       - name: Generate UUID Prefix
         id: generate-uuid
@@ -209,17 +220,6 @@ jobs:
       - name: Install sysstat
         run: |
           sudo apt-get install -y sysstat
-
-      # Wait for kube-system pods after microservices installation starts
-      - name: Wait for kube-system pods
-        run: |
-          echo "Waiting for at least one kube-system pod to be registered..."
-          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
-            sleep 1
-            echo "Still waiting for kube-system pod registration..."
-          done
-          echo "Kube-system pod(s) registered, waiting for Ready status..."
-          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
 
       - name: Wait for all Pods to be Ready
         run: |
