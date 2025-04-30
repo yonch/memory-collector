@@ -157,7 +157,15 @@ jobs:
       #   run: |
       #     # Get accessible URL 
       #     echo "http://$(kubectl get svc frontendproxy --no-headers -o wide | awk '{print $4}')"
-          
+
+  collect-data:
+    needs: [setup-runner, microservice-deployment]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 10
+    env:
+      HOME: /root
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    steps:
       - name: Wait for Locust to generate CSV data
         run: |
           echo "Waiting 20 seconds for Locust to generate CSV data..."
@@ -217,7 +225,7 @@ jobs:
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, k3-deployment, microservice-deployment]
+    needs: [setup-runner, k3-deployment, microservice-deployment, collect-data]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
