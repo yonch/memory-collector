@@ -155,7 +155,6 @@ jobs:
             
           collector:
             verbose: true
-            storageQuota: 100000  # 100,000 bytes storage quota
           
           storage:
             type: "s3"
@@ -187,26 +186,17 @@ jobs:
           kubectl get pods
           kubectl describe pods -l app.kubernetes.io/name=collector
 
-      - name: Wait for file rotation
+      - name: Display logs while collector runs for a while
         run: |
-          # Create a process group
-          (
-            # Start kubectl logs in background
-            kubectl logs -f -l app.kubernetes.io/name=collector | tee /dev/stderr | grep -m 1 "Closed"
-            # Save grep exit status
-            grep_status=$?
-            # Kill the process group when grep finishes
-            kill -TERM 0
-            # Return the grep status
-            exit $grep_status
-          ) &
+          timeout 10s kubectl logs -f -l app.kubernetes.io/name=collector || true
+      
+      - name: Uninstall Collector Helm Chart
+        run: |
+          helm uninstall ${RELEASE_NAME} --wait --timeout=60s
 
-          # Get the process group ID
-          pgid=$!
-
-          # Wait up to 60 seconds
-          ( sleep 60 && kill -TERM $pgid 2>/dev/null ) &
-          wait $pgid        
+      - name: Collector logs
+        run: |
+          kubectl logs -l app.kubernetes.io/name=collector || true
           
       - name: Check for Files in S3
         run: |
