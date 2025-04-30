@@ -1,0 +1,95 @@
+# General configuration
+nameOverride: ""
+fullnameOverride: ""
+
+# Image configuration
+image:
+  repository: "ghcr.io/unvariance/collector/collector"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Deployment configuration
+deployment:
+  # Mode: all or sample
+  mode: "all"
+  # When in sample mode, how many nodes to run on
+  sampleSize: 5
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Security context and capabilities
+securityContext:
+  # Start with minimal privileges, avoid privileged: true
+  privileged: false
+  capabilities:
+    add:
+      - "BPF"
+      - "PERFMON"
+      - "SYS_ADMIN"
+  runAsUser: 0  # Required for eBPF operations
+
+# Collector configuration
+collector:
+  # Verbose debug output
+  verbose: false
+  # Track duration in seconds (0 = unlimited)
+  duration: 0
+  # Maximum memory buffer size before flushing (bytes)
+  parquetBufferSize: "104857600"  # 100MB
+  # Maximum size for each Parquet file before rotation (bytes)
+  parquetFileSize: "1073741824"  # 1GB
+  # Maximum row group size (number of rows) in a Parquet Row Group
+  maxRowGroupSize: "1048576"
+  # Maximum total bytes to write to object store (optional)
+  storageQuota: null
+
+# Storage configuration
+storage:
+  type: "s3"  # Options: "local", "s3"
+  prefix: "memory-collector-metrics-"
+  
+  # S3-specific configuration
+  s3:
+    bucket: ""
+    region: ""
+    endpoint: ""  # For non-AWS S3-compatible storage
+    pathStyle: false  # If true, use path-style addressing instead of virtual-hosted style
+    
+    # Authentication methods
+    auth:
+      method: "iam"  # Options: "iam", "secret", "existing"
+      # For "secret" method
+      accessKey: ""
+      secretKey: ""
+      # For "existing" method
+      existingSecret: ""  # Reference existing secret
+      existingSecretKeyMapping:
+        accessKey: "access_key_id"
+        secretKey: "secret_access_key"
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Resource limits
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Additional environment variables
+extraEnv: [] 

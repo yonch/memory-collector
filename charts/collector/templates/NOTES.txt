@@ -1,0 +1,31 @@
+Memory Collector has been deployed successfully!
+
+Deployment Mode: {{ .Values.deployment.mode }}
+{{- if eq .Values.deployment.mode "all" }}
+The collector is deployed as a DaemonSet on all eligible nodes in the cluster.
+{{- else if eq .Values.deployment.mode "sample" }}
+The collector is deployed as a Deployment with {{ .Values.deployment.sampleSize }} replicas,
+with pod anti-affinity to ensure they run on different nodes.
+{{- end }}
+
+Storage: {{ .Values.storage.type }}
+{{- if eq .Values.storage.type "s3" }}
+S3 Bucket: {{ .Values.storage.s3.bucket }}
+Object Prefix: {{ .Values.storage.prefix }}
+{{- else }}
+Data is being stored locally in the pod's ephemeral storage.
+{{- end }}
+
+To check the status of the collector:
+  kubectl get pods -l app.kubernetes.io/name={{ include "collector.name" . }} -n {{ .Release.Namespace }}
+
+To view the logs of a specific collector pod:
+  kubectl logs -f -l app.kubernetes.io/name={{ include "collector.name" . }} -n {{ .Release.Namespace }}
+
+{{- if eq .Values.securityContext.privileged false }}
+NOTE: The collector is running in non-privileged mode with minimal required capabilities.
+If you experience issues with eBPF access, you may need to reconfigure with additional
+capabilities or using privileged: true in the securityContext.
+{{- else }}
+NOTE: The collector is running in privileged mode.
+{{- end }} 

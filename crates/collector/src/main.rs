@@ -285,10 +285,8 @@ fn main() -> Result<()> {
     // Initialize the sync timer
     bpf_loader.start_sync_timer()?;
 
-    // Get number of CPUs using available_parallelism
-    let num_cpus = thread::available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(1);
+    // Determine the number of available CPUs
+    let num_cpus = libbpf_rs::num_possible_cpus()?;
 
     // Track errors for batched reporting
     let error_counter = Rc::new(RefCell::new(0u64));
