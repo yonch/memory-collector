@@ -9,6 +9,7 @@ use crate::timeslot_data::TimeslotData;
 pub struct ParquetWriterTask {
     sender: mpsc::Sender<TimeslotData>,
     shutdown_sender: watch::Sender<bool>,
+    rotate_sender: mpsc::Sender<()>,
     join_handle: JoinHandle<Result<()>>,
 }
 
@@ -18,12 +19,14 @@ impl ParquetWriterTask {
         // Create channels
         let (sender, receiver) = mpsc::channel::<TimeslotData>(buffer_size);
         let (shutdown_sender, shutdown_receiver) = watch::channel(false);
+        let (rotate_sender, rotate_receiver) = mpsc::channel::<()>(1);
 
         // Create task runner
         let task_runner = TaskRunner {
             receiver,
             writer,
             shutdown_signal: shutdown_receiver,
+            rotate_receiver,
         };
 
         // Spawn the task
@@ -32,6 +35,7 @@ impl ParquetWriterTask {
         Self {
             sender,
             shutdown_sender,
+            rotate_sender,
             join_handle,
         }
     }
@@ -62,6 +66,16 @@ impl ParquetWriterTask {
     pub fn join_handle(&mut self) -> &mut JoinHandle<Result<()>> {
         &mut self.join_handle
     }
+
+    /// Signal the task to rotate the current parquet file
+    pub async fn rotate(&self) -> Result<()> {
+        // Try to send rotation signal
+        self.rotate_sender
+            .send(())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to send rotation signal: {}", e))?;
+        Ok(())
+    }
 }
 
 /// Internal task runner
@@ -69,6 +83,7 @@ struct TaskRunner {
     receiver: mpsc::Receiver<TimeslotData>,
     writer: ParquetWriter,
     shutdown_signal: watch::Receiver<bool>,
+    rotate_receiver: mpsc::Receiver<()>,
 }
 
 impl TaskRunner {
@@ -86,6 +101,14 @@ impl TaskRunner {
                 _ = self.shutdown_signal.changed() => {
                     // Shutdown signal received
                     break;
+                }
+                Some(_) = self.rotate_receiver.recv() => {
+                    // Rotation signal received
+                    if let Err(e) = self.writer.rotate().await {
+                        log::warn!("Failed to rotate parquet file: {}", e);
+                    } else {
+                        log::info!("Parquet file rotated successfully");
+                    }
                 }
             }
         }

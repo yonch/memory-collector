@@ -397,7 +397,7 @@ fn main() -> Result<()> {
     println!("{}", "-".repeat(60));
 
     // Create a channel for BPF error communication and shutdown signaling
-    let (bpf_error_tx, bpf_error_rx) = oneshot::channel();
+    let (bpf_error_tx, mut bpf_error_rx) = oneshot::channel();
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
 
     // Spawn monitoring task to watch for signals and timeout
@@ -405,55 +405,79 @@ fn main() -> Result<()> {
         let duration = Duration::from_secs(opts.duration);
         let mut sigterm = signal(SignalKind::terminate())?;
         let mut sigint = signal(SignalKind::interrupt())?;
+        let mut sigusr1 = signal(SignalKind::user_defined1())?;
 
-        // Select between different completion scenarios
-        let shutdown_reason = tokio::select! {
-            // Duration timeout (if specified)
-            _ = async {
-                if duration.as_secs() > 0 {
-                    sleep(duration).await;
-                    "Duration timeout reached"
-                } else {
-                    // This future never completes for unlimited duration
-                    std::future::pending::<&str>().await
-                }
-            } => "Duration timeout reached",
-
-            // SIGTERM received
-            _ = sigterm.recv() => "Received SIGTERM",
-
-            // SIGINT received
-            _ = sigint.recv() => "Received SIGINT",
-
-            // BPF polling error
-            error = bpf_error_rx => {
-                match error {
-                    Ok(error_msg) => {
-                        log::error!("{}", error_msg);
-                        "BPF polling error"
-                    },
-                    Err(_) => "BPF polling channel closed unexpectedly"
-                }
-            }
-
-            // Parquet writer task completed
-            result = writer_task.join_handle() => {
-                let shutdown_reason = match result {
-                    Ok(Ok(_)) => "Writer task returned unexpectedly",
-                    Ok(Err(e)) => {
-                        log::error!("Writer task error: {}", e);
-                        "Writer task failed with error"
-                    },
-                    Err(e) => {
-                        log::error!("Writer task panicked: {}", e);
-                        "Writer task panicked"
+        // Run until we receive a signal to terminate
+        loop {
+            // Select between different completion scenarios
+            tokio::select! {
+                // Duration timeout (if specified)
+                _ = async {
+                    if duration.as_secs() > 0 {
+                        sleep(duration).await;
+                        true
+                    } else {
+                        // This future never completes for unlimited duration
+                        std::future::pending::<bool>().await
                     }
-                };
-                return Result::<_>::Err(anyhow::anyhow!("{}", shutdown_reason));
-            }
-        };
+                } => {
+                    info!("Duration timeout reached");
+                    break;
+                },
 
-        println!("Shutting down: {}", shutdown_reason);
+                // SIGTERM received
+                _ = sigterm.recv() => {
+                    info!("Received SIGTERM");
+                    break;
+                },
+
+                // SIGINT received
+                _ = sigint.recv() => {
+                    info!("Received SIGINT");
+                    break;
+                },
+
+                // SIGUSR1 received - trigger file rotation
+                _ = sigusr1.recv() => {
+                    info!("Received SIGUSR1, rotating parquet file");
+                    if let Err(e) = writer_task.rotate().await {
+                        log::error!("Failed to rotate parquet file: {}", e);
+                    }
+                    // Continue running, don't break
+                },
+
+                // BPF polling error
+                error = &mut bpf_error_rx => {
+                    match error {
+                        Ok(error_msg) => {
+                            log::error!("{}", error_msg);
+                        },
+                        Err(_) => {
+                            log::error!("BPF polling channel closed unexpectedly");
+                        }
+                    }
+                    break;
+                },
+
+                // Parquet writer task completed
+                result = writer_task.join_handle() => {
+                    let shutdown_reason = match result {
+                        Ok(Ok(_)) => "Writer task returned unexpectedly",
+                        Ok(Err(e)) => {
+                            log::error!("Writer task error: {}", e);
+                            "Writer task failed with error"
+                        },
+                        Err(e) => {
+                            log::error!("Writer task panicked: {}", e);
+                            "Writer task panicked"
+                        }
+                    };
+                    return Result::<_>::Err(anyhow::anyhow!("{}", shutdown_reason));
+                }
+            };
+        }
+
+        info!("Shutting down...");
 
         // Signal the main thread to shutdown BPF polling
         let _ = shutdown_tx.send(());

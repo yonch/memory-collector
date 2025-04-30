@@ -5,7 +5,12 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'c5.9xlarge'
+        default: 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge'
+        type: string
+      pidstat-period:
+        description: 'Collection frequency for pidstat in seconds'
+        required: false
+        default: '1'
         type: string
   push:
     branches:
@@ -39,31 +44,43 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
+          iam-role-name: github-actions-runner          
+          instance-type: ${{ inputs.instance-type || 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge' }}
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '40'
 
-  k3-deployment:
+  run-workload:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 10
+    timeout-minutes: 30
+    outputs:
+      uuid-prefix: ${{ steps.generate-uuid.outputs.uuid }}
     env:
+      RELEASE_NAME: otel-demo
+      COLLECTOR_RELEASE_NAME: collector
+      S3_BUCKET: "unvariance-collector-test-key-auth"
+      AWS_REGION: ${{ secrets.AWS_REGION }}
       HOME: /root
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      PIDSTAT_PERIOD: ${{ inputs.pidstat-period || '1' }}
     steps:
       - name: Create HOME directory
         run: |
           mkdir -p $HOME
 
-      - name: Install K3 Cluster
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: (k8s) Install K3s Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
           curl -sfL https://get.k3s.io | sh
 
-      - name: Status of K3s Installation
+      - name: (k8s) Status of K3s Installation
         run: |
           systemctl status k3s  
       
-      - name: Wait for Kubernetes API
+      - name: (k8s) Wait for Kubernetes API
         run: |
           echo "Waiting for Kubernetes API..."
           until kubectl get nodes &>/dev/null; do
@@ -72,7 +89,17 @@ jobs:
           done
           echo "Kubernetes API is available!"
 
-      - name: Wait for nodes
+      - name: (k8s) Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: (k8s) Add Helm Repositories
+        run: |
+          helm repo add unvariance https://unvariance.github.io/collector/charts
+          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+          helm repo update
+
+      - name: (k8s) Wait for nodes
         run: |
           echo "Waiting for at least one node to be registered..."
           until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
@@ -82,7 +109,7 @@ jobs:
           echo "Node(s) registered, waiting for Ready status..."
           kubectl wait --for=condition=Ready nodes --all --timeout=300s      
 
-      - name: Wait for kube-system pods
+      - name: (k8s) Wait for kube-system pods
         run: |
           echo "Waiting for at least one kube-system pod to be registered..."
           until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
@@ -92,38 +119,58 @@ jobs:
           echo "Kube-system pod(s) registered, waiting for Ready status..."
           kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
 
-      - name: Get Default objects in kube-system
-        run: | 
-          kubectl get all -n kube-system
-
-  microservice-deployment:
-    needs: [setup-runner,k3-deployment]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 15
-    env:
-      USERS: 3000000
-      RATE: 10000
-      RELEASE_NAME: otel-demo
-      HOME: /root
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Add OpenTelemetry Helm Repository
-        run: |
-          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-          helm repo update
-
-      - name: Install OpenTelemetry Demo
+      #### Install OpenTelemetry Demo
+      - name: (workload) Install OpenTelemetry Demo
         run: |
           helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
 
-      - name: Wait for all Pods to be Ready
+      #### Install dependencies
+
+      - name: (install) Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: (install) Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configure
+          sudo apt-get update
+
+      - name: (install) Install sysstat
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sysstat linux-tools-common linux-tools-generic linux-tools-`uname -r`
+          
+          # Verify installations
+          perf_version=$(perf --version 2>&1)
+          echo "Installed perf: $perf_version"
+
+      - name: (install) Install awscli
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          python3 -m zipfile -e awscliv2.zip .
+          chmod u+x ./aws/install
+          sudo ./aws/install
+          echo ls: `ls -l /usr/local/bin/aws` || true
+          chmod +x /usr/local/bin/aws || true
+          echo version: `/usr/local/bin/aws --version` || true
+
+      #### Wait for services to be ready
+
+
+      - name: (stabilize) Wait for all Pods to be Ready
         run: |
           if ! kubectl wait --for=condition=Ready pods --all --timeout=150s; then
             echo "Error: Not all pods reached Ready state within timeout"
@@ -133,65 +180,173 @@ jobs:
             exit 1
           fi
 
-      - name: Print Events
+      #### Show system status
+      - name: (status) Get Default objects in kube-system
+        run: | 
+          kubectl get all -n kube-system
+
+      - name: (status) Print Events
         run: | 
           kubectl get events
 
-      - name: Disk Space Size
+      - name: (status) Disk Space Size
         run: | 
           df -h
 
-      - name: Print Pod Status
+      - name: (status) Print Pod Status
         run: | 
           kubectl get pods -n default
       
-      - name: Describe Frontend Deployment
+      - name: (status) Describe Frontend Deployment
         run: |
           kubectl describe deployment frontend
 
-      - name: Describe Load Generator Deployment
+
+      #### Deploy Collector 
+
+      - name: (collector) Generate UUID Prefix
+        id: generate-uuid
+        run: |
+          UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
+          echo "Using UUID prefix: $UUID"
+          echo "uuid=$UUID" >> $GITHUB_OUTPUT
+
+      - name: (collector) Deploy Collector Helm Chart
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+        run: |
+          UUID_PREFIX="${{ steps.generate-uuid.outputs.uuid }}-"
+          
+          # Install the helm chart using --set for values
+          helm install ${COLLECTOR_RELEASE_NAME} unvariance/collector \
+            --set collector.verbose=true \
+            --set storage.type=s3 \
+            --set storage.prefix="${UUID_PREFIX}" \
+            --set storage.s3.bucket="${S3_BUCKET}" \
+            --set storage.s3.region="${AWS_REGION}" \
+            --set storage.s3.auth.method=secret \
+            --set storage.s3.auth.accessKey="${AWS_ACCESS_KEY_ID}" \
+            --set storage.s3.auth.secretKey="${AWS_SECRET_ACCESS_KEY}" \
+            --set resources.limits.cpu=1000m \
+            --set resources.requests.cpu=1000m \
+            --wait
+
+      - name: (collector) Wait for Collector Pods to be Ready
+        run: |
+          kubectl wait --for=condition=Ready pods --timeout=60s -l app.kubernetes.io/name=collector || WAIT_STATUS=$?
+          echo "Wait exit status: $WAIT_STATUS"
+          
+          # Always describe pods, regardless of wait result
+          echo "Describing collector pods:"
+          kubectl describe pods -l app.kubernetes.io/name=collector
+          
+          # Only fail the job if wait failed
+          if [ -n "$WAIT_STATUS" ] && [ "$WAIT_STATUS" -ne 0 ]; then
+            echo "ERROR: Collector pods are not ready after timeout"
+            exit 1
+          fi
+
+      - name: (collector) Show Collector Pod Status
+        run: |
+          kubectl get pods -l app.kubernetes.io/name=collector
+          kubectl logs -l app.kubernetes.io/name=collector -c collector --tail=10
+
+      #### Start load generator
+
+      - name: (workload) Start Load Generator
+        run: |
+          helm upgrade $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml \
+            --set components.load-generator.enabled=true --wait
+
+      - name: (workload) Describe Load Generator Deployment
         run: |
           kubectl describe deployment load-generator
+
+
+      #### Start PIDs stat collection
+
+      - name: (metrics) Start PIDs stat collection
+        id: start-pidstat
+        run: |
+          # Create directory for metrics
+          mkdir -p /tmp/system_metrics
           
-      # - name: Accessible URL
-      #   run: |
-      #     # Get accessible URL 
-      #     echo "http://$(kubectl get svc frontendproxy --no-headers -o wide | awk '{print $4}')"
+          # Set file paths
+          CPU_METRICS_FILE="/tmp/system_metrics/cpu_metrics.csv"
+          MEMORY_METRICS_FILE="/tmp/system_metrics/memory_metrics.csv"
           
-      - name: Wait for Locust to generate CSV data
+          # Start CPU metrics collection in background
+          pidstat -H -u -p ALL ${PIDSTAT_PERIOD} | awk '{gsub(/^ +| +$/,""); gsub(/ +/,";"); print}' > ${CPU_METRICS_FILE} 2>&1 &
+          CPU_PIDSTAT_PID=$!
+          
+          # Start memory metrics collection in background
+          pidstat -H -r -p ALL ${PIDSTAT_PERIOD} | awk '{gsub(/^ +| +$/,""); gsub(/ +/,";"); print}' > ${MEMORY_METRICS_FILE} 2>&1 &
+          MEMORY_PIDSTAT_PID=$!
+          
+          # Verify processes are running
+          ps -p $CPU_PIDSTAT_PID
+          ps -p $MEMORY_PIDSTAT_PID
+          
+          # Set environment variables for later use
+          echo "CPU_METRICS_FILE=${CPU_METRICS_FILE}" >> $GITHUB_ENV
+          echo "MEMORY_METRICS_FILE=${MEMORY_METRICS_FILE}" >> $GITHUB_ENV
+          echo "CPU_PIDSTAT_PID=${CPU_PIDSTAT_PID}" >> $GITHUB_ENV
+          echo "MEMORY_PIDSTAT_PID=${MEMORY_PIDSTAT_PID}" >> $GITHUB_ENV
+          
+          echo "Started PIDs stat collection:"
+          echo "CPU metrics PID: ${CPU_PIDSTAT_PID}"
+          echo "Memory metrics PID: ${MEMORY_PIDSTAT_PID}"
+          echo "CPU metrics file: ${CPU_METRICS_FILE}"
+          echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
+
+      - name: (metrics) Record system performance with perf
         run: |
-          echo "Waiting 20 seconds for Locust to generate CSV data..."
-          for i in {1..20}; do
-            echo "top at time $i"
-            kubectl top pods
-            sleep 1
-          done
+          # Create directory for perf data
+          mkdir -p /tmp/perf_data
+          
+          # Run perf record for 120 seconds at 99Hz, including kernel stacks
+          echo "Starting perf record for 120 seconds at 99Hz frequency..."
+          perf record -a -g -F 99 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 120
+          
+          # Create directory for perf results
+          mkdir -p perf_results
+          
+          # Copy perf data to the upload directory
+          cp /tmp/perf_data/perf.data perf_results/ || echo "Failed to copy perf.data file"
+          
+          # Generate a report summary in text format
+          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
+          
+          # List the perf files
+          echo "Perf data files:"
+          ls -la perf_results/
 
-      - name: Print events
+      - name: (metrics) Stop PIDs stat collection
         run: |
-          kubectl get events
+          echo "Stopping PIDs stat collection processes"
+          kill -TERM $CPU_PIDSTAT_PID || true
+          kill -TERM $MEMORY_PIDSTAT_PID || true
+          
+          # Wait a moment to ensure files are fully written
+          sleep 2
+          
+          # Check if files exist and have content
+          echo "CPU metrics file size: $(stat -c %s $CPU_METRICS_FILE || echo 'file not found')"
+          echo "Memory metrics file size: $(stat -c %s $MEMORY_METRICS_FILE || echo 'file not found')"
+          
+          # Create directory for system metrics
+          mkdir -p system_metrics
+          
+          # Copy the files to the upload directory
+          cp $CPU_METRICS_FILE system_metrics/cpu_metrics.csv || echo "Failed to copy CPU metrics file"
+          cp $MEMORY_METRICS_FILE system_metrics/memory_metrics.csv || echo "Failed to copy memory metrics file"
+          
+          # List the files
+          echo "System metrics files:"
+          ls -la system_metrics/
 
-      - name: Debug load-generator pod
-        run: |
-          LOADGEN_POD=$(kubectl get pods -l app.kubernetes.io/component=load-generator -o name | cut -d/ -f2)
-          echo "Load Generator Pod: $LOADGEN_POD"
-
-          # Get the logs of the previous load-generator pod
-          echo "--------------------------------"
-          echo "Getting PREVIOUS logs of load-generator pod"
-          kubectl logs $LOADGEN_POD --previous || true
-
-          # Get the logs of the load-generator pod
-          echo "--------------------------------"
-          echo "Getting logs of load-generator pod"
-          kubectl logs $LOADGEN_POD || true
-
-          # Describe the load-generator pod
-          echo "--------------------------------"
-          echo "Describing load-generator pod"
-          kubectl describe pod $LOADGEN_POD || true
-
-      - name: Extract Locust CSV files
+      - name: (metrics) Extract Locust CSV files
         run: |
           # Create directory for the results
           mkdir -p locust_results
@@ -208,16 +363,86 @@ jobs:
           echo "Extracted CSV files:"
           ls -la locust_results/
           
-      - name: Upload Locust Results as Artifacts
+      - name: (metrics) Upload Locust Results as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: locust-csv-results
           path: locust_results/
           retention-days: 28
 
+      - name: (metrics) Upload System Metrics as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-metrics-results
+          path: system_metrics/
+          retention-days: 28
+
+      - name: (metrics) Upload Perf Results as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-data-results
+          path: perf_results/
+          retention-days: 28
+
+      - name: (collector) Uninstall Collector Helm Chart
+        run: |
+          # see the logs while uninstalling
+          kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true &
+          LOGS_PID=$!
+
+          # wait for the pods to be deleted, in the background
+          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=45s || true &
+          WAIT_PID=$!
+
+          # uninstall the chart
+          helm uninstall ${COLLECTOR_RELEASE_NAME}
+          
+          # wait for the pods to be deleted
+          wait $WAIT_PID || true
+
+          # kill the logs
+          kill -TERM $LOGS_PID || true
+
+      - name: (collector) Get Collector Parquet File
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+        run: |
+          # Get UUID prefix from the output
+          UUID_PREFIX="${{ steps.generate-uuid.outputs.uuid }}-"
+          
+          # List files with the UUID prefix
+          echo "Checking for files with prefix ${UUID_PREFIX} in S3 bucket ${S3_BUCKET}"
+          S3_FILES=$(aws s3 ls "s3://${S3_BUCKET}/${UUID_PREFIX}" --recursive || echo "")
+          
+          if [ -z "$S3_FILES" ]; then
+            echo "No files found with prefix ${UUID_PREFIX} in bucket ${S3_BUCKET}"
+            exit 1
+          else
+            echo "Found files with prefix ${UUID_PREFIX}:"
+            echo "$S3_FILES"
+            
+            # Get the file path
+            PARQUET_FILE=$(echo "$S3_FILES" | head -n 1 | awk '{print $4}')
+            
+            # Download the parquet file for validation
+            aws s3 cp "s3://${S3_BUCKET}/${PARQUET_FILE}" /tmp/collector-parquet.parquet
+            
+            # Check file size
+            FILE_SIZE=$(stat -c %s /tmp/collector-parquet.parquet)
+            echo "Downloaded collector file size: ${FILE_SIZE} bytes"
+          fi
+
+      - name: (collector) Upload Collector Results as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-parquet-results
+          path: /tmp/collector-parquet.parquet
+          retention-days: 28
+
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, k3-deployment, microservice-deployment]
+    needs: [setup-runner, run-workload]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:

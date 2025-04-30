@@ -368,6 +368,16 @@ impl ParquetWriter {
 
         Ok(())
     }
+
+    /// Rotate the current parquet file, closing the current one and creating a new one
+    pub async fn rotate(&mut self) -> Result<()> {
+        debug!("Rotating parquet file");
+        // Close the current writer
+        self.close_writer().await?;
+        // Create a new file (this will check quota)
+        self.create_new_file()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

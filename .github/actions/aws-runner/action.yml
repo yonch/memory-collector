@@ -94,6 +94,8 @@ runs:
       continue-on-error: true
       with:
         mode: start
+        startup-quiet-period-seconds: 10
+        startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
         ec2-image-id: ${{ inputs.aws-image-id }}
         ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_1 }}
@@ -122,6 +124,8 @@ runs:
       continue-on-error: true
       with:
         mode: start
+        startup-quiet-period-seconds: 10
+        startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
         ec2-image-id: ${{ inputs.aws-image-id }}
         ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_2 }}
@@ -150,6 +154,8 @@ runs:
       continue-on-error: true
       with:
         mode: start
+        startup-quiet-period-seconds: 10
+        startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
         ec2-image-id: ${{ inputs.aws-image-id }}
         ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_3 }}
@@ -178,6 +184,8 @@ runs:
       continue-on-error: true
       with:
         mode: start
+        startup-quiet-period-seconds: 10
+        startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
         ec2-image-id: ${{ inputs.aws-image-id }}
         ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_4 }}
@@ -205,6 +213,8 @@ runs:
       uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
       with:
         mode: start
+        startup-quiet-period-seconds: 10
+        startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
         ec2-image-id: ${{ inputs.aws-image-id }}
         ec2-instance-type: ${{ steps.parse-instance-types.outputs.TYPE_5 }}

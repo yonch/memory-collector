@@ -1,5 +1,6 @@
 components:
   load-generator:
+    enabled: false
     useDefault:
       env: true
     envOverrides:
@@ -12,9 +13,11 @@ components:
       - name: LOCUST_USERS
         value: "1000"
       - name: LOCUST_SPAWN_RATE
-        value: "100"
+        value: "10"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
+      - name: LOCUST_HEADLESS
+        value: "true"
       
     # Create a volume mount for the CSV files
     mountedEmptyDirs:
