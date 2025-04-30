@@ -178,10 +178,10 @@ jobs:
           kubectl exec $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
           
           # Wait a moment for the rotation to complete
-          timeout 20s kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | grep -m 1 "Closed" || true
-          
-          # Check logs for file closure
-          kubectl logs $COLLECTOR_POD -c collector | grep -i "Closed"
+          kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | tee /dev/stderr | grep -m 1 "Closed" &
+          LOG_PID=$!
+
+          timeout 20s wait $LOG_PID
 
       - name: Verify file was uploaded to S3
         run: |
