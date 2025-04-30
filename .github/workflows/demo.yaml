@@ -174,7 +174,7 @@ jobs:
           echo "Collector Pod: $COLLECTOR_POD"
           
           # Send SIGUSR1 to the collector to rotate files
-          kubectl exec -it $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
+          kubectl exec $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
           
           # Wait a moment for the rotation to complete
           timeout 20s kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | grep -m 1 "Closed" || true
@@ -405,7 +405,7 @@ jobs:
           # get the collector pod name
           COLLECTOR_POD=$(kubectl get pods -l app.kubernetes.io/name=collector -o name | cut -d/ -f2)
           echo "Collector Pod: $COLLECTOR_POD"
-          kubectl exec -it $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
+          kubectl exec $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
 
           # wait for a few seconds to see if there is a flush
           sleep 10
