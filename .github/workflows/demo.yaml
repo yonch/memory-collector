@@ -5,7 +5,7 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'c5.9xlarge'
+        default: 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge'
         type: string
       pidstat-period:
         description: 'Collection frequency for pidstat in seconds'
@@ -44,7 +44,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
-          instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
+          instance-type: ${{ inputs.instance-type || 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge' }}
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '40'
 
