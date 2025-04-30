@@ -272,6 +272,7 @@ jobs:
           # Install the helm chart using --set for values
           helm install ${RELEASE_NAME} unvariance/collector \
             --set collector.verbose=true \
+            --set collector.parquetFileSize=1000000 \
             --set storage.type=s3 \
             --set storage.prefix="${UUID_PREFIX}" \
             --set storage.s3.bucket="${S3_BUCKET}" \
