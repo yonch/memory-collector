@@ -289,12 +289,12 @@ jobs:
 
       - name: Display logs while collector runs
         run: |
-          timeout 20s kubectl logs -f -l app.kubernetes.io/name=load-generator || true
+          timeout 20s kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true
 
       - name: Uninstall Collector Helm Chart
         run: |
           # see the logs while uninstalling
-          kubectl logs -f -l app.kubernetes.io/name=collector || true &
+          kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true &
           LOGS_PID=$!
 
           # trigger a flush by sending a SIGINT to the collector pod
