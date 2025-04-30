@@ -13,7 +13,7 @@ components:
       - name: LOCUST_USERS
         value: "1000"
       - name: LOCUST_SPAWN_RATE
-        value: "100"
+        value: "10"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_HEADLESS

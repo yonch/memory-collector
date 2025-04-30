@@ -297,7 +297,7 @@ jobs:
 
       - name: [metrics] Display logs while collector runs
         run: |
-          timeout 20s kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true
+          timeout 120s kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true
 
       - name: [metrics] Stop PIDs stat collection
         run: |
