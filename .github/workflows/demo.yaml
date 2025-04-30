@@ -311,9 +311,9 @@ jobs:
         run: |
           helm uninstall ${RELEASE_NAME} --wait --timeout=60s
 
-      - name: Watch pods during termination
+      - name: Wait for collector pods to complete
         run: |
-          timeout 20s kubectl get pods -w || true
+          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=30s || true
 
       - name: Collector logs
         run: |
