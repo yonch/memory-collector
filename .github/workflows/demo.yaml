@@ -49,49 +49,6 @@ jobs:
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '40'
 
-  install-apt-dependencies:
-    needs: [setup-runner]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 5
-    env:
-      HOME: /root
-    steps:
-      - name: Disable IPv6
-        run: |
-          # Disable IPv6 via sysctl
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
-
-          # Force apt to use IPv4
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
-
-      - name: Configure apt to use HTTPS
-        run: |
-          # Update all archive URLs to use HTTPS
-          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
-
-          # Install apt-transport-https (might fail initially, hence the || true)
-          sudo apt-get update || true
-          sudo apt-get install -y apt-transport-https ca-certificates
-
-          # Update again with HTTPS now configure
-          sudo apt-get update
-
-      - name: Install sysstat
-        run: |
-          sudo apt-get install -y sysstat
-          
-      - name: Install awscli
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          python3 -m zipfile -e awscliv2.zip .
-          chmod u+x ./aws/install
-          sudo ./aws/install
-          echo ls: `ls -l /usr/local/bin/aws` || true
-          chmod +x /usr/local/bin/aws || true
-          echo version: `/usr/local/bin/aws --version` || true
-
   k3-deployment:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
@@ -131,16 +88,6 @@ jobs:
           echo "Node(s) registered, waiting for Ready status..."
           kubectl wait --for=condition=Ready nodes --all --timeout=300s      
 
-      - name: Wait for kube-system pods
-        run: |
-          echo "Waiting for at least one kube-system pod to be registered..."
-          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
-            sleep 1
-            echo "Still waiting for kube-system pod registration..."
-          done
-          echo "Kube-system pod(s) registered, waiting for Ready status..."
-          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
-
       - name: Get Default objects in kube-system
         run: | 
           kubectl get all -n kube-system
@@ -149,7 +96,7 @@ jobs:
         run: |
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-  microservice-deployment:
+  microservice-deployment-and-dependency-install:
     needs: [setup-runner, k3-deployment]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 15
@@ -171,6 +118,54 @@ jobs:
       - name: Install OpenTelemetry Demo
         run: |
           helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
+
+      # Install apt dependencies while waiting for the microservices to come up
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configure
+          sudo apt-get update
+
+      - name: Install sysstat
+        run: |
+          sudo apt-get install -y sysstat
+          
+      - name: Install awscli
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          python3 -m zipfile -e awscliv2.zip .
+          chmod u+x ./aws/install
+          sudo ./aws/install
+          echo ls: `ls -l /usr/local/bin/aws` || true
+          chmod +x /usr/local/bin/aws || true
+          echo version: `/usr/local/bin/aws --version` || true
+
+      # Wait for kube-system pods after microservices installation starts
+      - name: Wait for kube-system pods
+        run: |
+          echo "Waiting for at least one kube-system pod to be registered..."
+          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for kube-system pod registration..."
+          done
+          echo "Kube-system pod(s) registered, waiting for Ready status..."
+          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
 
       - name: Wait for all Pods to be Ready
         run: |
@@ -208,7 +203,7 @@ jobs:
       #     echo "http://$(kubectl get svc frontendproxy --no-headers -o wide | awk '{print $4}')"
 
   collect-data:
-    needs: [setup-runner, install-apt-dependencies, microservice-deployment]
+    needs: [setup-runner, microservice-deployment-and-dependency-install]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 15
     outputs:
@@ -458,7 +453,7 @@ jobs:
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, k3-deployment, microservice-deployment, collect-data]
+    needs: [setup-runner, k3-deployment, microservice-deployment-and-dependency-install, collect-data]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
