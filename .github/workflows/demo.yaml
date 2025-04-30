@@ -181,7 +181,7 @@ jobs:
           kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | tee /dev/stderr | grep -m 1 "Closed" &
           LOG_PID=$!
 
-          timeout 20s wait $LOG_PID
+          timeout 20s sh -c 'wait $LOG_PID'
 
       - name: Verify file was uploaded to S3
         run: |
