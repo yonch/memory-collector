@@ -281,7 +281,9 @@ jobs:
             --set storage.prefix="${UUID_PREFIX}" \
             --set storage.s3.bucket="${S3_BUCKET}" \
             --set storage.s3.region="${AWS_REGION}" \
-            --set storage.s3.auth.method=iam
+            --set storage.s3.auth.method=iam \
+            --set resources.limits.cpu=1000m \
+            --set resources.requests.cpu=1000m
 
       - name: Wait for Collector Pods to be Ready
         run: |
