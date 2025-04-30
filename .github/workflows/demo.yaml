@@ -150,7 +150,12 @@ jobs:
 
       - name: (install) Install sysstat
         run: |
-          sudo apt-get install -y sysstat
+          sudo apt-get update
+          sudo apt-get install -y sysstat linux-tools-common linux-tools-generic linux-tools-`uname -r`
+          
+          # Verify installations
+          perf_version=$(perf --version 2>&1)
+          echo "Installed perf: $perf_version"
 
       - name: (install) Install awscli
         run: |
@@ -295,9 +300,27 @@ jobs:
           echo "CPU metrics file: ${CPU_METRICS_FILE}"
           echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
 
-      - name: (metrics) Display logs while collector runs
+      - name: (metrics) Record system performance with perf
         run: |
-          timeout 120s kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true
+          # Create directory for perf data
+          mkdir -p /tmp/perf_data
+          
+          # Run perf record for 120 seconds at 99Hz, including kernel stacks
+          echo "Starting perf record for 120 seconds at 99Hz frequency..."
+          perf record -a -g -F 99 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 120
+          
+          # Create directory for perf results
+          mkdir -p perf_results
+          
+          # Copy perf data to the upload directory
+          cp /tmp/perf_data/perf.data perf_results/ || echo "Failed to copy perf.data file"
+          
+          # Generate a report summary in text format
+          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
+          
+          # List the perf files
+          echo "Perf data files:"
+          ls -la perf_results/
 
       - name: (metrics) Stop PIDs stat collection
         run: |
@@ -352,6 +375,13 @@ jobs:
         with:
           name: system-metrics-results
           path: system_metrics/
+          retention-days: 28
+
+      - name: (metrics) Upload Perf Results as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-data-results
+          path: perf_results/
           retention-days: 28
 
       - name: (collector) Uninstall Collector Helm Chart
