@@ -1,0 +1,171 @@
+name: Publish Helm Chart
+run-name: Publish Helm Chart
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_bump:
+        description: 'Force bump patch version even if chart has not changed'
+        type: boolean
+        default: false
+
+jobs:
+  publish-helm-chart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+
+      - name: Configure Git
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+      - name: Extract chart version
+        id: chart-version
+        run: |
+          CHART_YAML="charts/collector/Chart.yaml"
+          CURRENT_VERSION=$(grep 'version:' $CHART_YAML | sed 's/version: //')
+          MAJOR_MINOR=$(echo $CURRENT_VERSION | cut -d. -f1,2)
+          echo "current_version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+          echo "major_minor=${MAJOR_MINOR}" >> $GITHUB_OUTPUT
+          echo "Current chart version: ${CURRENT_VERSION}"
+          echo "Major.Minor version: ${MAJOR_MINOR}"
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Verify gh-pages structure integrity
+        run: |
+          # Check if the gh-pages branch has the mkdocs site structure
+          if [ -f "gh-pages/index.html" ]; then
+            echo "GitHub Pages site appears to be present"
+          else
+            echo "Warning: GitHub Pages site structure may be missing, but we'll continue"
+          fi
+          
+          # Ensure the charts directory exists but doesn't overwrite other content
+          mkdir -p gh-pages/charts
+
+      - name: Check if chart has changed
+        id: chart-changes
+        run: |
+          # Get the last commit that modified the chart
+          LAST_CHART_COMMIT=$(git log -n 1 --pretty=format:%H -- charts/collector/)
+          
+          # Check if we need to publish a new version
+          if [ -f "gh-pages/charts/index.yaml" ]; then
+            if [ "${{ github.event.inputs.force_bump }}" == "true" ]; then
+              echo "Force bump enabled, will publish new version"
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            else
+              # Look for the current chart version in the index.yaml
+              CURRENT_VERSION="${{ steps.chart-version.outputs.current_version }}"
+              if grep -q "version: ${CURRENT_VERSION}" gh-pages/charts/index.yaml; then
+                # Check if chart files have changed since last version
+                CHART_FILES=$(find charts/collector -type f | sort)
+                CHART_HASH=$(cat $CHART_FILES | sha256sum | cut -d' ' -f1)
+                
+                echo "Computed chart hash: ${CHART_HASH}"
+                echo "has_changes=true" >> $GITHUB_OUTPUT
+              else
+                echo "Current version not found in index, will publish"
+                echo "has_changes=true" >> $GITHUB_OUTPUT
+              fi
+            fi
+          else
+            echo "No index.yaml found, publishing initial version"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine next patch version
+        id: next-version
+        if: steps.chart-changes.outputs.has_changes == 'true'
+        run: |
+          MAJOR_MINOR="${{ steps.chart-version.outputs.major_minor }}"
+          
+          # Check if index.yaml exists and contains our chart
+          if [ -f "gh-pages/charts/index.yaml" ]; then
+            LATEST_PATCH=$(grep -A10 "name: collector" gh-pages/charts/index.yaml | grep "version: ${MAJOR_MINOR}." | head -n1 | sed "s/.*version: ${MAJOR_MINOR}.//" | sed 's/[^0-9].*//')
+          else
+            LATEST_PATCH=-1
+          fi
+          
+          # If we couldn't find any existing version or the grep failed, default to -1
+          if [ -z "$LATEST_PATCH" ]; then
+            LATEST_PATCH=-1
+          fi
+          
+          # Increment patch version
+          NEXT_PATCH=$((LATEST_PATCH + 1))
+          NEXT_VERSION="${MAJOR_MINOR}.${NEXT_PATCH}"
+          
+          # Check if the target file already exists (should never happen, but just in case)
+          if [ -f "gh-pages/charts/collector-${NEXT_VERSION}.tgz" ]; then
+            echo "Warning: Chart version ${NEXT_VERSION} already exists, incrementing again"
+            NEXT_PATCH=$((NEXT_PATCH + 1))
+            NEXT_VERSION="${MAJOR_MINOR}.${NEXT_PATCH}"
+          fi
+          
+          echo "next_version=${NEXT_VERSION}" >> $GITHUB_OUTPUT
+          echo "Next chart version will be: ${NEXT_VERSION}"
+
+      - name: Update Chart.yaml with new version
+        if: steps.chart-changes.outputs.has_changes == 'true'
+        run: |
+          CHART_YAML="charts/collector/Chart.yaml"
+          CURRENT_VERSION="${{ steps.chart-version.outputs.current_version }}"
+          NEXT_VERSION="${{ steps.next-version.outputs.next_version }}"
+          
+          # Update the version in Chart.yaml
+          sed -i "s/version: ${CURRENT_VERSION}/version: ${NEXT_VERSION}/" ${CHART_YAML}
+          echo "Updated chart version to ${NEXT_VERSION}"
+
+      - name: Package Helm chart
+        if: steps.chart-changes.outputs.has_changes == 'true'
+        run: |
+          mkdir -p .cr-release-packages
+          helm package charts/collector -d .cr-release-packages
+
+      - name: Copy packaged chart to gh-pages
+        if: steps.chart-changes.outputs.has_changes == 'true'
+        run: |
+          cp .cr-release-packages/collector-${{ steps.next-version.outputs.next_version }}.tgz gh-pages/charts/
+
+      - name: Generate/Update Helm repository index
+        if: steps.chart-changes.outputs.has_changes == 'true'
+        run: |
+          cd gh-pages/charts
+          if [ -f index.yaml ]; then
+            helm repo index --url https://unvariance.github.io/collector/charts --merge index.yaml .
+          else
+            helm repo index --url https://unvariance.github.io/collector/charts .
+          fi
+
+      - name: Commit and push changes to gh-pages branch
+        if: steps.chart-changes.outputs.has_changes == 'true'
+        run: |
+          cd gh-pages
+          
+          # Only add/commit changes in the charts directory
+          git add charts/
+          
+          # Add a detailed commit message
+          git commit -m "Publish Helm chart collector-${{ steps.next-version.outputs.next_version }}" \
+            -m "Published by GitHub Actions workflow" \
+            -m "Repository: ${{ github.repository }}" \
+            -m "Triggered by: ${{ github.actor }}"
+          
+          git push origin gh-pages 

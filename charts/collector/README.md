@@ -6,14 +6,14 @@ This Helm chart deploys the Unvariance Collector, an eBPF-based tool that collec
 
 ```bash
 # Add the helm repository (if applicable)
-# helm repo add memory-collector https://your-repo-url.com
-# helm repo update
+helm repo add unvariance https://unvariance.github.io/collector/charts
+helm repo update
 
 # Install the chart with the default configuration
-helm install memory-collector charts/collector
+helm install collector unvariance/collector
 
 # Install with custom configuration
-helm install memory-collector charts/collector -f your-values.yaml
+helm install collector unvariance/collector -f your-values.yaml
 ```
 
 ## Configuration

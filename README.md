@@ -80,6 +80,22 @@ We're actively working on:
 
 ## Installation
 
+### Helm Chart
+
+[![Publish Helm Chart](https://github.com/unvariance/collector/actions/workflows/publish-helm-chart.yaml/badge.svg)](https://github.com/unvariance/collector/actions/workflows/publish-helm-chart.yaml)
+
+The easiest way to install the collector is using our Helm chart:
+
+```bash
+helm repo add unvariance https://unvariance.github.io/collector/charts
+helm repo update
+helm install collector unvariance/collector
+```
+
+For more information, see the [Helm chart documentation](charts/collector/README.md).
+
+### Manual Installation
+
 Current requirements:
 - Kernel module (eBPF-only in progress) 
 - Minimum kernel version: 5.3 (for eBPF CO-RE) 
