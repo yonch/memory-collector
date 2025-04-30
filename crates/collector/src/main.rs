@@ -397,7 +397,7 @@ fn main() -> Result<()> {
     println!("{}", "-".repeat(60));
 
     // Create a channel for BPF error communication and shutdown signaling
-    let (bpf_error_tx, bpf_error_rx) = oneshot::channel();
+    let (bpf_error_tx, mut bpf_error_rx) = oneshot::channel();
     let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
 
     // Spawn monitoring task to watch for signals and timeout
