@@ -166,7 +166,7 @@ jobs:
 
       - name: Wait for collector to be ready
         run: |
-          kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector -c collector | tee /dev/stderr --output-error=exit | grep -m 1 "-----" &
+          kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector -c collector | tee /dev/stderr --output-error=exit | grep -m 1 -- "-----" &
           LOG_PID=$!
           
           sleep 20 && kill -TERM $LOG_PID &
