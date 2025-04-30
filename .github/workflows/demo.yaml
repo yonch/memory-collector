@@ -49,18 +49,20 @@ jobs:
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '40'
 
-  k3-deployment:
+  prepare-workload:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
+      RELEASE_NAME: otel-demo
       HOME: /root
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
     steps:
       - name: Create HOME directory
         run: |
           mkdir -p $HOME
 
-      - name: Install K3 Cluster
+      - name: Install K3s Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
           curl -sfL https://get.k3s.io | sh
@@ -96,17 +98,6 @@ jobs:
         run: |
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-  microservice-deployment-and-dependency-install:
-    needs: [setup-runner, k3-deployment]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 15
-    env:
-      USERS: 3000000
-      RATE: 10000
-      RELEASE_NAME: otel-demo
-      HOME: /root
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -196,14 +187,9 @@ jobs:
       - name: Describe Load Generator Deployment
         run: |
           kubectl describe deployment load-generator
-          
-      # - name: Accessible URL
-      #   run: |
-      #     # Get accessible URL 
-      #     echo "http://$(kubectl get svc frontendproxy --no-headers -o wide | awk '{print $4}')"
 
   collect-data:
-    needs: [setup-runner, microservice-deployment-and-dependency-install]
+    needs: [setup-runner, prepare-workload]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 15
     outputs:
@@ -454,7 +440,7 @@ jobs:
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, k3-deployment, microservice-deployment-and-dependency-install, collect-data]
+    needs: [setup-runner, prepare-workload, collect-data]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
