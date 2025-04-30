@@ -86,20 +86,6 @@ jobs:
           done
           echo "Kubernetes API is available!"
 
-      - name: Wait for nodes
-        run: |
-          echo "Waiting for at least one node to be registered..."
-          until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
-            sleep 1
-            echo "Still waiting for node registration..."
-          done
-          echo "Node(s) registered, waiting for Ready status..."
-          kubectl wait --for=condition=Ready nodes --all --timeout=300s      
-
-      - name: Get Default objects in kube-system
-        run: | 
-          kubectl get all -n kube-system
-
       - name: Install Helm
         run: |
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -107,7 +93,46 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install AWS CLI before deploying the collector
+      - name: Add Helm Repositories
+        run: |
+          helm repo add unvariance https://unvariance.github.io/collector/charts
+          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+          helm repo update
+
+
+      #### Now we can deploy services
+      - name: Install OpenTelemetry Demo
+        run: |
+          helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
+
+      #### Install dependencies
+
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configure
+          sudo apt-get update
+
+      - name: Install sysstat
+        run: |
+          sudo apt-get install -y sysstat
+
       - name: Install awscli
         run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -118,7 +143,18 @@ jobs:
           chmod +x /usr/local/bin/aws || true
           echo version: `/usr/local/bin/aws --version` || true
 
-      # Wait for kube-system pods after microservices installation starts
+      #### Wait for services to be ready
+
+      - name: Wait for nodes
+        run: |
+          echo "Waiting for at least one node to be registered..."
+          until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for node registration..."
+          done
+          echo "Node(s) registered, waiting for Ready status..."
+          kubectl wait --for=condition=Ready nodes --all --timeout=300s      
+
       - name: Wait for kube-system pods
         run: |
           echo "Waiting for at least one kube-system pod to be registered..."
@@ -129,18 +165,49 @@ jobs:
           echo "Kube-system pod(s) registered, waiting for Ready status..."
           kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
 
-      # Generate UUID and deploy collector before OpenTelemetry
+      - name: Wait for all Pods to be Ready
+        run: |
+          if ! kubectl wait --for=condition=Ready pods --all --timeout=150s; then
+            echo "Error: Not all pods reached Ready state within timeout"
+            kubectl get pods
+            echo "--------------------------------"
+            kubectl describe pods
+            exit 1
+          fi
+
+      #### Show system status
+      - name: Get Default objects in kube-system
+        run: | 
+          kubectl get all -n kube-system
+
+      - name: Print Events
+        run: | 
+          kubectl get events
+
+      - name: Disk Space Size
+        run: | 
+          df -h
+
+      - name: Print Pod Status
+        run: | 
+          kubectl get pods -n default
+      
+      - name: Describe Frontend Deployment
+        run: |
+          kubectl describe deployment frontend
+
+      - name: Describe Load Generator Deployment
+        run: |
+          kubectl describe deployment load-generator
+
+      #### Deploy Collector 
+
       - name: Generate UUID Prefix
         id: generate-uuid
         run: |
           UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
           echo "Using UUID prefix: $UUID"
           echo "uuid=$UUID" >> $GITHUB_OUTPUT
-
-      - name: Add Unvariance Helm Repository
-        run: |
-          helm repo add unvariance https://unvariance.github.io/collector/charts
-          helm repo update
 
       - name: Deploy Collector Helm Chart
         env:
@@ -151,7 +218,6 @@ jobs:
           
           # Install the helm chart using --set for values
           helm install ${COLLECTOR_RELEASE_NAME} unvariance/collector \
-            --set collector.image.repository="ghcr.io/yonch/memory-collector/collector" \
             --set collector.verbose=true \
             --set storage.type=s3 \
             --set storage.prefix="${UUID_PREFIX}" \
@@ -184,72 +250,15 @@ jobs:
           kubectl get pods -l app.kubernetes.io/name=collector
           kubectl logs -l app.kubernetes.io/name=collector -c collector --tail=10
 
-      # Now deploy OpenTelemetry after the collector is running
-      - name: Add OpenTelemetry Helm Repository
+      #### Start load generator
+
+      - name: Start Load Generator
         run: |
-          helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
-          helm repo update
+          helm upgrade $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml \
+            --set components.load-generator.enabled=true
 
-      - name: Install OpenTelemetry Demo
-        run: |
-          helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
 
-      # Configure apt while OpenTelemetry pods are coming up
-      - name: Disable IPv6
-        run: |
-          # Disable IPv6 via sysctl
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
-
-          # Force apt to use IPv4
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
-
-      - name: Configure apt to use HTTPS
-        run: |
-          # Update all archive URLs to use HTTPS
-          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
-
-          # Install apt-transport-https (might fail initially, hence the || true)
-          sudo apt-get update || true
-          sudo apt-get install -y apt-transport-https ca-certificates
-
-          # Update again with HTTPS now configure
-          sudo apt-get update
-
-      - name: Install sysstat
-        run: |
-          sudo apt-get install -y sysstat
-
-      - name: Wait for all Pods to be Ready
-        run: |
-          if ! kubectl wait --for=condition=Ready pods --all --timeout=150s; then
-            echo "Error: Not all pods reached Ready state within timeout"
-            kubectl get pods
-            echo "--------------------------------"
-            kubectl describe pods
-            exit 1
-          fi
-
-      - name: Print Events
-        run: | 
-          kubectl get events
-
-      - name: Disk Space Size
-        run: | 
-          df -h
-
-      - name: Print Pod Status
-        run: | 
-          kubectl get pods -n default
-      
-      - name: Describe Frontend Deployment
-        run: |
-          kubectl describe deployment frontend
-
-      - name: Describe Load Generator Deployment
-        run: |
-          kubectl describe deployment load-generator
+      #### Start PIDs stat collection
 
       - name: Start PIDs stat collection
         id: start-pidstat
@@ -313,30 +322,6 @@ jobs:
           echo "System metrics files:"
           ls -la system_metrics/
 
-      - name: Print events
-        run: |
-          kubectl get events
-
-      - name: Debug load-generator pod
-        run: |
-          LOADGEN_POD=$(kubectl get pods -l app.kubernetes.io/component=load-generator -o name | cut -d/ -f2)
-          echo "Load Generator Pod: $LOADGEN_POD"
-
-          # Get the logs of the previous load-generator pod
-          echo "--------------------------------"
-          echo "Getting PREVIOUS logs of load-generator pod"
-          kubectl logs $LOADGEN_POD --previous || true
-
-          # Get the logs of the load-generator pod
-          echo "--------------------------------"
-          echo "Getting logs of load-generator pod"
-          kubectl logs $LOADGEN_POD || true
-
-          # Describe the load-generator pod
-          echo "--------------------------------"
-          echo "Describing load-generator pod"
-          kubectl describe pod $LOADGEN_POD || true
-
       - name: Extract Locust CSV files
         run: |
           # Create directory for the results
@@ -387,7 +372,7 @@ jobs:
           # kill the logs
           kill -TERM $LOGS_PID || true
 
-      - name: Verify file was uploaded to S3
+      - name: Get Collector Parquet File
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
