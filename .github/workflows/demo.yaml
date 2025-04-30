@@ -99,8 +99,27 @@ jobs:
           helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
           helm repo update
 
+      - name: Wait for nodes
+        run: |
+          echo "Waiting for at least one node to be registered..."
+          until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for node registration..."
+          done
+          echo "Node(s) registered, waiting for Ready status..."
+          kubectl wait --for=condition=Ready nodes --all --timeout=300s      
 
-      #### Now we can deploy services
+      - name: Wait for kube-system pods
+        run: |
+          echo "Waiting for at least one kube-system pod to be registered..."
+          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
+            sleep 1
+            echo "Still waiting for kube-system pod registration..."
+          done
+          echo "Kube-system pod(s) registered, waiting for Ready status..."
+          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
+
+      #### Install OpenTelemetry Demo
       - name: Install OpenTelemetry Demo
         run: |
           helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
@@ -145,25 +164,6 @@ jobs:
 
       #### Wait for services to be ready
 
-      - name: Wait for nodes
-        run: |
-          echo "Waiting for at least one node to be registered..."
-          until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
-            sleep 1
-            echo "Still waiting for node registration..."
-          done
-          echo "Node(s) registered, waiting for Ready status..."
-          kubectl wait --for=condition=Ready nodes --all --timeout=300s      
-
-      - name: Wait for kube-system pods
-        run: |
-          echo "Waiting for at least one kube-system pod to be registered..."
-          until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
-            sleep 1
-            echo "Still waiting for kube-system pod registration..."
-          done
-          echo "Kube-system pod(s) registered, waiting for Ready status..."
-          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
 
       - name: Wait for all Pods to be Ready
         run: |
