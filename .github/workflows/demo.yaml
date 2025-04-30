@@ -314,7 +314,7 @@ jobs:
           LOGS_PID=$!
 
           # wait for the pods to be deleted, in the background
-          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=30s || true &
+          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=45s || true &
           WAIT_PID=$!
 
           # uninstall the chart
