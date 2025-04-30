@@ -7,6 +7,11 @@ on:
         required: false
         default: 'c5.9xlarge'
         type: string
+      pidstat-period:
+        description: 'Collection frequency for pidstat in seconds'
+        required: false
+        default: '1'
+        type: string
   push:
     branches:
       - main
@@ -42,6 +47,49 @@ jobs:
           instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '40'
+
+  install-apt-dependencies:
+    needs: [setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 5
+    env:
+      HOME: /root
+    steps:
+      - name: Disable IPv6
+        run: |
+          # Disable IPv6 via sysctl
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.lo.disable_ipv6=1
+
+          # Force apt to use IPv4
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+
+      - name: Configure apt to use HTTPS
+        run: |
+          # Update all archive URLs to use HTTPS
+          sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
+
+          # Install apt-transport-https (might fail initially, hence the || true)
+          sudo apt-get update || true
+          sudo apt-get install -y apt-transport-https ca-certificates
+
+          # Update again with HTTPS now configure
+          sudo apt-get update
+
+      - name: Install sysstat
+        run: |
+          sudo apt-get install -y sysstat
+          
+      - name: Install awscli
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          python3 -m zipfile -e awscliv2.zip .
+          chmod u+x ./aws/install
+          sudo ./aws/install
+          echo ls: `ls -l /usr/local/bin/aws` || true
+          chmod +x /usr/local/bin/aws || true
+          echo version: `/usr/local/bin/aws --version` || true
 
   k3-deployment:
     needs: [setup-runner]
@@ -96,8 +144,12 @@ jobs:
         run: | 
           kubectl get all -n kube-system
 
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
   microservice-deployment:
-    needs: [setup-runner,k3-deployment]
+    needs: [setup-runner, k3-deployment]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 15
     env:
@@ -109,10 +161,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
       - name: Add OpenTelemetry Helm Repository
         run: |
@@ -158,10 +206,10 @@ jobs:
       #     # Get accessible URL 
       #     echo "http://$(kubectl get svc frontendproxy --no-headers -o wide | awk '{print $4}')"
 
-  collector-deployment:
-    needs: [setup-runner, microservice-deployment]
+  collect-data:
+    needs: [setup-runner, install-apt-dependencies, microservice-deployment]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
       uuid-prefix: ${{ steps.generate-uuid.outputs.uuid }}
     env:
@@ -170,13 +218,49 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       HOME: /root
+      PIDSTAT_PERIOD: ${{ inputs.pidstat-period || '1' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Helm
+      - name: Add Unvariance Helm Repository
         run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm repo add unvariance https://unvariance.github.io/collector/charts
+          helm repo update
+
+      - name: Start PIDs stat collection
+        id: start-pidstat
+        run: |
+          # Create directory for metrics
+          mkdir -p /tmp/system_metrics
+          
+          # Set file paths
+          CPU_METRICS_FILE="/tmp/system_metrics/cpu_metrics.csv"
+          MEMORY_METRICS_FILE="/tmp/system_metrics/memory_metrics.csv"
+          
+          # Start CPU metrics collection in background
+          pidstat -H -u -p ALL ${PIDSTAT_PERIOD} | awk '{gsub(/^ +| +$/,""); gsub(/ +/,";"); print}' > ${CPU_METRICS_FILE} 2>&1 &
+          CPU_PIDSTAT_PID=$!
+          
+          # Start memory metrics collection in background
+          pidstat -H -r -p ALL ${PIDSTAT_PERIOD} | awk '{gsub(/^ +| +$/,""); gsub(/ +/,";"); print}' > ${MEMORY_METRICS_FILE} 2>&1 &
+          MEMORY_PIDSTAT_PID=$!
+          
+          # Verify processes are running
+          ps -p $CPU_PIDSTAT_PID
+          ps -p $MEMORY_PIDSTAT_PID
+          
+          # Set environment variables for later use
+          echo "CPU_METRICS_FILE=${CPU_METRICS_FILE}" >> $GITHUB_ENV
+          echo "MEMORY_METRICS_FILE=${MEMORY_METRICS_FILE}" >> $GITHUB_ENV
+          echo "CPU_PIDSTAT_PID=${CPU_PIDSTAT_PID}" >> $GITHUB_ENV
+          echo "MEMORY_PIDSTAT_PID=${MEMORY_PIDSTAT_PID}" >> $GITHUB_ENV
+          
+          echo "Started PIDs stat collection:"
+          echo "CPU metrics PID: ${CPU_PIDSTAT_PID}"
+          echo "Memory metrics PID: ${MEMORY_PIDSTAT_PID}"
+          echo "CPU metrics file: ${CPU_METRICS_FILE}"
+          echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
 
       - name: Generate UUID Prefix
         id: generate-uuid
@@ -184,11 +268,6 @@ jobs:
           UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
           echo "Using UUID prefix: $UUID"
           echo "uuid=$UUID" >> $GITHUB_OUTPUT
-
-      - name: Add Unvariance Helm Repository
-        run: |
-          helm repo add unvariance https://unvariance.github.io/collector/charts
-          helm repo update
 
       - name: Deploy Collector Helm Chart
         run: |
@@ -235,17 +314,29 @@ jobs:
         run: |
           kubectl logs -l app.kubernetes.io/name=collector || true
 
-  collect-data:
-    needs: [setup-runner, microservice-deployment, collector-deployment]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 10
-    env:
-      HOME: /root
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      S3_BUCKET: "unvariance-collector-test-irsa"
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      UUID_PREFIX: ${{ needs.collector-deployment.outputs.uuid-prefix }}
-    steps:
+      - name: Stop PIDs stat collection
+        run: |
+          echo "Stopping PIDs stat collection processes"
+          kill -TERM $CPU_PIDSTAT_PID || true
+          kill -TERM $MEMORY_PIDSTAT_PID || true
+          
+          # Wait a moment to ensure files are fully written
+          sleep 2
+          
+          # Check if files exist and have content
+          echo "CPU metrics file size: $(stat -c %s $CPU_METRICS_FILE || echo 'file not found')"
+          echo "Memory metrics file size: $(stat -c %s $MEMORY_METRICS_FILE || echo 'file not found')"
+          
+          # Create directory for system metrics
+          mkdir -p system_metrics
+          
+          # Copy the files to the upload directory
+          cp $CPU_METRICS_FILE system_metrics/cpu_metrics.csv || echo "Failed to copy CPU metrics file"
+          cp $MEMORY_METRICS_FILE system_metrics/memory_metrics.csv || echo "Failed to copy memory metrics file"
+          
+          # List the files
+          echo "System metrics files:"
+          ls -la system_metrics/
 
       - name: Print events
         run: |
@@ -271,19 +362,12 @@ jobs:
           echo "Describing load-generator pod"
           kubectl describe pod $LOADGEN_POD || true
 
-      - name: Install awscli
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          python3 -m zipfile -e awscliv2.zip .
-          chmod u+x ./aws/install
-          sudo ./aws/install
-          echo ls: `ls -l /usr/local/bin/aws` || true
-          chmod +x /usr/local/bin/aws || true
-          echo version: `/usr/local/bin/aws --version` || true
-
       - name: Check for Collector Files in S3
         run: |
           echo "Checking for files with prefix ${UUID_PREFIX} in S3 bucket ${S3_BUCKET}"
+          
+          # Get UUID prefix from the output
+          UUID_PREFIX="${{ steps.generate-uuid.outputs.uuid }}-"
           
           # List files with the UUID prefix
           S3_FILES=$(aws s3 ls "s3://${S3_BUCKET}/${UUID_PREFIX}" --recursive || echo "")
@@ -336,10 +420,17 @@ jobs:
           name: collector-parquet-results
           path: /tmp/collector-parquet.parquet
           retention-days: 28
+          
+      - name: Upload System Metrics as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: system-metrics-results
+          path: system_metrics/
+          retention-days: 28
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, k3-deployment, microservice-deployment, collector-deployment, collect-data]
+    needs: [setup-runner, k3-deployment, microservice-deployment, collect-data]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
