@@ -44,6 +44,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           subnet-id: ${{ secrets.AWS_SUBNET_ID }}
           security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
+          iam-role-name: github-actions-runner          
           instance-type: ${{ inputs.instance-type || 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge' }}
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '40'
