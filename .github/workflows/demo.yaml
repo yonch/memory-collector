@@ -315,6 +315,12 @@ jobs:
           kubectl logs -f -l app.kubernetes.io/name=collector || true &
           LOGS_PID=$!
 
+          # trigger a flush by sending a SIGTERM to the collector pod
+          kubectl exec -it -l app.kubernetes.io/name=collector -c collector -- sh -c 'kill -15 1' || true
+
+          # wait for a few seconds to see if there is a flush
+          sleep 10
+
           # wait for the pods to be deleted, in the background
           kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=45s || true &
           WAIT_PID=$!
