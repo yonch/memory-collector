@@ -139,7 +139,6 @@ jobs:
           helm install ${COLLECTOR_RELEASE_NAME} unvariance/collector \
             --set collector.image.repository="ghcr.io/yonch/memory-collector/collector" \
             --set collector.verbose=true \
-            --set collector.parquetFileSize=1000000 \
             --set storage.type=s3 \
             --set storage.prefix="${UUID_PREFIX}" \
             --set storage.s3.bucket="${S3_BUCKET}" \
@@ -193,7 +192,9 @@ jobs:
           kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | tee /dev/stderr --output-error=exit | grep -m 1 "Closed" &
           LOG_PID=$!
 
-          timeout 20s sh -c 'wait $LOG_PID'
+          sleep 30 && kill -TERM $LOG_PID &
+
+          wait $LOG_PID
 
       - name: Verify file was uploaded to S3
         run: |
