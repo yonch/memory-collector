@@ -196,9 +196,6 @@ jobs:
         run: |
           kubectl describe deployment frontend
 
-      - name: Describe Load Generator Deployment
-        run: |
-          kubectl describe deployment load-generator
 
       #### Deploy Collector 
 
@@ -255,7 +252,11 @@ jobs:
       - name: Start Load Generator
         run: |
           helm upgrade $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml \
-            --set components.load-generator.enabled=true
+            --set components.load-generator.enabled=true --wait
+
+      - name: Describe Load Generator Deployment
+        run: |
+          kubectl describe deployment load-generator
 
 
       #### Start PIDs stat collection
