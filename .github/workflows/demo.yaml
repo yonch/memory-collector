@@ -68,16 +68,19 @@ jobs:
         run: |
           mkdir -p $HOME
 
-      - name: Install K3s Cluster
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: [k8s] Install K3s Cluster
         run: |
           # Installs K3s (a lightweight Kubernetes distribution) on the system
           curl -sfL https://get.k3s.io | sh
 
-      - name: Status of K3s Installation
+      - name: [k8s] Status of K3s Installation
         run: |
           systemctl status k3s  
       
-      - name: Wait for Kubernetes API
+      - name: [k8s] Wait for Kubernetes API
         run: |
           echo "Waiting for Kubernetes API..."
           until kubectl get nodes &>/dev/null; do
@@ -86,20 +89,17 @@ jobs:
           done
           echo "Kubernetes API is available!"
 
-      - name: Install Helm
+      - name: [k8s] Install Helm
         run: |
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Add Helm Repositories
+      - name: [k8s] Add Helm Repositories
         run: |
           helm repo add unvariance https://unvariance.github.io/collector/charts
           helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
           helm repo update
 
-      - name: Wait for nodes
+      - name: [k8s] Wait for nodes
         run: |
           echo "Waiting for at least one node to be registered..."
           until [ $(kubectl get nodes --no-headers | wc -l) -gt 0 ]; do
@@ -109,7 +109,7 @@ jobs:
           echo "Node(s) registered, waiting for Ready status..."
           kubectl wait --for=condition=Ready nodes --all --timeout=300s      
 
-      - name: Wait for kube-system pods
+      - name: [k8s] Wait for kube-system pods
         run: |
           echo "Waiting for at least one kube-system pod to be registered..."
           until [ $(kubectl get pods --namespace kube-system --no-headers | wc -l) -gt 0 ]; do
@@ -120,13 +120,13 @@ jobs:
           kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
 
       #### Install OpenTelemetry Demo
-      - name: Install OpenTelemetry Demo
+      - name: [workload] Install OpenTelemetry Demo
         run: |
           helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
 
       #### Install dependencies
 
-      - name: Disable IPv6
+      - name: [install] Disable IPv6
         run: |
           # Disable IPv6 via sysctl
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
@@ -136,7 +136,7 @@ jobs:
           # Force apt to use IPv4
           echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
 
-      - name: Configure apt to use HTTPS
+      - name: [install] Configure apt to use HTTPS
         run: |
           # Update all archive URLs to use HTTPS
           sudo sed -i 's/http:/https:/g' /etc/apt/sources.list
@@ -148,11 +148,11 @@ jobs:
           # Update again with HTTPS now configure
           sudo apt-get update
 
-      - name: Install sysstat
+      - name: [install] Install sysstat
         run: |
           sudo apt-get install -y sysstat
 
-      - name: Install awscli
+      - name: [install] Install awscli
         run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           python3 -m zipfile -e awscliv2.zip .
@@ -165,7 +165,7 @@ jobs:
       #### Wait for services to be ready
 
 
-      - name: Wait for all Pods to be Ready
+      - name: [stabilize] Wait for all Pods to be Ready
         run: |
           if ! kubectl wait --for=condition=Ready pods --all --timeout=150s; then
             echo "Error: Not all pods reached Ready state within timeout"
@@ -176,37 +176,37 @@ jobs:
           fi
 
       #### Show system status
-      - name: Get Default objects in kube-system
+      - name: [status] Get Default objects in kube-system
         run: | 
           kubectl get all -n kube-system
 
-      - name: Print Events
+      - name: [status] Print Events
         run: | 
           kubectl get events
 
-      - name: Disk Space Size
+      - name: [status] Disk Space Size
         run: | 
           df -h
 
-      - name: Print Pod Status
+      - name: [status] Print Pod Status
         run: | 
           kubectl get pods -n default
       
-      - name: Describe Frontend Deployment
+      - name: [status] Describe Frontend Deployment
         run: |
           kubectl describe deployment frontend
 
 
       #### Deploy Collector 
 
-      - name: Generate UUID Prefix
+      - name: [collector] Generate UUID Prefix
         id: generate-uuid
         run: |
           UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
           echo "Using UUID prefix: $UUID"
           echo "uuid=$UUID" >> $GITHUB_OUTPUT
 
-      - name: Deploy Collector Helm Chart
+      - name: [collector] Deploy Collector Helm Chart
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
@@ -227,7 +227,7 @@ jobs:
             --set resources.requests.cpu=1000m \
             --wait
 
-      - name: Wait for Collector Pods to be Ready
+      - name: [collector] Wait for Collector Pods to be Ready
         run: |
           kubectl wait --for=condition=Ready pods --timeout=60s -l app.kubernetes.io/name=collector || WAIT_STATUS=$?
           echo "Wait exit status: $WAIT_STATUS"
@@ -242,26 +242,26 @@ jobs:
             exit 1
           fi
 
-      - name: Show Collector Pod Status
+      - name: [collector] Show Collector Pod Status
         run: |
           kubectl get pods -l app.kubernetes.io/name=collector
           kubectl logs -l app.kubernetes.io/name=collector -c collector --tail=10
 
       #### Start load generator
 
-      - name: Start Load Generator
+      - name: [workload] Start Load Generator
         run: |
           helm upgrade $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml \
             --set components.load-generator.enabled=true --wait
 
-      - name: Describe Load Generator Deployment
+      - name: [workload] Describe Load Generator Deployment
         run: |
           kubectl describe deployment load-generator
 
 
       #### Start PIDs stat collection
 
-      - name: Start PIDs stat collection
+      - name: [metrics] Start PIDs stat collection
         id: start-pidstat
         run: |
           # Create directory for metrics
@@ -295,11 +295,11 @@ jobs:
           echo "CPU metrics file: ${CPU_METRICS_FILE}"
           echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
 
-      - name: Display logs while collector runs
+      - name: [metrics] Display logs while collector runs
         run: |
           timeout 20s kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true
 
-      - name: Stop PIDs stat collection
+      - name: [metrics] Stop PIDs stat collection
         run: |
           echo "Stopping PIDs stat collection processes"
           kill -TERM $CPU_PIDSTAT_PID || true
@@ -323,7 +323,7 @@ jobs:
           echo "System metrics files:"
           ls -la system_metrics/
 
-      - name: Extract Locust CSV files
+      - name: [metrics] Extract Locust CSV files
         run: |
           # Create directory for the results
           mkdir -p locust_results
@@ -340,21 +340,21 @@ jobs:
           echo "Extracted CSV files:"
           ls -la locust_results/
           
-      - name: Upload Locust Results as Artifacts
+      - name: [metrics] Upload Locust Results as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: locust-csv-results
           path: locust_results/
           retention-days: 28
 
-      - name: Upload System Metrics as Artifacts
+      - name: [metrics] Upload System Metrics as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: system-metrics-results
           path: system_metrics/
           retention-days: 28
 
-      - name: Uninstall Collector Helm Chart
+      - name: [collector] Uninstall Collector Helm Chart
         run: |
           # see the logs while uninstalling
           kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true &
@@ -373,7 +373,7 @@ jobs:
           # kill the logs
           kill -TERM $LOGS_PID || true
 
-      - name: Get Collector Parquet File
+      - name: [collector] Get Collector Parquet File
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
@@ -403,7 +403,7 @@ jobs:
             echo "Downloaded collector file size: ${FILE_SIZE} bytes"
           fi
 
-      - name: Upload Collector Results as Artifacts
+      - name: [collector] Upload Collector Results as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: collector-parquet-results
