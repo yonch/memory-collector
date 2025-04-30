@@ -309,11 +309,22 @@ jobs:
 
       - name: Uninstall Collector Helm Chart
         run: |
-          helm uninstall ${RELEASE_NAME} --wait --timeout=60s
+          # see the logs while uninstalling
+          kubectl logs -f -l app.kubernetes.io/name=collector || true &
+          LOGS_PID=$!
 
-      - name: Wait for collector pods to complete
-        run: |
-          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=30s || true
+          # wait for the pods to be deleted, in the background
+          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=30s || true &
+          WAIT_PID=$!
+
+          # uninstall the chart
+          helm uninstall ${RELEASE_NAME}
+
+          # wait for the pods to be deleted
+          wait $WAIT_PID || true
+
+          # kill the logs
+          kill -TERM $LOGS_PID || true
 
       - name: Collector logs
         run: |
