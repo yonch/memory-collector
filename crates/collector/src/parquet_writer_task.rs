@@ -70,7 +70,9 @@ impl ParquetWriterTask {
     /// Signal the task to rotate the current parquet file
     pub async fn rotate(&self) -> Result<()> {
         // Try to send rotation signal
-        self.rotate_sender.send(()).await
+        self.rotate_sender
+            .send(())
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to send rotation signal: {}", e))?;
         Ok(())
     }
