@@ -49,14 +49,20 @@ jobs:
           aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
           volume-size: '40'
 
-  prepare-workload:
+  run-workload:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 20
+    timeout-minutes: 30
+    outputs:
+      uuid-prefix: ${{ steps.generate-uuid.outputs.uuid }}
     env:
       RELEASE_NAME: otel-demo
+      COLLECTOR_RELEASE_NAME: collector
+      S3_BUCKET: "unvariance-collector-test-irsa"
+      AWS_REGION: ${{ secrets.AWS_REGION }}
       HOME: /root
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      PIDSTAT_PERIOD: ${{ inputs.pidstat-period || '1' }}
     steps:
       - name: Create HOME directory
         run: |
@@ -101,6 +107,100 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Install AWS CLI before deploying the collector
+      - name: Install awscli
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          python3 -m zipfile -e awscliv2.zip .
+          chmod u+x ./aws/install
+          sudo ./aws/install
+          echo ls: `ls -l /usr/local/bin/aws` || true
+          chmod +x /usr/local/bin/aws || true
+          echo version: `/usr/local/bin/aws --version` || true
+
+      # Generate UUID and deploy collector before OpenTelemetry
+      - name: Generate UUID Prefix
+        id: generate-uuid
+        run: |
+          UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
+          echo "Using UUID prefix: $UUID"
+          echo "uuid=$UUID" >> $GITHUB_OUTPUT
+
+      - name: Add Unvariance Helm Repository
+        run: |
+          helm repo add unvariance https://unvariance.github.io/collector/charts
+          helm repo update
+
+      - name: Deploy Collector Helm Chart
+        run: |
+          UUID_PREFIX="${{ steps.generate-uuid.outputs.uuid }}-"
+          
+          # Install the helm chart using --set for values
+          helm install ${COLLECTOR_RELEASE_NAME} unvariance/collector \
+            --set collector.image.repository="ghcr.io/yonch/memory-collector/collector" \
+            --set collector.verbose=true \
+            --set collector.parquetFileSize=1000000 \
+            --set storage.type=s3 \
+            --set storage.prefix="${UUID_PREFIX}" \
+            --set storage.s3.bucket="${S3_BUCKET}" \
+            --set storage.s3.region="${AWS_REGION}" \
+            --set storage.s3.auth.method=iam \
+            --set resources.limits.cpu=1000m \
+            --set resources.requests.cpu=1000m
+
+      - name: Wait for Collector Pods to be Ready
+        run: |
+          kubectl wait --for=condition=Ready pods --timeout=60s -l app.kubernetes.io/name=collector || WAIT_STATUS=$?
+          echo "Wait exit status: $WAIT_STATUS"
+          
+          # Always describe pods, regardless of wait result
+          echo "Describing collector pods:"
+          kubectl describe pods -l app.kubernetes.io/name=collector
+          
+          # Only fail the job if wait failed
+          if [ -n "$WAIT_STATUS" ] && [ "$WAIT_STATUS" -ne 0 ]; then
+            echo "ERROR: Collector pods are not ready after timeout"
+            exit 1
+          fi
+
+      - name: Show Collector Pod Status
+        run: |
+          kubectl get pods -l app.kubernetes.io/name=collector
+          
+      - name: Send SIGUSR1 to collector to rotate files
+        run: |
+          # Get the collector pod name
+          COLLECTOR_POD=$(kubectl get pods -l app.kubernetes.io/name=collector -o name | cut -d/ -f2)
+          echo "Collector Pod: $COLLECTOR_POD"
+          
+          # Send SIGUSR1 to the collector to rotate files
+          kubectl exec -it $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
+          
+          # Wait a moment for the rotation to complete
+          timeout 20s kubectl logs -f --tail=-1 $COLLECTOR_POD -c collector | grep -m 1 "Closed" || true
+          
+          # Check logs for file closure
+          kubectl logs $COLLECTOR_POD -c collector | grep -i "Closed"
+
+      - name: Verify file was uploaded to S3
+        run: |
+          # Get UUID prefix from the output
+          UUID_PREFIX="${{ steps.generate-uuid.outputs.uuid }}-"
+          
+          # List files with the UUID prefix
+          echo "Checking for files with prefix ${UUID_PREFIX} in S3 bucket ${S3_BUCKET}"
+          S3_FILES=$(aws s3 ls "s3://${S3_BUCKET}/${UUID_PREFIX}" --recursive || echo "")
+          
+          if [ -z "$S3_FILES" ]; then
+            echo "No files found with prefix ${UUID_PREFIX} in bucket ${S3_BUCKET}"
+            exit 1
+          else
+            echo "Found files with prefix ${UUID_PREFIX}:"
+            echo "$S3_FILES"
+            echo "File rotation successful!"
+          fi
+
+      # Now deploy OpenTelemetry after the collector is running
       - name: Add OpenTelemetry Helm Repository
         run: |
           helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
@@ -110,7 +210,7 @@ jobs:
         run: |
           helm install $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml
 
-      # Install apt dependencies while waiting for the microservices to come up
+      # Configure apt while OpenTelemetry pods are coming up
       - name: Disable IPv6
         run: |
           # Disable IPv6 via sysctl
@@ -136,16 +236,6 @@ jobs:
       - name: Install sysstat
         run: |
           sudo apt-get install -y sysstat
-          
-      - name: Install awscli
-        run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          python3 -m zipfile -e awscliv2.zip .
-          chmod u+x ./aws/install
-          sudo ./aws/install
-          echo ls: `ls -l /usr/local/bin/aws` || true
-          chmod +x /usr/local/bin/aws || true
-          echo version: `/usr/local/bin/aws --version` || true
 
       # Wait for kube-system pods after microservices installation starts
       - name: Wait for kube-system pods
@@ -188,28 +278,6 @@ jobs:
         run: |
           kubectl describe deployment load-generator
 
-  collect-data:
-    needs: [setup-runner, prepare-workload]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 15
-    outputs:
-      uuid-prefix: ${{ steps.generate-uuid.outputs.uuid }}
-    env:
-      RELEASE_NAME: collector
-      S3_BUCKET: "unvariance-collector-test-irsa"
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-      HOME: /root
-      PIDSTAT_PERIOD: ${{ inputs.pidstat-period || '1' }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Add Unvariance Helm Repository
-        run: |
-          helm repo add unvariance https://unvariance.github.io/collector/charts
-          helm repo update
-
       - name: Start PIDs stat collection
         id: start-pidstat
         run: |
@@ -244,84 +312,9 @@ jobs:
           echo "CPU metrics file: ${CPU_METRICS_FILE}"
           echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
 
-      - name: Generate UUID Prefix
-        id: generate-uuid
-        run: |
-          UUID=$(python3 -c "import uuid; print(uuid.uuid4())")
-          echo "Using UUID prefix: $UUID"
-          echo "uuid=$UUID" >> $GITHUB_OUTPUT
-
-      - name: Deploy Collector Helm Chart
-        run: |
-          UUID_PREFIX="${{ steps.generate-uuid.outputs.uuid }}-"
-          
-          # Install the helm chart using --set for values
-          helm install ${RELEASE_NAME} unvariance/collector \
-            --set collector.verbose=true \
-            --set collector.parquetFileSize=1000000 \
-            --set storage.type=s3 \
-            --set storage.prefix="${UUID_PREFIX}" \
-            --set storage.s3.bucket="${S3_BUCKET}" \
-            --set storage.s3.region="${AWS_REGION}" \
-            --set storage.s3.auth.method=iam \
-            --set resources.limits.cpu=1000m \
-            --set resources.requests.cpu=1000m
-
-      - name: Wait for Collector Pods to be Ready
-        run: |
-          kubectl wait --for=condition=Ready pods --timeout=60s -l app.kubernetes.io/name=collector || WAIT_STATUS=$?
-          echo "Wait exit status: $WAIT_STATUS"
-          
-          # Always describe pods, regardless of wait result
-          echo "Describing collector pods:"
-          kubectl describe pods -l app.kubernetes.io/name=collector
-          
-          # Only fail the job if wait failed
-          if [ -n "$WAIT_STATUS" ] && [ "$WAIT_STATUS" -ne 0 ]; then
-            echo "ERROR: Collector pods are not ready after timeout"
-            exit 1
-          fi
-
-      - name: Show Pod Status
-        run: |
-          kubectl get pods
-          kubectl describe pods -l app.kubernetes.io/name=collector
-
       - name: Display logs while collector runs
         run: |
           timeout 20s kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true
-
-      - name: Uninstall Collector Helm Chart
-        run: |
-          # see the logs while uninstalling
-          kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true &
-          LOGS_PID=$!
-
-          # trigger a flush by sending a SIGINT to the collector pod
-          # get the collector pod name
-          COLLECTOR_POD=$(kubectl get pods -l app.kubernetes.io/name=collector -o name | cut -d/ -f2)
-          echo "Collector Pod: $COLLECTOR_POD"
-          kubectl exec -it $COLLECTOR_POD -c collector -- sh -c 'kill -INT 1' || true
-
-          # wait for a few seconds to see if there is a flush
-          sleep 10
-
-          # wait for the pods to be deleted, in the background
-          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=45s || true &
-          WAIT_PID=$!
-
-          # uninstall the chart
-          helm uninstall ${RELEASE_NAME}
-
-          # wait for the pods to be deleted
-          wait $WAIT_PID || true
-
-          # kill the logs
-          kill -TERM $LOGS_PID || true
-
-      - name: Collector logs
-        run: |
-          kubectl logs -l app.kubernetes.io/name=collector || true
 
       - name: Stop PIDs stat collection
         run: |
@@ -371,7 +364,6 @@ jobs:
           echo "Describing load-generator pod"
           kubectl describe pod $LOADGEN_POD || true
 
-      
       - name: Extract Locust CSV files
         run: |
           # Create directory for the results
@@ -403,14 +395,45 @@ jobs:
           path: system_metrics/
           retention-days: 28
 
-      - name: Check for Collector Files in S3
+      - name: Uninstall Collector Helm Chart
         run: |
-          echo "Checking for files with prefix ${UUID_PREFIX} in S3 bucket ${S3_BUCKET}"
-          
+          # see the logs while uninstalling
+          kubectl logs -f --tail=-1 -l app.kubernetes.io/name=collector || true &
+          LOGS_PID=$!
+
+          # trigger a rotation by sending a SIGUSR1 to the collector pod
+          # get the collector pod name
+          COLLECTOR_POD=$(kubectl get pods -l app.kubernetes.io/name=collector -o name | cut -d/ -f2)
+          echo "Collector Pod: $COLLECTOR_POD"
+          kubectl exec -it $COLLECTOR_POD -c collector -- sh -c 'kill -USR1 1' || true
+
+          # wait for a few seconds to see if there is a flush
+          sleep 10
+
+          # wait for the pods to be deleted, in the background
+          kubectl wait --for=delete pods -l app.kubernetes.io/name=collector --timeout=45s || true &
+          WAIT_PID=$!
+
+          # uninstall the chart
+          helm uninstall ${COLLECTOR_RELEASE_NAME}
+
+          # wait for the pods to be deleted
+          wait $WAIT_PID || true
+
+          # kill the logs
+          kill -TERM $LOGS_PID || true
+
+      - name: Collector logs
+        run: |
+          kubectl logs -l app.kubernetes.io/name=collector || true
+
+      - name: Verify multiple files were uploaded to S3
+        run: |
           # Get UUID prefix from the output
           UUID_PREFIX="${{ steps.generate-uuid.outputs.uuid }}-"
           
           # List files with the UUID prefix
+          echo "Checking for files with prefix ${UUID_PREFIX} in S3 bucket ${S3_BUCKET}"
           S3_FILES=$(aws s3 ls "s3://${S3_BUCKET}/${UUID_PREFIX}" --recursive || echo "")
           
           if [ -z "$S3_FILES" ]; then
@@ -420,15 +443,24 @@ jobs:
             echo "Found files with prefix ${UUID_PREFIX}:"
             echo "$S3_FILES"
             
-            # Get the first file path
-            FIRST_FILE=$(echo "$S3_FILES" | head -n 1 | awk '{print $4}')
+            # Count the number of files
+            FILE_COUNT=$(echo "$S3_FILES" | wc -l)
+            echo "Number of collector files: ${FILE_COUNT}"
             
-            # Download the file for validation
-            aws s3 cp "s3://${S3_BUCKET}/${FIRST_FILE}" /tmp/collector-parquet.parquet
+            if [ "$FILE_COUNT" -lt 2 ]; then
+              echo "ERROR: Expected at least 2 files, but found only ${FILE_COUNT}"
+              exit 1
+            fi
+            
+            # Get the last file path
+            LAST_FILE=$(echo "$S3_FILES" | tail -n 1 | awk '{print $4}')
+            
+            # Download the last file for validation
+            aws s3 cp "s3://${S3_BUCKET}/${LAST_FILE}" /tmp/collector-parquet.parquet
             
             # Check file size
             FILE_SIZE=$(stat -c %s /tmp/collector-parquet.parquet)
-            echo "Downloaded collector file size: ${FILE_SIZE} bytes"
+            echo "Downloaded last collector file size: ${FILE_SIZE} bytes"
           fi
 
       - name: Upload Collector Results as Artifacts
@@ -440,7 +472,7 @@ jobs:
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, prepare-workload, collect-data]
+    needs: [setup-runner, run-workload]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
