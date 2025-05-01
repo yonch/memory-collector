@@ -157,33 +157,6 @@ jobs:
           perf_version=$(perf --version 2>&1)
           echo "Installed perf: $perf_version"
 
-      - name: (install) Install Rust and addr2line
-        run: |
-          # Install Rust
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-          source "$HOME/.cargo/env"
-          
-          # Verify Rust installation
-          rustc --version
-          cargo --version
-          
-          # Install addr2line from crates.io
-          cargo install addr2line
-          
-          # Check if the system addr2line exists and back it up if it does
-          if [ -f /usr/bin/addr2line ]; then
-            sudo mv /usr/bin/addr2line /usr/bin/addr2line.bak
-            echo "Backed up original addr2line to /usr/bin/addr2line.bak"
-          fi
-          
-          # Copy the Rust addr2line to replace the system version
-          sudo cp "$HOME/.cargo/bin/addr2line" /usr/bin/addr2line
-          sudo chmod +x /usr/bin/addr2line
-          
-          # Verify the replacement
-          addr2line --version
-          echo "Replaced system addr2line with Rust implementation"
-
       - name: (install) Install awscli
         run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -339,21 +312,9 @@ jobs:
           # Create directory for perf results
           mkdir -p perf_results
           
-          # Download perf-archive.sh script
-          curl -o /tmp/perf-archive.sh https://raw.githubusercontent.com/torvalds/linux/refs/heads/master/tools/perf/perf-archive.sh
-          chmod +x /tmp/perf-archive.sh
-          
-          # Create a perf archive with all necessary files for symbol resolution
-          cd /tmp/perf_data
-          /tmp/perf-archive.sh --all
-          cd -
-          
-          # Copy only the all-in-one archive to the upload directory
-          cp /tmp/perf_data/perf.all-*.tar.bz2 perf_results/ || echo "Failed to copy perf archive file"
-          
           # List the perf files
           echo "Perf data files:"
-          ls -la perf_results/
+          ls -la /tmp/perf_data/
 
       - name: (metrics) Stop PIDs stat collection
         run: |
@@ -466,111 +427,70 @@ jobs:
           path: /tmp/collector-parquet.parquet
           retention-days: 28
 
-      - name: (metrics) Generate Perf Report
+      - name: (install) Install Rust and addr2line
         run: |
-          # Generate a report summary in text format
-          echo "Generating perf report - this may take some time..."
-          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
+          # Install Rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
           
-          # List the perf files
-          echo "Perf data files:"
-          ls -la perf_results/
-
-      - name: (metrics) Upload Perf Results as Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-data-results
-          path: perf_results/
-          retention-days: 28
-
-  generate-flamegraph:
-    name: Generate Flame Graph with Inferno
-    needs: [run-workload]
-    runs-on: ubuntu-latest
-    container:
-      image: rust:latest
-    steps:
-      - name: Install Dependencies
-        run: |
-          apt-get update
-          apt-get install -y linux-perf
-
-      - name: Install and Replace addr2line
-        run: |
-          # Install the Rust-based addr2line
+          # Verify Rust installation
+          rustc --version
+          cargo --version
+          
+          # Install addr2line from crates.io
           cargo install addr2line
           
-          # Check if system addr2line exists and back it up
+          # Check if the system addr2line exists and back it up if it does
           if [ -f /usr/bin/addr2line ]; then
-            mv /usr/bin/addr2line /usr/bin/addr2line.bak
+            sudo mv /usr/bin/addr2line /usr/bin/addr2line.bak
             echo "Backed up original addr2line to /usr/bin/addr2line.bak"
           fi
           
           # Copy the Rust addr2line to replace the system version
-          cp "$HOME/.cargo/bin/addr2line" /usr/bin/addr2line
-          chmod +x /usr/bin/addr2line
+          sudo cp "$HOME/.cargo/bin/addr2line" /usr/bin/addr2line
+          sudo chmod +x /usr/bin/addr2line
           
           # Verify the replacement
           addr2line --version
           echo "Replaced system addr2line with Rust implementation"
-
-      - name: Install Inferno
-        run: |
+          
+          # Install Inferno for flamegraph generation
           cargo install inferno
-
-      - name: Download Perf Data
-        uses: actions/download-artifact@v4
-        with:
-          name: perf-data-results
-          path: perf_data
-
-      - name: List Downloaded Perf Files
-        run: |
-          ls -la perf_data/
           
-      - name: Download perf-archive.sh script
-        run: |
-          curl -o perf-archive.sh https://raw.githubusercontent.com/torvalds/linux/refs/heads/master/tools/perf/perf-archive.sh
-          chmod +x perf-archive.sh
+          # Verify Inferno installation
+          inferno-flamegraph --help
 
-      - name: Extract Perf Archive
-        run: |
-          # Find the perf archive file
-          PERF_ARCHIVE=$(find perf_data -name "perf.all-*.tar.bz2" | head -1)
-          
-          # Extract the archive to the current directory
-          # This will extract both perf.data and perf.symbols.tar.bz2
-          tar xf $PERF_ARCHIVE
-          
-          # Extract the symbols to ~/.debug
-          mkdir -p ~/.debug
-          tar xf perf.symbols.tar.bz2 -C ~/.debug
-          
-          echo "Extracted files:"
-          ls -la
-
-      - name: Generate Flame Graph
+      - name: (metrics) Generate Perf Report and Flamegraphs
         run: |
           mkdir -p flamegraph_results
           
-          # Generate collapsed stack traces
-          perf script -i perf.data | inferno-collapse-perf > flamegraph_results/stacks.folded
+          # Generate a report summary in text format
+          echo "Generating perf report - this may take some time..."
+          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
           
-          # Generate flamegraph
+          # Generate collapsed stack traces (folded)
+          echo "Generating folded stacks from perf data..."
+          perf script -i /tmp/perf_data/perf.data | inferno-collapse-perf > flamegraph_results/stacks.folded
+          
+          # Generate flamegraphs with different color schemes
+          echo "Generating flamegraphs from folded stacks..."
           cat flamegraph_results/stacks.folded | inferno-flamegraph > flamegraph_results/flamegraph.svg
-          
-          # Generate flamegraph with different color schemes
           cat flamegraph_results/stacks.folded | inferno-flamegraph --color mem > flamegraph_results/flamegraph_mem.svg
           cat flamegraph_results/stacks.folded | inferno-flamegraph --color io > flamegraph_results/flamegraph_io.svg
-
-          # List the generated files
+          
+          # List the perf and flamegraph files
+          echo "Perf results:"
+          ls -la perf_results/
+          echo "Flamegraph results:"
           ls -la flamegraph_results/
 
-      - name: Upload Flame Graph Results
+      - name: (metrics) Upload Perf and Flamegraph Results as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: flamegraph-results
-          path: flamegraph_results/
+          name: performance-analysis
+          path: |
+            perf_results/
+            flamegraph_results/
           retention-days: 28
 
   generate-visualizations:
