@@ -166,6 +166,102 @@ The script generates three types of visualizations:
 
 Additionally, the script prints summary statistics including mean and peak CPU utilization for both the target process and other processes. 
 
+## LLC Misses Plotting
+
+The `plot_llc_misses.R` script generates a stacked area graph showing Last Level Cache (LLC) misses per process at millisecond granularity.
+
+### Prerequisites
+
+The script requires the following R packages:
+- nanoparquet
+- ggplot2
+- dplyr
+- tidyr
+
+You can install them with:
+
+```R
+install.packages(c("nanoparquet", "ggplot2", "dplyr", "tidyr"))
+```
+
+### Usage
+
+```bash
+Rscript plot_llc_misses.R [parquet_file] [start_time_offset] [window_size] [output_file]
+```
+
+- `[parquet_file]`: Path to the parquet file containing collector data (default: "scripts/collector-parquet.parquet")
+- `[start_time_offset]`: Seconds after experiment start to begin analysis (default: 110)
+- `[window_size]`: Duration in seconds to analyze (default: 1)
+- `[output_file]`: Base name for output files (default: "llc_misses")
+
+### Examples
+
+#### Example 1: Using default settings
+
+```bash
+Rscript plot_llc_misses.R scripts/collector-parquet.parquet
+```
+
+This command will:
+1. Parse the LLC miss data from `scripts/collector-parquet.parquet`
+2. Filter for data at 110 seconds after experiment start, with a 1-second window
+3. Create a stacked area graph showing LLC misses by process
+4. Save the plot as `llc_misses.png` and `llc_misses.pdf`
+
+#### Example 2: Specifying time window and output name
+
+```bash
+Rscript plot_llc_misses.R scripts/collector-parquet.parquet 120 2 high_load_llc
+```
+
+This will analyze a 2-second window starting at 120 seconds into the experiment and save the output as `high_load_llc.png` and `high_load_llc.pdf`.
+
+### Output
+
+The script generates:
+- A PNG image of the stacked area plot
+- A PDF version of the plot
+
+The plot shows:
+- The top 10 processes by LLC misses, with all others grouped as "other"
+- Stacked LLC misses by process on the Y-axis
+- Time in milliseconds on the X-axis (within the selected window)
+- A title and subtitle indicating the time window being visualized
+
+### Working with Sample Data
+
+For working with smaller sample datasets, a specialized script `plot_llc_misses_sample.R` is provided. This script creates visualizations without requiring specific time windows.
+
+#### Usage for Sample Data
+
+```bash
+Rscript plot_llc_misses_sample.R [parquet_file] [output_file]
+```
+
+- `[parquet_file]`: Path to the sample parquet file (default: "scripts/collector-parquet-sample.parquet")
+- `[output_file]`: Base name for output files (default: "llc_misses_sample")
+
+#### Output for Sample Data
+
+The sample script generates two types of visualizations:
+
+1. **Stacked Area Plot**:
+   - Shows LLC misses over time, stacked by process
+   - Uses all available time points in the sample data
+   - Output: `<output_file>_area.png` and `<output_file>_area.pdf`
+
+2. **Bar Plot**:
+   - Shows total LLC misses by process for the top 15 processes
+   - Provides a clearer view of which processes contribute most to LLC misses
+   - Output: `<output_file>_bar.png` and `<output_file>_bar.pdf`
+
+Example:
+
+```bash
+Rscript plot_llc_misses_sample.R scripts/collector-parquet-sample.parquet custom_output
+```
+
 ## Workload Performance Visualization
 
 The `plot_workload_performance.R` script generates visualizations from Locust load generator metrics, focusing on workload performance characteristics such as RPS and latency percentiles.
