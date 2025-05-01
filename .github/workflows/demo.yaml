@@ -427,13 +427,6 @@ jobs:
           path: /tmp/collector-parquet.parquet
           retention-days: 28
 
-      - name: (perf) Upload Perf Data as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-data
-          path: /tmp/perf_data/perf.data
-          retention-days: 28
-
   generate-flamegraphs:
     name: Generate Flamegraphs
     needs: [setup-runner, run-workload]
@@ -447,12 +440,6 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Download Perf Data
-        uses: actions/download-artifact@v4
-        with:
-          name: perf-data
-          path: /tmp/perf_data
 
       - name: (install) Install Rust and addr2line
         run: |
