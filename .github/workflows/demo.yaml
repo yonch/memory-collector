@@ -315,9 +315,6 @@ jobs:
           # Copy perf data to the upload directory
           cp /tmp/perf_data/perf.data perf_results/ || echo "Failed to copy perf.data file"
           
-          # Generate a report summary in text format
-          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
-          
           # List the perf files
           echo "Perf data files:"
           ls -la perf_results/
@@ -377,13 +374,6 @@ jobs:
           path: system_metrics/
           retention-days: 28
 
-      - name: (metrics) Upload Perf Results as Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-data-results
-          path: perf_results/
-          retention-days: 28
-
       - name: (collector) Uninstall Collector Helm Chart
         run: |
           # see the logs while uninstalling
@@ -438,6 +428,23 @@ jobs:
         with:
           name: collector-parquet-results
           path: /tmp/collector-parquet.parquet
+          retention-days: 28
+
+      - name: (metrics) Generate Perf Report
+        run: |
+          # Generate a report summary in text format
+          echo "Generating perf report - this may take some time..."
+          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
+          
+          # List the perf files
+          echo "Perf data files:"
+          ls -la perf_results/
+
+      - name: (metrics) Upload Perf Results as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-data-results
+          path: perf_results/
           retention-days: 28
 
   stop-runner:
