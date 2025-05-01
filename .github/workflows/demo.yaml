@@ -508,8 +508,6 @@ jobs:
           # Generate flamegraphs with different color schemes
           echo "Generating flamegraphs from folded stacks..."
           cat flamegraph_results/stacks.folded | inferno-flamegraph > flamegraph_results/flamegraph.svg
-          cat flamegraph_results/stacks.folded | inferno-flamegraph --color mem > flamegraph_results/flamegraph_mem.svg
-          cat flamegraph_results/stacks.folded | inferno-flamegraph --color io > flamegraph_results/flamegraph_io.svg
           
           # List the perf and flamegraph files
           echo "Perf results:"
