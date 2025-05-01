@@ -312,8 +312,14 @@ jobs:
           # Create directory for perf results
           mkdir -p perf_results
           
-          # Copy perf data to the upload directory
+          # Create a perf archive with all necessary files for symbol resolution
+          cd /tmp/perf_data
+          perf archive -i perf.data
+          cd -
+          
+          # Copy perf data and archive to the upload directory
           cp /tmp/perf_data/perf.data perf_results/ || echo "Failed to copy perf.data file"
+          cp /tmp/perf_data/perf.data.tar.bz2 perf_results/ || echo "Failed to copy perf.data.tar.bz2 file"
           
           # List the perf files
           echo "Perf data files:"
@@ -445,6 +451,63 @@ jobs:
         with:
           name: perf-data-results
           path: perf_results/
+          retention-days: 28
+
+  generate-flamegraph:
+    name: Generate Flame Graph with Inferno
+    needs: [run-workload]
+    runs-on: ubuntu-latest
+    container:
+      image: rust:latest
+    steps:
+      - name: Install Dependencies
+        run: |
+          apt-get update
+          apt-get install -y linux-perf
+
+      - name: Install Inferno
+        run: |
+          cargo install inferno
+
+      - name: Download Perf Data
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-data-results
+          path: perf_data
+
+      - name: List Downloaded Perf Files
+        run: |
+          ls -la perf_data/
+          
+      - name: Extract Perf Archive
+        run: |
+          mkdir -p symbols
+          cd symbols
+          tar xf ../perf_data/perf.data.tar.bz2
+          cd ..
+
+      - name: Generate Flame Graph
+        run: |
+          mkdir -p flamegraph_results
+          
+          # Generate collapsed stack traces
+          perf script -i perf_data/perf.data --symfs symbols | inferno-collapse-perf > flamegraph_results/stacks.folded
+          
+          # Generate flamegraph
+          cat flamegraph_results/stacks.folded | inferno-flamegraph > flamegraph_results/flamegraph.svg
+          
+          # Generate flamegraph with different color schemes
+          cat flamegraph_results/stacks.folded | inferno-flamegraph --color mem > flamegraph_results/flamegraph_mem.svg
+          cat flamegraph_results/stacks.folded | inferno-flamegraph --color io > flamegraph_results/flamegraph_io.svg
+
+          # List the generated files
+          ls -la flamegraph_results/
+
+      - name: Upload Flame Graph Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: flamegraph-results
+          path: flamegraph_results/
           retention-days: 28
 
   stop-runner:
