@@ -527,9 +527,117 @@ jobs:
           path: flamegraph_results/
           retention-days: 28
 
+  generate-visualizations:
+    name: Generate Performance Visualizations
+    needs: [run-workload]
+    runs-on: ubuntu-latest
+    container:
+      image: r-base:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install R Dependencies
+        run: |
+          apt-get update
+          apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev
+          R -e "install.packages(c('ggplot2', 'dplyr', 'readr', 'tidyr', 'scales', 'nanoparquet'), repos='https://cloud.r-project.org/')"
+
+      - name: Download System Metrics Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: system-metrics-results
+          path: system_metrics
+
+      - name: Download Locust Results
+        uses: actions/download-artifact@v4
+        with:
+          name: locust-csv-results
+          path: locust_results
+
+      - name: Download Collector Parquet
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-parquet-results
+          path: collector_data
+
+      - name: List Downloaded Files
+        run: |
+          echo "System Metrics Files:"
+          ls -la system_metrics/
+          
+          echo "Locust Results:"
+          ls -la locust_results/
+          
+          echo "Collector Data:"
+          ls -la collector_data/
+
+      - name: Convert CPU Metrics Format
+        run: |
+          # Create directory for converted metrics
+          mkdir -p converted_metrics
+          
+          # Convert CPU metrics
+          bash scripts/convert_cpu_metrics.sh system_metrics/cpu_metrics.csv converted_metrics/cpu_metrics.csv
+          
+          # Check output
+          echo "Converted CPU Metrics:"
+          head -n 5 converted_metrics/cpu_metrics.csv
+
+      - name: Generate Memory Utilization Plots
+        run: |
+          mkdir -p visualization_results
+          
+          # Generate memory utilization plots for collector process
+          Rscript scripts/plot_memory_utilization.R system_metrics/memory_metrics.csv collector visualization_results/memory_utilization
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Generate CPU Utilization Plots
+        run: |
+          # Generate CPU utilization plots
+          Rscript scripts/plot_cpu_utilization.R converted_metrics/cpu_metrics.csv collector visualization_results/cpu_utilization
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Generate LLC Misses Plots
+        run: |
+          # Generate LLC misses plots
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 110 1 visualization_results/llc_misses
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Generate Workload Performance Plots
+        run: |
+          # Find the stats_history file
+          STATS_FILE=$(find locust_results -name "*stats_history.csv" | head -1)
+          
+          if [ -n "$STATS_FILE" ]; then
+            echo "Using Locust stats file: $STATS_FILE"
+            # Generate workload performance plots
+            Rscript scripts/plot_workload_performance.R $STATS_FILE visualization_results/workload_performance
+          else
+            echo "No stats_history.csv file found in locust_results directory"
+            ls -la locust_results/
+            exit 1
+          fi
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Upload Visualization Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-visualizations
+          path: visualization_results/
+          retention-days: 28
+
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, run-workload]
+    needs: [setup-runner, run-workload] # No need to depend on github-hosted jobs
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
