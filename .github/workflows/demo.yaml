@@ -305,9 +305,8 @@ jobs:
           # Create directory for perf data
           mkdir -p /tmp/perf_data
           
-          # Run perf record for 120 seconds at 99Hz, including kernel stacks
-          echo "Starting perf record for 120 seconds at 99Hz frequency..."
-          perf record -a -g -F 99 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 120
+          echo "Starting perf record for 300 seconds at 19Hz frequency..."
+          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 300
           
           # Create directory for perf results
           mkdir -p perf_results
