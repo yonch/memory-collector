@@ -578,16 +578,15 @@ jobs:
     needs: [run-workload]
     runs-on: ubuntu-latest
     container:
-      image: r-base:latest
+      image: rocker/tidyverse:latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install R Dependencies
         run: |
-          apt-get update
-          apt-get install -y libcurl4-openssl-dev libssl-dev libxml2-dev libfontconfig1-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev
-          R -e "install.packages(c('ggplot2', 'dplyr', 'readr', 'tidyr', 'scales', 'nanoparquet'), repos='https://cloud.r-project.org/')"
+          # Install only the additional packages needed (tidyverse is already included in base image)
+          R -e "install.packages(c('scales', 'nanoparquet'), repos='https://cloud.r-project.org/')"
 
       - name: Download System Metrics Artifacts
         uses: actions/download-artifact@v4
