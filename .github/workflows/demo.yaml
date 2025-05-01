@@ -312,14 +312,17 @@ jobs:
           # Create directory for perf results
           mkdir -p perf_results
           
+          # Download perf-archive.sh script
+          curl -o /tmp/perf-archive.sh https://raw.githubusercontent.com/torvalds/linux/refs/heads/master/tools/perf/perf-archive.sh
+          chmod +x /tmp/perf-archive.sh
+          
           # Create a perf archive with all necessary files for symbol resolution
           cd /tmp/perf_data
-          perf archive -i perf.data
+          /tmp/perf-archive.sh --all
           cd -
           
-          # Copy perf data and archive to the upload directory
-          cp /tmp/perf_data/perf.data perf_results/ || echo "Failed to copy perf.data file"
-          cp /tmp/perf_data/perf.data.tar.bz2 perf_results/ || echo "Failed to copy perf.data.tar.bz2 file"
+          # Copy only the all-in-one archive to the upload directory
+          cp /tmp/perf_data/perf.all-*.tar.bz2 perf_results/ || echo "Failed to copy perf archive file"
           
           # List the perf files
           echo "Perf data files:"
@@ -479,19 +482,33 @@ jobs:
         run: |
           ls -la perf_data/
           
+      - name: Download perf-archive.sh script
+        run: |
+          curl -o perf-archive.sh https://raw.githubusercontent.com/torvalds/linux/refs/heads/master/tools/perf/perf-archive.sh
+          chmod +x perf-archive.sh
+
       - name: Extract Perf Archive
         run: |
-          mkdir -p symbols
-          cd symbols
-          tar xf ../perf_data/perf.data.tar.bz2
-          cd ..
+          # Find the perf archive file
+          PERF_ARCHIVE=$(find perf_data -name "perf.all-*.tar.bz2" | head -1)
+          
+          # Extract the archive to the current directory
+          # This will extract both perf.data and perf.symbols.tar.bz2
+          tar xf $PERF_ARCHIVE
+          
+          # Extract the symbols to ~/.debug
+          mkdir -p ~/.debug
+          tar xf perf.symbols.tar.bz2 -C ~/.debug
+          
+          echo "Extracted files:"
+          ls -la
 
       - name: Generate Flame Graph
         run: |
           mkdir -p flamegraph_results
           
           # Generate collapsed stack traces
-          perf script -i perf_data/perf.data --symfs symbols | inferno-collapse-perf > flamegraph_results/stacks.folded
+          perf script -i perf.data | inferno-collapse-perf > flamegraph_results/stacks.folded
           
           # Generate flamegraph
           cat flamegraph_results/stacks.folded | inferno-flamegraph > flamegraph_results/flamegraph.svg
