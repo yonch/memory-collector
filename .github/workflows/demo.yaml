@@ -151,7 +151,7 @@ jobs:
       - name: (install) Install sysstat
         run: |
           sudo apt-get update
-          sudo apt-get install -y sysstat linux-tools-common linux-tools-generic linux-tools-`uname -r`
+          sudo apt-get install -y sysstat linux-tools-common linux-tools-generic linux-tools-`uname -r` bzip2
           
           # Verify installations
           perf_version=$(perf --version 2>&1)
