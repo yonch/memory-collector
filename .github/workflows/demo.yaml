@@ -157,6 +157,33 @@ jobs:
           perf_version=$(perf --version 2>&1)
           echo "Installed perf: $perf_version"
 
+      - name: (install) Install Rust and addr2line
+        run: |
+          # Install Rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          
+          # Verify Rust installation
+          rustc --version
+          cargo --version
+          
+          # Install addr2line from crates.io
+          cargo install addr2line
+          
+          # Check if the system addr2line exists and back it up if it does
+          if [ -f /usr/bin/addr2line ]; then
+            sudo mv /usr/bin/addr2line /usr/bin/addr2line.bak
+            echo "Backed up original addr2line to /usr/bin/addr2line.bak"
+          fi
+          
+          # Copy the Rust addr2line to replace the system version
+          sudo cp "$HOME/.cargo/bin/addr2line" /usr/bin/addr2line
+          sudo chmod +x /usr/bin/addr2line
+          
+          # Verify the replacement
+          addr2line --version
+          echo "Replaced system addr2line with Rust implementation"
+
       - name: (install) Install awscli
         run: |
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -467,6 +494,25 @@ jobs:
         run: |
           apt-get update
           apt-get install -y linux-perf
+
+      - name: Install and Replace addr2line
+        run: |
+          # Install the Rust-based addr2line
+          cargo install addr2line
+          
+          # Check if system addr2line exists and back it up
+          if [ -f /usr/bin/addr2line ]; then
+            mv /usr/bin/addr2line /usr/bin/addr2line.bak
+            echo "Backed up original addr2line to /usr/bin/addr2line.bak"
+          fi
+          
+          # Copy the Rust addr2line to replace the system version
+          cp "$HOME/.cargo/bin/addr2line" /usr/bin/addr2line
+          chmod +x /usr/bin/addr2line
+          
+          # Verify the replacement
+          addr2line --version
+          echo "Replaced system addr2line with Rust implementation"
 
       - name: Install Inferno
         run: |
