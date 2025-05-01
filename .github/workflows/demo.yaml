@@ -468,7 +468,7 @@ jobs:
           cargo --version
           
           # Install addr2line from crates.io
-          cargo install addr2line
+          cargo install addr2line --features="bin"
           
           # Check if the system addr2line exists and back it up if it does
           if [ -f /usr/bin/addr2line ]; then
