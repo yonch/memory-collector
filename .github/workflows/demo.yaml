@@ -427,6 +427,33 @@ jobs:
           path: /tmp/collector-parquet.parquet
           retention-days: 28
 
+      - name: (perf) Upload Perf Data as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-data
+          path: /tmp/perf_data/perf.data
+          retention-days: 28
+
+  generate-flamegraphs:
+    name: Generate Flamegraphs
+    needs: [setup-runner, run-workload]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    env:
+      HOME: /root
+    steps:
+      - name: Create HOME directory
+        run: |
+          mkdir -p $HOME
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Perf Data
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-data
+          path: /tmp/perf_data
+
       - name: (install) Install Rust and addr2line
         run: |
           # Install C compiler and build tools first
@@ -465,7 +492,7 @@ jobs:
 
       - name: (metrics) Generate Perf Report and Flamegraphs
         run: |
-          mkdir -p flamegraph_results
+          mkdir -p flamegraph_results perf_results
           
           # Generate a report summary in text format
           echo "Generating perf report - this may take some time..."
@@ -605,7 +632,7 @@ jobs:
 
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, run-workload] # No need to depend on github-hosted jobs
+    needs: [setup-runner, run-workload, generate-flamegraphs] # Now depends on the flamegraph job
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
