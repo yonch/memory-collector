@@ -32,11 +32,16 @@ RUN apt-get update && apt-get install -y \
     vim \
     curl \
     kmod \
+    r-base \
+    rustup \
     ${EBPF_PACKAGES} \
     && rm -rf /var/lib/apt/lists/*
 
 # For Go development
 RUN go install -v golang.org/x/tools/gopls@latest
+
+# Install Rust
+RUN rustup install stable
 
 # Create architecture-specific symlink for asm
 RUN arch=$(uname -m) && \

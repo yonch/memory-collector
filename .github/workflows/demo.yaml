@@ -5,7 +5,7 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge'
+        default: 'c5.9xlarge,c6i.16xlarge,m7i.12xlarge,c7i.12xlarge'
         type: string
       pidstat-period:
         description: 'Collection frequency for pidstat in seconds'
@@ -151,7 +151,7 @@ jobs:
       - name: (install) Install sysstat
         run: |
           sudo apt-get update
-          sudo apt-get install -y sysstat linux-tools-common linux-tools-generic linux-tools-`uname -r`
+          sudo apt-get install -y sysstat linux-tools-common linux-tools-generic linux-tools-`uname -r` bzip2
           
           # Verify installations
           perf_version=$(perf --version 2>&1)
@@ -305,22 +305,15 @@ jobs:
           # Create directory for perf data
           mkdir -p /tmp/perf_data
           
-          # Run perf record for 120 seconds at 99Hz, including kernel stacks
-          echo "Starting perf record for 120 seconds at 99Hz frequency..."
-          perf record -a -g -F 99 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 120
+          echo "Starting perf record for 300 seconds at 19Hz frequency..."
+          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 300
           
           # Create directory for perf results
           mkdir -p perf_results
           
-          # Copy perf data to the upload directory
-          cp /tmp/perf_data/perf.data perf_results/ || echo "Failed to copy perf.data file"
-          
-          # Generate a report summary in text format
-          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
-          
           # List the perf files
           echo "Perf data files:"
-          ls -la perf_results/
+          ls -la /tmp/perf_data/
 
       - name: (metrics) Stop PIDs stat collection
         run: |
@@ -375,13 +368,6 @@ jobs:
         with:
           name: system-metrics-results
           path: system_metrics/
-          retention-days: 28
-
-      - name: (metrics) Upload Perf Results as Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-data-results
-          path: perf_results/
           retention-days: 28
 
       - name: (collector) Uninstall Collector Helm Chart
@@ -440,9 +426,202 @@ jobs:
           path: /tmp/collector-parquet.parquet
           retention-days: 28
 
+  generate-flamegraphs:
+    name: Generate Flamegraphs
+    needs: [setup-runner, run-workload]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    env:
+      HOME: /root
+    steps:
+      - name: Create HOME directory
+        run: |
+          mkdir -p $HOME
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: (install) Install Rust and addr2line
+        run: |
+          # Install C compiler and build tools first
+          sudo apt-get install -y build-essential
+
+          # Install Rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          
+          # Verify Rust installation
+          rustc --version
+          cargo --version
+          
+          # Install addr2line from crates.io
+          cargo install addr2line --features="bin"
+          
+          # Check if the system addr2line exists and back it up if it does
+          if [ -f /usr/bin/addr2line ]; then
+            sudo mv /usr/bin/addr2line /usr/bin/addr2line.bak
+            echo "Backed up original addr2line to /usr/bin/addr2line.bak"
+          fi
+          
+          # Copy the Rust addr2line to replace the system version
+          sudo cp "$HOME/.cargo/bin/addr2line" /usr/bin/addr2line
+          sudo chmod +x /usr/bin/addr2line
+          
+          # Verify the replacement
+          addr2line --version
+          echo "Replaced system addr2line with Rust implementation"
+          
+          # Install Inferno for flamegraph generation
+          cargo install inferno
+          
+          # Verify Inferno installation
+          inferno-flamegraph --help
+
+      - name: (metrics) Generate Perf Report and Flamegraphs
+        run: |
+          # so we can use the inferno binaries
+          source "$HOME/.cargo/env"
+
+          mkdir -p flamegraph_results perf_results
+          
+          # Generate a report summary in text format
+          echo "Generating perf report - this may take some time..."
+          perf report --stdio -i /tmp/perf_data/perf.data > perf_results/perf_report.txt || true
+          
+          # Generate collapsed stack traces (folded)
+          echo "Generating folded stacks from perf data..."
+          perf script -i /tmp/perf_data/perf.data | inferno-collapse-perf > flamegraph_results/stacks.folded
+          
+          # Generate flamegraphs with different color schemes
+          echo "Generating flamegraphs from folded stacks..."
+          cat flamegraph_results/stacks.folded | inferno-flamegraph > flamegraph_results/flamegraph.svg
+          
+          # List the perf and flamegraph files
+          echo "Perf results:"
+          ls -la perf_results/
+          echo "Flamegraph results:"
+          ls -la flamegraph_results/
+
+      - name: (metrics) Upload Perf and Flamegraph Results as Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-analysis
+          path: |
+            perf_results/
+            flamegraph_results/
+          retention-days: 28
+
+  generate-visualizations:
+    name: Generate Performance Visualizations
+    needs: [run-workload]
+    runs-on: ubuntu-latest
+    container:
+      image: rocker/tidyverse:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install R Dependencies
+        run: |
+          # Install only the additional packages needed (tidyverse is already included in base image)
+          R -e "install.packages(c('scales', 'nanoparquet'), repos='https://cloud.r-project.org/')"
+
+      - name: Download System Metrics Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: system-metrics-results
+          path: system_metrics
+
+      - name: Download Locust Results
+        uses: actions/download-artifact@v4
+        with:
+          name: locust-csv-results
+          path: locust_results
+
+      - name: Download Collector Parquet
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-parquet-results
+          path: collector_data
+
+      - name: List Downloaded Files
+        run: |
+          echo "System Metrics Files:"
+          ls -la system_metrics/
+          
+          echo "Locust Results:"
+          ls -la locust_results/
+          
+          echo "Collector Data:"
+          ls -la collector_data/
+
+      - name: Convert CPU Metrics Format
+        run: |
+          # Create directory for converted metrics
+          mkdir -p converted_metrics
+          
+          # Convert CPU metrics
+          bash scripts/convert_cpu_metrics.sh system_metrics/cpu_metrics.csv converted_metrics/cpu_metrics.csv
+          
+          # Check output
+          echo "Converted CPU Metrics:"
+          head -n 5 converted_metrics/cpu_metrics.csv
+
+      - name: Generate Memory Utilization Plots
+        run: |
+          mkdir -p visualization_results
+          
+          # Generate memory utilization plots for collector process
+          Rscript scripts/plot_memory_utilization.R system_metrics/memory_metrics.csv collector visualization_results/memory_utilization
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Generate CPU Utilization Plots
+        run: |
+          # Generate CPU utilization plots
+          Rscript scripts/plot_cpu_utilization.R converted_metrics/cpu_metrics.csv collector visualization_results/cpu_utilization
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Generate LLC Misses Plots
+        run: |
+          # Generate LLC misses plots
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 1 visualization_results/llc_misses
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 182 3 visualization_results/llc_misses_3sec
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 190 10 visualization_results/llc_misses_10sec
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Generate Workload Performance Plots
+        run: |
+          # Find the stats_history file
+          STATS_FILE=$(find locust_results -name "*stats_history.csv" | head -1)
+          
+          if [ -n "$STATS_FILE" ]; then
+            echo "Using Locust stats file: $STATS_FILE"
+            # Generate workload performance plots
+            Rscript scripts/plot_workload_performance.R $STATS_FILE visualization_results/workload_performance
+          else
+            echo "No stats_history.csv file found in locust_results directory"
+            ls -la locust_results/
+            exit 1
+          fi
+          
+          # Check output
+          ls -la visualization_results/
+
+      - name: Upload Visualization Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-visualizations
+          path: visualization_results/
+          retention-days: 28
+
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, run-workload]
+    needs: [setup-runner, run-workload, generate-flamegraphs] # Now depends on the flamegraph job
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
