@@ -5,7 +5,7 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge'
+        default: 'c5.9xlarge,c6i.16xlarge,m7i.12xlarge,c7i.12xlarge'
         type: string
       pidstat-period:
         description: 'Collection frequency for pidstat in seconds'
