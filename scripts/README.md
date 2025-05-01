@@ -165,3 +165,76 @@ The script generates three types of visualizations:
    - Output: `<output_file>_comparison.png` and `<output_file>_comparison.pdf`
 
 Additionally, the script prints summary statistics including mean and peak CPU utilization for both the target process and other processes. 
+
+## Workload Performance Visualization
+
+The `plot_workload_performance.R` script generates visualizations from Locust load generator metrics, focusing on workload performance characteristics such as RPS and latency percentiles.
+
+### Prerequisites
+
+The script requires the following R packages:
+- ggplot2
+- dplyr
+- readr
+- tidyr
+- scales
+
+You can install them with:
+
+```R
+install.packages(c("ggplot2", "dplyr", "readr", "tidyr", "scales"))
+```
+
+### Usage
+
+```bash
+Rscript plot_workload_performance.R <stats_history_file> [output_file]
+```
+
+- `<stats_history_file>`: Path to the Locust stats history CSV file
+- `[output_file]`: Base name for output files (default: "workload_performance")
+
+### Examples
+
+#### Example 1: Visualizing with default output names
+
+```bash
+Rscript plot_workload_performance.R scripts/stats_stats_history.csv
+```
+
+This command will:
+1. Parse the Locust metrics from `scripts/stats_stats_history.csv`
+2. Filter for "Aggregated" data rows
+3. Generate three visualizations (see Output section)
+4. Save the plots with default base name "workload_performance"
+
+#### Example 2: Specifying a custom output file name
+
+```bash
+Rscript plot_workload_performance.R scripts/stats_stats_history.csv experiment1_performance
+```
+
+This will save the output files with the base name "experiment1_performance".
+
+### Output
+
+The script generates three visualizations:
+
+1. **Combined RPS and Latency Plot**:
+   - Multi-axis graph showing RPS and latency percentiles on the same timeline
+   - X-axis: Time elapsed during experiment (seconds)
+   - Left Y-axis: Requests per second
+   - Right Y-axis: Latency in milliseconds (P50, P95, P99)
+   - Output: `<output_file>.png` and `<output_file>.pdf`
+
+2. **Workload Scaling Characteristics**:
+   - Scatter plot showing RPS vs concurrent user count
+   - Includes smoothed trend line to show scaling properties
+   - Output: `<output_file>_scaling.png` and `<output_file>_scaling.pdf`
+
+3. **Response Time Percentiles**:
+   - Line graph showing P50, P95, and P99 latencies over time
+   - Helps identify latency degradation patterns
+   - Output: `<output_file>_latency.png` and `<output_file>_latency.pdf`
+
+Additionally, the script prints summary statistics to the console, including maximum and average values for RPS and latencies. 
