@@ -9,6 +9,7 @@ members = [
     "crates/perf_events",
     "crates/timeslot",
     "crates/bpf",
+    "crates/nri",
 ]
 
 [workspace.dependencies]
@@ -16,6 +17,7 @@ collector = { path = "crates/collector" }
 perf_events = { path = "crates/perf_events" }
 timeslot = { path = "crates/timeslot" }
 bpf = { path = "crates/bpf" }
+nri = { path = "crates/nri" }
 
 libbpf-rs = "0.24.8"
 plain = "0.2"
@@ -38,3 +40,8 @@ futures = "0.3"
 chrono = "0.4"
 log = "0.4.27"
 env_logger = "0.11.8"
+protobuf = "3.7"
+ttrpc = { version = "0.8", features = ["async"] }
+ttrpc-codegen = "0.4"
+protobuf-codegen = "3.7"
+async-trait = "0.1"
