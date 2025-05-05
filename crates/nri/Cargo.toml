@@ -1,0 +1,18 @@
+[package]
+name = "nri"
+version = { workspace = true }
+edition = { workspace = true }
+
+[features]
+examples = []
+
+[dependencies]
+protobuf = { workspace = true }
+ttrpc = { workspace = true }
+async-trait = { workspace = true }
+log = { workspace = true }
+anyhow = { workspace = true }
+
+[build-dependencies]
+ttrpc-codegen = { workspace = true }
+protobuf-codegen = { workspace = true } 
