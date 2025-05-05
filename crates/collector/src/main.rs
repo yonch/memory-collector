@@ -1,15 +1,12 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::env;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
 use env_logger;
-use log::{debug, info};
+use log::info;
 use object_store::ObjectStore;
 use timeslot::MinTracker;
 use tokio::signal::unix::{signal, SignalKind};
