@@ -7,9 +7,14 @@ use std::time::Duration;
 
 pub mod sync_timer;
 
-// Include the generated skeleton
+// Include the generated skeletons
 mod bpf {
     include!("bpf/collector.skel.rs");
+}
+
+#[cfg(test)]
+mod test_bpf {
+    include!("bpf/cgroup_inode_test.skel.rs");
 }
 
 // Re-export the specific types we need

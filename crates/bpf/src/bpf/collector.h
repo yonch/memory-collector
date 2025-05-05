@@ -24,6 +24,7 @@ struct task_metadata_msg {
     struct sample_header header; // Common header
     __u32 pid;                   // Process ID
     __u8 comm[TASK_COMM_LEN];    // Process command name
+    __u64 cgroup_id;             // Cgroup ID (inode number in cgroup filesystem)
 };
 
 // Structure for task free messages

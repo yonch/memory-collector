@@ -5,11 +5,16 @@ use std::collections::HashMap;
 pub struct TaskMetadata {
     pub pid: u32,
     pub comm: [u8; 16],
+    pub cgroup_id: u64,
 }
 
 impl TaskMetadata {
-    pub fn new(pid: u32, comm: [u8; 16]) -> Self {
-        Self { pid, comm }
+    pub fn new(pid: u32, comm: [u8; 16], cgroup_id: u64) -> Self {
+        Self {
+            pid,
+            comm,
+            cgroup_id,
+        }
     }
 }
 
@@ -61,8 +66,8 @@ mod tests {
         let mut collection = TaskCollection::new();
 
         // Add tasks
-        let task1 = TaskMetadata::new(1, [0; 16]);
-        let task2 = TaskMetadata::new(2, [0; 16]);
+        let task1 = TaskMetadata::new(1, [0; 16], 0);
+        let task2 = TaskMetadata::new(2, [0; 16], 0);
         collection.add(task1);
         collection.add(task2);
 

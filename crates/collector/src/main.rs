@@ -1,15 +1,12 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::env;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
 use clap::Parser;
 use env_logger;
-use log::{debug, info};
+use log::info;
 use object_store::ObjectStore;
 use timeslot::MinTracker;
 use tokio::signal::unix::{signal, SignalKind};
@@ -110,7 +107,7 @@ impl PerfEventProcessor {
         };
 
         // Create task metadata and add to collection
-        let metadata = TaskMetadata::new(event.pid, event.comm);
+        let metadata = TaskMetadata::new(event.pid, event.comm, event.cgroup_id);
         self.task_collection.add(metadata);
         Ok(())
     }
@@ -472,6 +469,7 @@ fn main() -> Result<()> {
                             "Writer task panicked"
                         }
                     };
+                    let _ = shutdown_tx.send(());
                     return Result::<_>::Err(anyhow::anyhow!("{}", shutdown_reason));
                 }
             };
