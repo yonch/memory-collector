@@ -25,7 +25,7 @@ input_file <- if(length(args) >= 1) args[1] else "collector-parquet.parquet"
 start_time_offset <- if(length(args) >= 2) as.numeric(args[2]) else 110  # Default to 110 seconds after start
 window_size <- if(length(args) >= 3) as.numeric(args[3]) else 1  # Default to 1 second window
 output_file <- if(length(args) >= 4) args[4] else "llc_misses"
-top_n_processes <- if(length(args) >= 5) as.numeric(args[5]) else 100  # Default to showing top processes
+top_n_processes <- if(length(args) >= 5) as.numeric(args[5]) else 15  # Default to showing top processes
 
 # Cache line size in bytes
 CACHE_LINE_SIZE <- 64
@@ -186,7 +186,7 @@ create_llc_misses_plot <- function(data, n_top_processes = top_n_processes) {
   
   # Create the stacked area plot
   p <- ggplot(ms_data, aes(x = ms_bucket, y = gb_per_second, fill = process_group)) +
-    geom_area(position = "stack", alpha = 0.8) +
+    geom_col(position = "stack", width = 1.0, alpha = 0.8) +
     scale_fill_manual(values = all_colors) +
     scale_y_continuous(labels = function(x) sprintf("%.2f GB/s", x)) +
     labs(
