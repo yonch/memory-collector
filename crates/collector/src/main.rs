@@ -107,7 +107,7 @@ impl PerfEventProcessor {
         };
 
         // Create task metadata and add to collection
-        let metadata = TaskMetadata::new(event.pid, event.comm);
+        let metadata = TaskMetadata::new(event.pid, event.comm, event.cgroup_id);
         self.task_collection.add(metadata);
         Ok(())
     }
@@ -469,6 +469,7 @@ fn main() -> Result<()> {
                             "Writer task panicked"
                         }
                     };
+                    let _ = shutdown_tx.send(());
                     return Result::<_>::Err(anyhow::anyhow!("{}", shutdown_reason));
                 }
             };

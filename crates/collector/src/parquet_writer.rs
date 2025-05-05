@@ -21,6 +21,7 @@ pub fn create_parquet_schema() -> SchemaRef {
         Field::new("start_time", DataType::Int64, false),
         Field::new("pid", DataType::Int32, false),
         Field::new("process_name", DataType::Utf8, true),
+        Field::new("cgroup_id", DataType::Int64, false),
         Field::new("cycles", DataType::Int64, false),
         Field::new("instructions", DataType::Int64, false),
         Field::new("llc_misses", DataType::Int64, false),
@@ -273,6 +274,7 @@ impl ParquetWriter {
         // For StringBuilder, we need both item capacity and estimated data capacity
         // Estimate 16 bytes per string for process names
         let mut process_name_builder = StringBuilder::with_capacity(task_count, task_count * 16);
+        let mut cgroup_id_builder = Int64Builder::with_capacity(task_count);
         let mut cycles_builder = Int64Builder::with_capacity(task_count);
         let mut instructions_builder = Int64Builder::with_capacity(task_count);
         let mut llc_misses_builder = Int64Builder::with_capacity(task_count);
@@ -286,7 +288,7 @@ impl ParquetWriter {
             // Add PID
             pid_builder.append_value(*pid as i32);
 
-            // Add process name (from metadata if available)
+            // Add process name and cgroup_id (from metadata if available)
             if let Some(ref metadata) = task_data.metadata {
                 // Convert bytes to string, trimming null bytes
                 let comm = std::str::from_utf8(&metadata.comm)
@@ -294,8 +296,10 @@ impl ParquetWriter {
                     .trim_end_matches(char::from(0))
                     .to_string();
                 process_name_builder.append_value(comm);
+                cgroup_id_builder.append_value(metadata.cgroup_id as i64);
             } else {
                 process_name_builder.append_null();
+                cgroup_id_builder.append_value(0); // Default value when no metadata available
             }
 
             // Add metrics
@@ -310,6 +314,7 @@ impl ParquetWriter {
             Arc::new(start_time_builder.finish()),
             Arc::new(pid_builder.finish()),
             Arc::new(process_name_builder.finish()),
+            Arc::new(cgroup_id_builder.finish()),
             Arc::new(cycles_builder.finish()),
             Arc::new(instructions_builder.finish()),
             Arc::new(llc_misses_builder.finish()),
@@ -401,7 +406,7 @@ mod tests {
         let test_name = b"test_process";
         comm[..test_name.len()].copy_from_slice(test_name);
 
-        let metadata = Some(TaskMetadata::new(1, comm));
+        let metadata = Some(TaskMetadata::new(1, comm, 12345));
         let metrics = Metric::from_deltas(1000, 2000, 30, 100000);
 
         // Add task data to timeslot
@@ -434,7 +439,7 @@ mod tests {
         // Add several tasks to make the timeslot larger
         for i in 0..100 {
             let pid = i + 1;
-            let metadata = Some(TaskMetadata::new(pid, comm));
+            let metadata = Some(TaskMetadata::new(pid, comm, 10000 + pid as u64));
             let metrics = Metric::from_deltas(
                 1000 * pid as u64,
                 2000 * pid as u64,

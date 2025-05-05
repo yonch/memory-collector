@@ -94,6 +94,8 @@ static __always_inline int is_kernel_thread(struct task_struct *task)
 }
 
 // Send task metadata to userspace
+// Note: This function should be called with the current task as it collects the cgroup ID
+// of the current task context using bpf_get_current_cgroup_id().
 static __always_inline int send_task_metadata(void *ctx, struct task_struct *task)
 {
     if (!task)
@@ -107,6 +109,9 @@ static __always_inline int send_task_metadata(void *ctx, struct task_struct *tas
     msg.pid = task->pid;
     
     bpf_probe_read_kernel_str(&msg.comm, sizeof(msg.comm), task->comm);
+    
+    // Get cgroup ID for the current task
+    msg.cgroup_id = bpf_get_current_cgroup_id();
     
     // Skip the size field (first 4 bytes) when sending
     return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
@@ -158,6 +163,8 @@ static __always_inline int send_perf_measurement(void *ctx, __u32 pid, __u64 cyc
 }
 
 // Check and report task metadata if needed
+// This function should be called with the current task since send_task_metadata
+// collects cgroup ID from the current task context.
 static __always_inline int check_and_send_metadata(void *ctx, struct task_struct *task)
 {
     if (!task || is_kernel_thread(task))
