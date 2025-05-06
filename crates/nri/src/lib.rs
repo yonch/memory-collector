@@ -41,22 +41,22 @@ pub mod client {
     use ttrpc::r#async::Client;
 
     /// Create a Plugin client
-    pub fn create_plugin_client<P: AsRef<Path>>(socket_path: P) -> Result<PluginClient> {
-        let client = Client::connect(socket_path.as_ref().to_str().unwrap())?;
+    pub async fn create_plugin_client<P: AsRef<Path>>(socket_path: P) -> Result<PluginClient> {
+        let client = Client::connect(socket_path.as_ref().to_str().unwrap()).await?;
         Ok(PluginClient::new(client))
     }
 
     /// Create a Runtime client
-    pub fn create_runtime_client<P: AsRef<Path>>(socket_path: P) -> Result<RuntimeClient> {
-        let client = Client::connect(socket_path.as_ref().to_str().unwrap())?;
+    pub async fn create_runtime_client<P: AsRef<Path>>(socket_path: P) -> Result<RuntimeClient> {
+        let client = Client::connect(socket_path.as_ref().to_str().unwrap()).await?;
         Ok(RuntimeClient::new(client))
     }
 
     /// Create a HostFunctions client
-    pub fn create_host_functions_client<P: AsRef<Path>>(
+    pub async fn create_host_functions_client<P: AsRef<Path>>(
         socket_path: P,
     ) -> Result<HostFunctionsClient> {
-        let client = Client::connect(socket_path.as_ref().to_str().unwrap())?;
+        let client = Client::connect(socket_path.as_ref().to_str().unwrap()).await?;
         Ok(HostFunctionsClient::new(client))
     }
 }
