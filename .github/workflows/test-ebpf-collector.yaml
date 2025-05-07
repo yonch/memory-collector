@@ -174,7 +174,7 @@ jobs:
       
 
   test-s3-integration:
-    needs: [setup-runner, prepare-runner]
+    needs: [setup-runner, prepare-runner, build-collector]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     timeout-minutes: 15
     env:
