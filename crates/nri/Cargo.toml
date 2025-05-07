@@ -12,11 +12,15 @@ ttrpc = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 bytes = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
 
 [build-dependencies]
 ttrpc-codegen = { workspace = true }
-protobuf-codegen = { workspace = true } 
+protobuf-codegen = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+async-trait = "0.1" 

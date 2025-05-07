@@ -1566,6 +1566,7 @@ dependencies = [
  "protobuf-codegen 3.7.2",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-test",
  "ttrpc",
  "ttrpc-codegen",
 ]
@@ -2794,6 +2795,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-stream"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-test"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2468baabc3311435b55dd935f702f42cd1b8abb7e754fb7dfb16bd36aa88f9f7"
+dependencies = [
+ "async-stream",
+ "bytes",
+ "futures-core",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2886,7 +2911,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "ttrpc"
 version = "0.8.4"
-source = "git+https://github.com/containerd/ttrpc-rust?rev=d79bd8263528812601ff7650c404a57dab4f1f5b#d79bd8263528812601ff7650c404a57dab4f1f5b"
+source = "git+https://github.com/containerd/ttrpc-rust?rev=8ac79f1ce81808ff5781cf03a11fb08c29c9ffe1#8ac79f1ce81808ff5781cf03a11fb08c29c9ffe1"
 dependencies = [
  "async-stream",
  "async-trait",
