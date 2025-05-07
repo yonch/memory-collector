@@ -154,7 +154,7 @@ pub mod server {
         socket_path: P,
         service: S,
     ) -> Result<ttrpc::r#async::Server> {
-        let service = Arc::new(Box::new(service) as Box<dyn Plugin + Send + Sync>);
+        let service = Arc::new(service);
         let service_mapper = create_plugin(service);
 
         let server = ttrpc::r#async::Server::new()
@@ -177,7 +177,7 @@ pub mod server {
         // Convert the MuxSocket to a ttrpc Socket and store for use with the server
         let ttrpc_socket = ttrpc::r#async::transport::Socket::new(mux_socket);
 
-        let service = Arc::new(Box::new(service) as Box<dyn Plugin + Send + Sync>);
+        let service = Arc::new(service);
         let service_mapper = create_plugin(service);
 
         let server = ttrpc::r#async::Server::new().register_service(service_mapper);
@@ -191,7 +191,7 @@ pub mod server {
         socket_path: P,
         service: S,
     ) -> Result<ttrpc::r#async::Server> {
-        let service = Arc::new(Box::new(service) as Box<dyn Runtime + Send + Sync>);
+        let service = Arc::new(service);
         let service_mapper = create_runtime(service);
 
         let server = ttrpc::r#async::Server::new()
@@ -206,7 +206,7 @@ pub mod server {
         socket_path: P,
         service: S,
     ) -> Result<ttrpc::r#async::Server> {
-        let service = Arc::new(Box::new(service) as Box<dyn HostFunctions + Send + Sync>);
+        let service = Arc::new(service);
         let service_mapper = create_host_functions(service);
 
         let server = ttrpc::r#async::Server::new()

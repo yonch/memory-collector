@@ -187,17 +187,17 @@ async fn test_nri_plugin_registration_workflow() -> Result<(), Box<dyn std::erro
     let plugin_mux = Mux::new(plugin_stream);
 
     // Create mock services
-    let runtime_service = Arc::new(Box::new(MockRuntimeService {
+    let runtime_service = Arc::new(MockRuntimeService {
         runtime_mux: runtime_mux.clone(),
-    }) as Box<dyn Runtime + Send + Sync>);
+    });
 
     // Create plugin service with state
     let plugin_configured = Arc::new(Mutex::new(false));
     let plugin_synchronized = Arc::new(Mutex::new(false));
-    let plugin_service = Arc::new(Box::new(MockPluginService {
+    let plugin_service = Arc::new(MockPluginService {
         configured: plugin_configured.clone(),
         synchronized: plugin_synchronized.clone(),
-    }) as Box<dyn Plugin + Send + Sync>);
+    });
 
     // Create service maps
     let plugin_service_map = api_ttrpc::create_plugin(plugin_service);
