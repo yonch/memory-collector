@@ -23,6 +23,12 @@ pub mod api_ttrpc {
     include!(concat!(env!("OUT_DIR"), "/api_ttrpc.rs"));
 }
 
+// Export the multiplexer module
+pub mod multiplex;
+
+// Export the multiplexer
+pub use multiplex::Mux;
+
 // Export types for convenience
 pub mod types {
     // NRI doesn't have all the types we were originally expecting
@@ -34,10 +40,11 @@ pub mod types {
 
 // Export client for convenience
 pub mod client {
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
     use std::path::Path;
 
     use crate::api_ttrpc::{HostFunctionsClient, PluginClient, RuntimeClient};
+    use crate::multiplex::{Mux, MuxSocket, RUNTIME_SERVICE_CONN};
     use ttrpc::r#async::Client;
 
     /// Create a Plugin client
@@ -59,11 +66,23 @@ pub mod client {
         let client = Client::connect(socket_path.as_ref().to_str().unwrap()).await?;
         Ok(HostFunctionsClient::new(client))
     }
+
+    /// Create a Runtime client using the multiplexer
+    pub async fn create_runtime_client_mux(mux: &Mux) -> Result<RuntimeClient> {
+        let socket = mux
+            .open(RUNTIME_SERVICE_CONN)
+            .await
+            .map_err(|e| anyhow!("Failed to open runtime connection: {}", e))?;
+        // Convert the MuxSocket to a ttrpc Socket
+        let ttrpc_socket = ttrpc::r#async::transport::Socket::new(socket);
+        let client = Client::new(ttrpc_socket);
+        Ok(RuntimeClient::new(client))
+    }
 }
 
 // Export server for convenience
 pub mod server {
-    use anyhow::Result;
+    use anyhow::{anyhow, Result};
     use std::collections::HashMap;
     use std::path::Path;
     use std::sync::Arc;
@@ -71,6 +90,7 @@ pub mod server {
     use crate::api_ttrpc::{
         create_host_functions, create_plugin, create_runtime, HostFunctions, Plugin, Runtime,
     };
+    use crate::multiplex::{Mux, PLUGIN_SERVICE_CONN};
     use ttrpc::Server;
 
     // Helper to create an async server
@@ -142,6 +162,28 @@ pub mod server {
             .register_service(service_mapper);
 
         Ok(server)
+    }
+
+    /// Create an async Plugin server using the multiplexer
+    pub async fn create_async_plugin_server_mux<S: Plugin + Send + 'static>(
+        mux: &Mux,
+        service: S,
+    ) -> Result<(ttrpc::r#async::Server, ttrpc::r#async::transport::Socket)> {
+        let mux_socket = mux
+            .open(PLUGIN_SERVICE_CONN)
+            .await
+            .map_err(|e| anyhow!("Failed to open plugin connection: {}", e))?;
+
+        // Convert the MuxSocket to a ttrpc Socket and store for use with the server
+        let ttrpc_socket = ttrpc::r#async::transport::Socket::new(mux_socket);
+
+        let service = Arc::new(Box::new(service) as Box<dyn Plugin + Send + Sync>);
+        let service_mapper = create_plugin(service);
+
+        let server = ttrpc::r#async::Server::new().register_service(service_mapper);
+
+        // Return both the server and the socket, so the caller can use server.start(ttrpc_socket)
+        Ok((server, ttrpc_socket))
     }
 
     /// Create an async Runtime server (recommended)

@@ -12,6 +12,10 @@ ttrpc = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
 
 [build-dependencies]
 ttrpc-codegen = { workspace = true }
