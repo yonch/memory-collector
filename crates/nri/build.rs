@@ -29,7 +29,8 @@ fn main() {
     if let Ok(content) = fs::read_to_string(&api_ttrpc_path) {
         let fixed_content = content
             .replace("#![cfg_attr(", "#[cfg_attr(")
-            .replace("#![allow(", "#[allow(");
+            .replace("#![allow(", "#[allow(")
+            .replace("#[allow(box_pointers)]\n", "");
         fs::write(api_ttrpc_path, fixed_content).expect("Failed to write fixed api_ttrpc.rs");
     }
 }
