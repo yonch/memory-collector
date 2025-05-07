@@ -1,7 +1,5 @@
 use std::sync::Arc;
-use tokio::io::duplex;
 use tokio::sync::Mutex;
-use tokio::time::{timeout, Duration};
 use ttrpc::context::Context;
 use ttrpc::r#async::transport::Socket;
 use ttrpc::r#async::Client;
@@ -9,14 +7,14 @@ use ttrpc::r#async::Server;
 use ttrpc::r#async::TtrpcContext;
 
 use nri::api::{
-    self, ConfigureRequest, ConfigureResponse, CreateContainerRequest, CreateContainerResponse,
-    Empty, RegisterPluginRequest, StateChangeEvent, StopContainerRequest, StopContainerResponse,
+    ConfigureRequest, ConfigureResponse, CreateContainerRequest, CreateContainerResponse, Empty,
+    RegisterPluginRequest, StateChangeEvent, StopContainerRequest, StopContainerResponse,
     SynchronizeRequest, SynchronizeResponse, UpdateContainerRequest, UpdateContainerResponse,
     UpdateContainersRequest, UpdateContainersResponse, UpdatePodSandboxRequest,
     UpdatePodSandboxResponse,
 };
 use nri::api_ttrpc::{self, Plugin, PluginClient, Runtime, RuntimeClient};
-use nri::multiplex::{Mux, MuxError, PLUGIN_SERVICE_CONN, RUNTIME_SERVICE_CONN};
+use nri::multiplex::{Mux, PLUGIN_SERVICE_CONN, RUNTIME_SERVICE_CONN};
 use protobuf::SpecialFields;
 
 // Mock Runtime service implementation
