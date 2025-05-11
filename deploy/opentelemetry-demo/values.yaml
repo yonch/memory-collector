@@ -1,5 +1,5 @@
 default:
-  replicas: 2 # two replicas for most services
+  replicas: 4 # two replicas for most services
 
 components:
   load-generator:
@@ -15,13 +15,13 @@ components:
       - name: LOCUST_HEADLESS
         value: "true"
       - name: LOCUST_USERS
-        value: "2400"
+        value: "7200"
       - name: LOCUST_SPAWN_RATE
-        value: "12"
+        value: "36"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_PROCESSES
-        value: "8"
+        value: "16"
       - name: LOCUST_LOCUSTFILE
         value: "/etc/locust/locustfile.py"
       
