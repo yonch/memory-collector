@@ -2,6 +2,9 @@ default:
   replicas: 6 # multiple replicas for most services
 
 components:
+  flagd:
+    replicas: 3 # otherwise, flagd only runs on one replica, and will bottleneck some services
+    
   load-generator:
     enabled: false
     replicas: 1 # only one replica for load-generator, it spawns multiple processes
