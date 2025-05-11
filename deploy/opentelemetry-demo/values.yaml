@@ -1,5 +1,5 @@
 default:
-  replicas: 4 # two replicas for most services
+  replicas: 6 # multiple replicas for most services
 
 components:
   load-generator:
