@@ -150,8 +150,7 @@ components:
 
                 @task(10)
                 def browse_product(self):
-                    with self.client.rename_request("/api/products/[id]"):
-                        self.client.get("/api/products/" + random.choice(products))
+                    self.client.get("/api/products/" + random.choice(products), name="/api/products/[id]")
 
                 @task(3)
                 def get_recommendations(self):
