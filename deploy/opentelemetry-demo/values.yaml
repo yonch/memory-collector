@@ -1,6 +1,10 @@
+default:
+  replicas: 2 # two replicas for most services
+
 components:
   load-generator:
     enabled: false
+    replicas: 1 # only one replica for load-generator, it spawns multiple processes
     useDefault:
       env: true
     envOverrides:
@@ -11,9 +15,9 @@ components:
       - name: LOCUST_HEADLESS
         value: "true"
       - name: LOCUST_USERS
-        value: "1200"
+        value: "2400"
       - name: LOCUST_SPAWN_RATE
-        value: "6"
+        value: "12"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_PROCESSES
