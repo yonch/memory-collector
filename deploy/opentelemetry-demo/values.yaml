@@ -103,12 +103,12 @@ components:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
-  shipping:
-    useDefault:
-      env: true
-    envOverrides:
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "" # Disable
+  # shipping:
+  #   useDefault:
+  #     env: true
+  #   envOverrides:
+  #     - name: OTEL_EXPORTER_OTLP_ENDPOINT
+  #       value: "" # Disable
 
   load-generator:
     enabled: false
