@@ -122,51 +122,57 @@ create_endpoint_plot <- function(data) {
     for (ep in endpoints) {
       # Filter data for this specific endpoint
       ep_data <- endpoints_data %>% filter(Endpoint == ep)
-      
-      # Calculate scale factors for this endpoint
-      max_rate <- max(c(ep_data$`Requests/s`, ep_data$`Failures/s`), na.rm = TRUE)
-      max_latency <- max(c(ep_data$`50%`, ep_data$`95%`, ep_data$`99%`), na.rm = TRUE)
-      
-      # Avoid division by zero
-      scale_factor <- if (max_latency > 0) max_rate / max_latency else 1
-      
-      # Create the plot for this endpoint
-      p <- ggplot(ep_data, aes(x = RelativeTime)) +
-        # RPS and Failures lines (primary y-axis)
-        geom_line(aes(y = `Requests/s`, color = "RPS"), linewidth = 1.2) +
-        geom_line(aes(y = `Failures/s`, color = "Failures/s"), linewidth = 1.2, linetype = "dashed") +
+            
+      # Create a local function that captures the current scale_factor
+      create_plot <- function(ep_data, ep) {
+        # Calculate scale factors for this endpoint
+        max_rate <- max(c(ep_data$`Requests/s`, ep_data$`Failures/s`), na.rm = TRUE)
+        max_latency <- max(c(ep_data$`50%`, ep_data$`95%`, ep_data$`99%`), na.rm = TRUE)
         
-        # Latency lines (scaled to primary y-axis)
-        geom_line(aes(y = `50%` * scale_factor, color = "Median (P50)"), linewidth = 1.0) +
-        geom_line(aes(y = `95%` * scale_factor, color = "P95"), linewidth = 1.0) +
-        geom_line(aes(y = `99%` * scale_factor, color = "P99"), linewidth = 1.0) +
-        
-        # Axes
-        scale_y_continuous(
-          name = "Requests / Failures per Second",
-          sec.axis = sec_axis(~./scale_factor, name = "Latency (ms)")
-        ) +
-        scale_x_continuous(name = "Time (seconds)") +
-        
-        # Custom colors
-        scale_color_manual(
-          name = "Metrics",
-          values = color_palette
-        ) +
-        
-        # Title and theme
-        ggtitle(ep) +
-        theme_minimal() +
-        theme(
-          legend.position = "none",  # Remove individual legends
-          plot.title = element_text(size = 12, face = "bold"),
-          axis.title = element_text(size = 9),
-          axis.text = element_text(size = 8),
-          panel.grid.minor = element_line(color = "grey90"),
-          panel.grid.major = element_line(color = "grey85")
-        )
+        # Avoid division by zero
+        scale_factor <- if (max_latency > 0) max_rate / max_latency else 1
+
+        cat(sprintf("Endpoint: %s, Max Rate: %.2f, Max Latency: %.2f, Scale Factor: %.2f\n", 
+                    ep, max_rate, max_latency, scale_factor))
+
+        ggplot(ep_data, aes(x = RelativeTime)) +
+          # RPS and Failures lines (primary y-axis)
+          geom_line(aes(y = `Requests/s`, color = "RPS"), linewidth = 1.2) +
+          geom_line(aes(y = `Failures/s`, color = "Failures/s"), linewidth = 1.2, linetype = "dashed") +
+          
+          # Latency lines (scaled to primary y-axis)
+          geom_line(aes(y = `50%` * scale_factor, color = "Median (P50)"), linewidth = 1.0) +
+          geom_line(aes(y = `95%` * scale_factor, color = "P95"), linewidth = 1.0) +
+          geom_line(aes(y = `99%` * scale_factor, color = "P99"), linewidth = 1.0) +
+          
+          # Axes
+          scale_y_continuous(
+            name = "Requests / Failures per Second",
+            sec.axis = sec_axis(~./scale_factor, name = "Latency (ms)")
+          ) +
+          scale_x_continuous(name = "Time (seconds)") +
+          
+          # Custom colors
+          scale_color_manual(
+            name = "Metrics",
+            values = color_palette
+          ) +
+          
+          # Title and theme
+          ggtitle(ep) +
+          theme_minimal() +
+          theme(
+            legend.position = "none",  # Remove individual legends
+            plot.title = element_text(size = 12, face = "bold"),
+            axis.title = element_text(size = 9),
+            axis.text = element_text(size = 8),
+            panel.grid.minor = element_line(color = "grey90"),
+            panel.grid.major = element_line(color = "grey85")
+          )
+      }
       
-      plots[[ep]] <- p
+      # Create the plot with the captured scale_factor
+      plots[[ep]] <- create_plot(ep_data, ep)
     }
     
     return(plots)
