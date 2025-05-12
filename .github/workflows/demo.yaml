@@ -305,8 +305,8 @@ jobs:
           # Create directory for perf data
           mkdir -p /tmp/perf_data
           
-          echo "Starting perf record for 300 seconds at 19Hz frequency..."
-          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 300
+          echo "Starting perf record for 120 seconds at 19Hz frequency..."
+          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 120
           
           # Create directory for perf results
           mkdir -p perf_results
@@ -587,11 +587,11 @@ jobs:
       - name: Generate LLC Misses Plots
         run: |
           # Generate LLC misses plots
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 0.3 visualization_results/llc_misses_0.3sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 0.5 visualization_results/llc_misses_0.5sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 1 visualization_results/llc_misses_1sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 182 3 visualization_results/llc_misses_3sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 190 10 visualization_results/llc_misses_10sec
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 90 0.3 visualization_results/llc_misses_0.3sec
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 90 0.5 visualization_results/llc_misses_0.5sec
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 90 1 visualization_results/llc_misses_1sec
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 90 3 visualization_results/llc_misses_3sec
+          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 90 10 visualization_results/llc_misses_10sec
           
           # Check output
           ls -la visualization_results/
