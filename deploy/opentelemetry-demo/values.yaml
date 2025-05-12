@@ -86,13 +86,6 @@ components:
   frontend-proxy:
     useDefault:
       env: false
-    envOverrides:
-      - name: OTEL_COLLECTOR_HOST
-        value: ""
-      - name: OTEL_COLLECTOR_PORT_GRPC
-        value: ""
-      - name: OTEL_COLLECTOR_PORT_HTTP
-        value: ""
     replicas: 6
     resources:
       limits:
@@ -103,6 +96,10 @@ components:
       env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+      - name: OTEL_SERVICE_NAME
+        value: "localhost:4318" # Disable
+      - name: OTEL_COLLECTOR_HOST
         value: "" # Disable
 
   payment:
@@ -134,6 +131,8 @@ components:
       env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+      - name: OTEL_SERVICE_NAME
         value: "" # Disable
 
   shipping:
