@@ -48,6 +48,9 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
+    resources:
+      limits:
+        memory: 650Mi
 
   currency:
     useDefault:
