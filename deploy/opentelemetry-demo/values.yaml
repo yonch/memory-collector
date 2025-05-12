@@ -78,13 +78,6 @@ components:
         value: "" # Disable
 
   frontend-proxy:
-    useDefault:
-      env: true
-    envOverrides:
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "" # Disable
-      - name: OTEL_COLLECTOR_HOST
-        value: ""
     resources:
       limits:
         memory: 650Mi
