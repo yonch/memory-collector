@@ -5,6 +5,9 @@ components:
   flagd:
     replicas: 3 # otherwise, flagd only runs on one replica, and will bottleneck some services
 
+  opentelemetry-collector:
+    enabled: false
+
   accounting:
     useDefault:
       env: true
