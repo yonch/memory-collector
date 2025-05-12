@@ -4,6 +4,13 @@ default:
 components:
   flagd:
     replicas: 3 # otherwise, flagd only runs on one replica, and will bottleneck some services
+
+  product-catalog:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
     
   load-generator:
     enabled: false
