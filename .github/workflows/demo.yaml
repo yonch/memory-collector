@@ -523,7 +523,7 @@ jobs:
       - name: Install R Dependencies
         run: |
           # Install only the additional packages needed (tidyverse is already included in base image)
-          R -e "install.packages(c('scales', 'nanoparquet'), repos='https://cloud.r-project.org/')"
+          R -e "install.packages(c('scales', 'nanoparquet', 'gridExtra', 'stringr'), repos='https://cloud.r-project.org/')"
 
       - name: Download System Metrics Artifacts
         uses: actions/download-artifact@v4
