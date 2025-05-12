@@ -1,5 +1,5 @@
 default:
-  replicas: 9 # multiple replicas for most services
+  replicas: 3 # multiple replicas for most services
 
 opentelemetry-collector:
   enabled: false
