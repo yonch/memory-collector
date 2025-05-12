@@ -5,7 +5,12 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'c5.9xlarge,c6i.16xlarge'
+        default: 'c5.9xlarge'
+        type: string
+      image-type:
+        description: 'Image type to use (ubuntu-22.04 or ubuntu-24.04)'
+        required: false
+        default: 'ubuntu-22.04'
         type: string
       pidstat-period:
         description: 'Collection frequency for pidstat in seconds'
@@ -31,6 +36,7 @@ jobs:
     outputs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+      region: ${{ steps.start-runner.outputs.region }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,12 +47,9 @@ jobs:
         with:
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           iam-role-name: github-actions-runner          
-          instance-type: ${{ inputs.instance-type || 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge' }}
-          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
+          instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
+          image-type: ${{ inputs.image-type || 'ubuntu-22.04' }}
           volume-size: '40'
 
   run-workload:
@@ -646,4 +649,4 @@ jobs:
           ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }} 
+          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }} 
