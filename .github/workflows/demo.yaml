@@ -425,6 +425,15 @@ jobs:
           name: collector-parquet-results
           path: /tmp/collector-parquet.parquet
           retention-days: 28
+          
+      - name: (status) Print Events
+        run: | 
+          kubectl get events
+
+      - name: (status) Print Pod Status
+        run: | 
+          kubectl get pods -n default
+
 
   generate-flamegraphs:
     name: Generate Flamegraphs
