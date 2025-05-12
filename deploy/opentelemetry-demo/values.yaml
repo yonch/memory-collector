@@ -270,9 +270,9 @@ components:
             class WebsiteUser(FastHttpUser):
                 wait_time = between(1, 10)
 
-                # @task(1)
-                # def index(self):
-                #     self.client.get("/")
+                @task(1)
+                def index(self):
+                    self.client.get("/")
 
                 @task(10)
                 def browse_product(self):
