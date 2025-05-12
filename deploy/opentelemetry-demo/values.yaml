@@ -23,28 +23,28 @@ components:
 
   accounting:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   ad:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   cart:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   checkout:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
@@ -64,26 +64,35 @@ components:
 
   email:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   fraud-detection:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   frontend:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   frontend-proxy:
+    useDefault:
+      env: false
+    envOverrides:
+      - name: OTEL_COLLECTOR_HOST
+        value: ""
+      - name: OTEL_COLLECTOR_PORT_GRPC
+        value: ""
+      - name: OTEL_COLLECTOR_PORT_HTTP
+        value: ""
     replicas: 6
     resources:
       limits:
@@ -91,21 +100,21 @@ components:
 
   image-provider:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   payment:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   product-catalog:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
@@ -115,14 +124,14 @@ components:
     
   quote:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
   recommendation:
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
@@ -136,7 +145,7 @@ components:
     enabled: false
     replicas: 1 # only one replica for load-generator, it spawns multiple processes
     useDefault:
-      env: true
+      env: false
     envOverrides:
       - name: LOCUST_CSV
         value: "/tmp/locust_results/stats"
