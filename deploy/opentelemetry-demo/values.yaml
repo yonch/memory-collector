@@ -58,6 +58,9 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
+    resources:
+      limits:
+        memory: 200Mi
 
   email:
     useDefault:
@@ -123,12 +126,10 @@ components:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
 
-  # shipping:
-  #   useDefault:
-  #     env: true
-  #   envOverrides:
-  #     - name: OTEL_EXPORTER_OTLP_ENDPOINT
-  #       value: "" # Disable
+  shipping:
+    resources:
+      limits:
+        memory: 200Mi
 
   load-generator:
     enabled: false
