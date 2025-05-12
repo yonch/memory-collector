@@ -354,7 +354,7 @@ components:
                     ctx = baggage.set_baggage("session.id", str(uuid.uuid4()))
                     ctx = baggage.set_baggage("synthetic_request", "true", context=ctx)
                     context.attach(ctx)
-                    self.index()
+                    # self.index()
 
 
             browser_traffic_enabled = os.environ.get("LOCUST_BROWSER_TRAFFIC_ENABLED", "").lower() in ("true", "yes", "on")
