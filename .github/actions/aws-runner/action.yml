@@ -95,22 +95,41 @@ runs:
       shell: bash
       run: |
         # Parse the region configs
-        REGION_CONFIGS='${{ inputs.region-configs }}'
-        AMI_MAPPINGS='${{ inputs.ami-mappings }}'
-        IMAGE_TYPE='${{ inputs.image-type }}'
+        echo "Region configs: ${{ inputs.region-configs }}"
+        echo "AMI mappings: ${{ inputs.ami-mappings }}"
+        echo "Image type: ${{ inputs.image-type }}"
+        
+        # Convert the JSON strings to files for jq processing
+        echo '${{ inputs.region-configs }}' > /tmp/region_configs.json
+        echo '${{ inputs.ami-mappings }}' > /tmp/ami_mappings.json
         
         # Use jq to extract information
-        echo "REGIONS=$(echo $REGION_CONFIGS | jq -r 'keys | join(",")')" >> $GITHUB_OUTPUT
+        REGIONS=$(jq -r 'keys | join(",")' /tmp/region_configs.json)
+        echo "REGIONS=${REGIONS}" >> $GITHUB_OUTPUT
         
         # Count the total number of region+subnet combinations
         COMBO_COUNT=0
-        for region in $(echo $REGION_CONFIGS | jq -r 'keys[]'); do
-          SECURITY_GROUP=$(echo $REGION_CONFIGS | jq -r --arg r "$region" '.[$r]["security-group-id"]')
-          SUBNETS=$(echo $REGION_CONFIGS | jq -r --arg r "$region" '.[$r].subnets[]')
-          AMI_ID=$(echo $AMI_MAPPINGS | jq -r --arg r "$region" --arg it "$IMAGE_TYPE" '.[$it][$r]')
+        
+        # Loop through each region using jq
+        for region in $(jq -r 'keys[]' /tmp/region_configs.json); do
+          echo "Processing region: ${region}"
           
+          # Get security group for this region
+          SECURITY_GROUP=$(jq -r --arg r "${region}" '.[$r]["security-group-id"]' /tmp/region_configs.json)
+          echo "Security group for ${region}: ${SECURITY_GROUP}"
+          
+          # Get subnets for this region
+          SUBNETS=$(jq -r --arg r "${region}" '.[$r].subnets[]' /tmp/region_configs.json)
+          
+          # Get AMI ID for this region and image type
+          AMI_ID=$(jq -r --arg r "${region}" --arg it "${{ inputs.image-type }}" '.[$it][$r]' /tmp/ami_mappings.json)
+          echo "AMI ID for ${region} with image type ${{ inputs.image-type }}: ${AMI_ID}"
+          
+          # Process each subnet in this region
           for subnet in $SUBNETS; do
             COMBO_COUNT=$((COMBO_COUNT+1))
+            echo "Found combination ${COMBO_COUNT}: Region=${region}, Subnet=${subnet}, SG=${SECURITY_GROUP}, AMI=${AMI_ID}"
+            
             if [ $COMBO_COUNT -le 10 ]; then  # Limiting to 10 combinations
               echo "COMBO_${COMBO_COUNT}_REGION=${region}" >> $GITHUB_OUTPUT
               echo "COMBO_${COMBO_COUNT}_SUBNET=${subnet}" >> $GITHUB_OUTPUT
@@ -120,105 +139,37 @@ runs:
           done
         done
         
-        echo "TOTAL_COMBOS=$COMBO_COUNT" >> $GITHUB_OUTPUT
+        echo "Total combinations found: ${COMBO_COUNT}"
+        echo "TOTAL_COMBOS=${COMBO_COUNT}" >> $GITHUB_OUTPUT
         echo "MAX_COMBOS=$(( COMBO_COUNT > 10 ? 10 : COMBO_COUNT ))" >> $GITHUB_OUTPUT
 
-    - name: Try EC2 Runners Across Regions
-      id: try-runners
+    - name: Display Region Combinations
       shell: bash
       run: |
+        echo "Available region combinations:"
         MAX_COMBOS="${{ steps.parse-regions.outputs.MAX_COMBOS }}"
         
-        # Initialize variables to track successful run
-        echo "SUCCESS=false" >> $GITHUB_ENV
-        
         for i in $(seq 1 $MAX_COMBOS); do
-          REGION="COMBO_${i}_REGION"
-          SUBNET="COMBO_${i}_SUBNET"
-          SG="COMBO_${i}_SG"
-          AMI="COMBO_${i}_AMI"
-          
-          echo "Trying combination $i: Region=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]"), Subnet=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SUBNET\"]")"
-          
-          # Configure AWS credentials for this region
-          aws configure set region $(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]")
-          
-          # Set up temporary files for output capture
-          TEMP_OUTPUT=$(mktemp)
-          TEMP_ERROR=$(mktemp)
-          
-          # Try to start a runner in this region/subnet
-          aws sts get-caller-identity > /dev/null 2>&1
-          if [ $? -ne 0 ]; then
-            echo "AWS credentials configuration failed for region $(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]")"
-            continue
-          fi
-          
-          # Run the GitHub Action for this combination
-          {
-            # We'll use an inline script to set the AWS region and call the EC2 runner action
-            # Note: This is a placeholder as we can't directly execute another composite action within bash
-            echo "REGION=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]")" > $TEMP_OUTPUT
-            echo "SUBNET=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SUBNET\"]")" >> $TEMP_OUTPUT
-            echo "AMI=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_AMI\"]")" >> $TEMP_OUTPUT
-            echo "SG=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SG\"]")" >> $TEMP_OUTPUT
-            
-            # Simulate action run result (will be replaced with actual implementation)
-            echo "This_combination_will_be_tried_by_the_multi-runner_step"
-            
-            # Mark this configuration for the multi-runner step
-            CONFIG_KEY="CONFIG_${i}"
-            CONFIG_VALUE="region=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]"),subnet=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SUBNET\"]"),sg=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SG\"]"),ami=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_AMI\"]")"
-            echo "${CONFIG_KEY}=${CONFIG_VALUE}" >> $GITHUB_OUTPUT
-          } > $TEMP_OUTPUT 2> $TEMP_ERROR
-        done
-    
-    # The following steps will be executed for each region/subnet combination
-    # We'll use a multi-runner approach with 10 possible combinations
-    
-    - name: Set up Multi-Region Runner Attempts
-      id: setup-attempts
-      shell: bash
-      run: |
-        # Set up the number of attempts we'll make
-        MAX_COMBOS="${{ steps.parse-regions.outputs.MAX_COMBOS }}"
-        echo "We will try up to $MAX_COMBOS region/subnet combinations"
-        
-        for i in $(seq 1 $MAX_COMBOS); do
-          CONFIG_KEY="CONFIG_${i}"
-          CONFIG_VALUE=$(echo "${{ toJSON(steps.try-runners.outputs) }}" | jq -r ".[\"${CONFIG_KEY}\"] // \"\"")
-          
-          if [[ -n "$CONFIG_VALUE" ]]; then
-            # Extract the region, subnet, security group, and AMI
-            IFS=',' read -r -a CONFIG_PARTS <<< "$CONFIG_VALUE"
-            for part in "${CONFIG_PARTS[@]}"; do
-              if [[ $part =~ ^region=(.*)$ ]]; then
-                echo "ATTEMPT_${i}_REGION=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-              elif [[ $part =~ ^subnet=(.*)$ ]]; then
-                echo "ATTEMPT_${i}_SUBNET=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-              elif [[ $part =~ ^sg=(.*)$ ]]; then
-                echo "ATTEMPT_${i}_SG=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-              elif [[ $part =~ ^ami=(.*)$ ]]; then
-                echo "ATTEMPT_${i}_AMI=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-              fi
-            done
-            echo "ATTEMPT_${i}=true" >> $GITHUB_OUTPUT
-          else
-            echo "ATTEMPT_${i}=false" >> $GITHUB_OUTPUT
-          fi
+          echo "Combination $i:"
+          echo "  Region: ${{ steps.parse-regions.outputs.COMBO_${i}_REGION }}"
+          echo "  Subnet: ${{ steps.parse-regions.outputs.COMBO_${i}_SUBNET }}"
+          echo "  Security Group: ${{ steps.parse-regions.outputs.COMBO_${i}_SG }}"
+          echo "  AMI: ${{ steps.parse-regions.outputs.COMBO_${i}_AMI }}"
         done
 
-    # Now we define steps for each attempt
-    - name: Configure AWS credentials for Multi-Region
+    # Now we define steps for each combination using proper AWS actions
+    - name: Configure AWS credentials for Attempt 1
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 1 }}
+      id: aws-credentials-1
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ inputs.aws-role-arn }}
-        aws-region: ${{ steps.setup-attempts.outputs.ATTEMPT_1_REGION || 'us-east-1' }}
-        role-session-name: github-runner-session
+        aws-region: ${{ steps.parse-regions.outputs.COMBO_1_REGION }}
+        role-session-name: github-runner-session-1
 
     - name: Start EC2 runner (Attempt 1)
       id: start-ec2-runner-1
-      if: ${{ steps.setup-attempts.outputs.ATTEMPT_1 == 'true' }}
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 1 }}
       uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
       continue-on-error: true
       with:
@@ -226,11 +177,11 @@ runs:
         startup-quiet-period-seconds: 10
         startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
-        ec2-image-id: ${{ steps.setup-attempts.outputs.ATTEMPT_1_AMI }}
+        ec2-image-id: ${{ steps.parse-regions.outputs.COMBO_1_AMI }}
         ec2-instance-type: ${{ inputs.instance-type }}
         market-type: ${{ inputs.market-type }}
-        subnet-id: ${{ steps.setup-attempts.outputs.ATTEMPT_1_SUBNET }}
-        security-group-id: ${{ steps.setup-attempts.outputs.ATTEMPT_1_SG }}
+        subnet-id: ${{ steps.parse-regions.outputs.COMBO_1_SUBNET }}
+        security-group-id: ${{ steps.parse-regions.outputs.COMBO_1_SG }}
         ec2-volume-size: ${{ inputs.volume-size }}
         pre-runner-script: ${{ inputs.pre-runner-script }}
         iam-role-name: ${{ inputs.iam-role-name }}
@@ -244,20 +195,21 @@ runs:
             {"Key": "SHA", "Value": "${{ github.sha }}"},
             {"Key": "Branch", "Value": "${{ github.ref_name }}"},
             {"Key": "Actor", "Value": "${{ github.actor }}"},
-            {"Key": "Region", "Value": "${{ steps.setup-attempts.outputs.ATTEMPT_1_REGION }}"}
+            {"Key": "Region", "Value": "${{ steps.parse-regions.outputs.COMBO_1_REGION }}"}
           ]
 
     - name: Configure AWS credentials for Attempt 2
-      if: ${{ steps.setup-attempts.outputs.ATTEMPT_2 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' }}
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 2 && steps.start-ec2-runner-1.outcome == 'failure' }}
+      id: aws-credentials-2
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ inputs.aws-role-arn }}
-        aws-region: ${{ steps.setup-attempts.outputs.ATTEMPT_2_REGION }}
-        role-session-name: github-runner-session
+        aws-region: ${{ steps.parse-regions.outputs.COMBO_2_REGION }}
+        role-session-name: github-runner-session-2
 
     - name: Start EC2 runner (Attempt 2)
       id: start-ec2-runner-2
-      if: ${{ steps.setup-attempts.outputs.ATTEMPT_2 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' }}
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 2 && steps.start-ec2-runner-1.outcome == 'failure' }}
       uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
       continue-on-error: true
       with:
@@ -265,11 +217,11 @@ runs:
         startup-quiet-period-seconds: 10
         startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
-        ec2-image-id: ${{ steps.setup-attempts.outputs.ATTEMPT_2_AMI }}
+        ec2-image-id: ${{ steps.parse-regions.outputs.COMBO_2_AMI }}
         ec2-instance-type: ${{ inputs.instance-type }}
         market-type: ${{ inputs.market-type }}
-        subnet-id: ${{ steps.setup-attempts.outputs.ATTEMPT_2_SUBNET }}
-        security-group-id: ${{ steps.setup-attempts.outputs.ATTEMPT_2_SG }}
+        subnet-id: ${{ steps.parse-regions.outputs.COMBO_2_SUBNET }}
+        security-group-id: ${{ steps.parse-regions.outputs.COMBO_2_SG }}
         ec2-volume-size: ${{ inputs.volume-size }}
         pre-runner-script: ${{ inputs.pre-runner-script }}
         iam-role-name: ${{ inputs.iam-role-name }}
@@ -283,24 +235,21 @@ runs:
             {"Key": "SHA", "Value": "${{ github.sha }}"},
             {"Key": "Branch", "Value": "${{ github.ref_name }}"},
             {"Key": "Actor", "Value": "${{ github.actor }}"},
-            {"Key": "Region", "Value": "${{ steps.setup-attempts.outputs.ATTEMPT_2_REGION }}"}
+            {"Key": "Region", "Value": "${{ steps.parse-regions.outputs.COMBO_2_REGION }}"}
           ]
 
-    # Continue with more attempts as needed (3-10)
-    # For brevity, I'm including just a few, but you can expand this pattern
-    # The pattern continues for attempts 3-10 following the same structure
-
     - name: Configure AWS credentials for Attempt 3
-      if: ${{ steps.setup-attempts.outputs.ATTEMPT_3 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' }}
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 3 && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' }}
+      id: aws-credentials-3
       uses: aws-actions/configure-aws-credentials@v4
       with:
         role-to-assume: ${{ inputs.aws-role-arn }}
-        aws-region: ${{ steps.setup-attempts.outputs.ATTEMPT_3_REGION }}
-        role-session-name: github-runner-session
+        aws-region: ${{ steps.parse-regions.outputs.COMBO_3_REGION }}
+        role-session-name: github-runner-session-3
 
     - name: Start EC2 runner (Attempt 3)
       id: start-ec2-runner-3
-      if: ${{ steps.setup-attempts.outputs.ATTEMPT_3 == 'true' && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' }}
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 3 && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' }}
       uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
       continue-on-error: true
       with:
@@ -308,11 +257,11 @@ runs:
         startup-quiet-period-seconds: 10
         startup-retry-interval-seconds: 5
         github-token: ${{ inputs.github-token }}
-        ec2-image-id: ${{ steps.setup-attempts.outputs.ATTEMPT_3_AMI }}
+        ec2-image-id: ${{ steps.parse-regions.outputs.COMBO_3_AMI }}
         ec2-instance-type: ${{ inputs.instance-type }}
         market-type: ${{ inputs.market-type }}
-        subnet-id: ${{ steps.setup-attempts.outputs.ATTEMPT_3_SUBNET }}
-        security-group-id: ${{ steps.setup-attempts.outputs.ATTEMPT_3_SG }}
+        subnet-id: ${{ steps.parse-regions.outputs.COMBO_3_SUBNET }}
+        security-group-id: ${{ steps.parse-regions.outputs.COMBO_3_SG }}
         ec2-volume-size: ${{ inputs.volume-size }}
         pre-runner-script: ${{ inputs.pre-runner-script }}
         iam-role-name: ${{ inputs.iam-role-name }}
@@ -326,7 +275,87 @@ runs:
             {"Key": "SHA", "Value": "${{ github.sha }}"},
             {"Key": "Branch", "Value": "${{ github.ref_name }}"},
             {"Key": "Actor", "Value": "${{ github.actor }}"},
-            {"Key": "Region", "Value": "${{ steps.setup-attempts.outputs.ATTEMPT_3_REGION }}"}
+            {"Key": "Region", "Value": "${{ steps.parse-regions.outputs.COMBO_3_REGION }}"}
+          ]
+
+    - name: Configure AWS credentials for Attempt 4
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 4 && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' && steps.start-ec2-runner-3.outcome == 'failure' }}
+      id: aws-credentials-4
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ steps.parse-regions.outputs.COMBO_4_REGION }}
+        role-session-name: github-runner-session-4
+
+    - name: Start EC2 runner (Attempt 4)
+      id: start-ec2-runner-4
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 4 && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' && steps.start-ec2-runner-3.outcome == 'failure' }}
+      uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
+      continue-on-error: true
+      with:
+        mode: start
+        startup-quiet-period-seconds: 10
+        startup-retry-interval-seconds: 5
+        github-token: ${{ inputs.github-token }}
+        ec2-image-id: ${{ steps.parse-regions.outputs.COMBO_4_AMI }}
+        ec2-instance-type: ${{ inputs.instance-type }}
+        market-type: ${{ inputs.market-type }}
+        subnet-id: ${{ steps.parse-regions.outputs.COMBO_4_SUBNET }}
+        security-group-id: ${{ steps.parse-regions.outputs.COMBO_4_SG }}
+        ec2-volume-size: ${{ inputs.volume-size }}
+        pre-runner-script: ${{ inputs.pre-runner-script }}
+        iam-role-name: ${{ inputs.iam-role-name }}
+        aws-resource-tags: >
+          [
+            {"Key": "Name", "Value": "${{ inputs.runner-name-prefix }}"},
+            {"Key": "Repository", "Value": "${{ github.repository }}"},
+            {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+            {"Key": "RunId", "Value": "${{ github.run_id }}"},
+            {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+            {"Key": "SHA", "Value": "${{ github.sha }}"},
+            {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+            {"Key": "Actor", "Value": "${{ github.actor }}"},
+            {"Key": "Region", "Value": "${{ steps.parse-regions.outputs.COMBO_4_REGION }}"}
+          ]
+
+    - name: Configure AWS credentials for Attempt 5
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 5 && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' && steps.start-ec2-runner-3.outcome == 'failure' && steps.start-ec2-runner-4.outcome == 'failure' }}
+      id: aws-credentials-5
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        aws-region: ${{ steps.parse-regions.outputs.COMBO_5_REGION }}
+        role-session-name: github-runner-session-5
+
+    - name: Start EC2 runner (Attempt 5)
+      id: start-ec2-runner-5
+      if: ${{ steps.parse-regions.outputs.MAX_COMBOS >= 5 && steps.start-ec2-runner-1.outcome == 'failure' && steps.start-ec2-runner-2.outcome == 'failure' && steps.start-ec2-runner-3.outcome == 'failure' && steps.start-ec2-runner-4.outcome == 'failure' }}
+      uses: devin-purple/ec2-github-runner@97328aea29a7b1da7f840fd9434b3046dfcc07a9
+      continue-on-error: true
+      with:
+        mode: start
+        startup-quiet-period-seconds: 10
+        startup-retry-interval-seconds: 5
+        github-token: ${{ inputs.github-token }}
+        ec2-image-id: ${{ steps.parse-regions.outputs.COMBO_5_AMI }}
+        ec2-instance-type: ${{ inputs.instance-type }}
+        market-type: ${{ inputs.market-type }}
+        subnet-id: ${{ steps.parse-regions.outputs.COMBO_5_SUBNET }}
+        security-group-id: ${{ steps.parse-regions.outputs.COMBO_5_SG }}
+        ec2-volume-size: ${{ inputs.volume-size }}
+        pre-runner-script: ${{ inputs.pre-runner-script }}
+        iam-role-name: ${{ inputs.iam-role-name }}
+        aws-resource-tags: >
+          [
+            {"Key": "Name", "Value": "${{ inputs.runner-name-prefix }}"},
+            {"Key": "Repository", "Value": "${{ github.repository }}"},
+            {"Key": "Workflow", "Value": "${{ github.workflow }}"},
+            {"Key": "RunId", "Value": "${{ github.run_id }}"},
+            {"Key": "RunNumber", "Value": "${{ github.run_number }}"},
+            {"Key": "SHA", "Value": "${{ github.sha }}"},
+            {"Key": "Branch", "Value": "${{ github.ref_name }}"},
+            {"Key": "Actor", "Value": "${{ github.actor }}"},
+            {"Key": "Region", "Value": "${{ steps.parse-regions.outputs.COMBO_5_REGION }}"}
           ]
 
     - name: Collect outputs
@@ -337,18 +366,28 @@ runs:
         if [ "${{ steps.start-ec2-runner-1.outcome }}" == "success" ]; then
           echo "label=${{ steps.start-ec2-runner-1.outputs.label }}" >> $GITHUB_OUTPUT
           echo "ec2-instance-id=${{ steps.start-ec2-runner-1.outputs.ec2-instance-id }}" >> $GITHUB_OUTPUT
-          echo "region=${{ steps.setup-attempts.outputs.ATTEMPT_1_REGION }}" >> $GITHUB_OUTPUT
-          echo "Runner successfully started in ${{ steps.setup-attempts.outputs.ATTEMPT_1_REGION }}"
+          echo "region=${{ steps.parse-regions.outputs.COMBO_1_REGION }}" >> $GITHUB_OUTPUT
+          echo "Runner successfully started in ${{ steps.parse-regions.outputs.COMBO_1_REGION }}"
         elif [ "${{ steps.start-ec2-runner-2.outcome }}" == "success" ]; then
           echo "label=${{ steps.start-ec2-runner-2.outputs.label }}" >> $GITHUB_OUTPUT
           echo "ec2-instance-id=${{ steps.start-ec2-runner-2.outputs.ec2-instance-id }}" >> $GITHUB_OUTPUT
-          echo "region=${{ steps.setup-attempts.outputs.ATTEMPT_2_REGION }}" >> $GITHUB_OUTPUT
-          echo "Runner successfully started in ${{ steps.setup-attempts.outputs.ATTEMPT_2_REGION }}"
+          echo "region=${{ steps.parse-regions.outputs.COMBO_2_REGION }}" >> $GITHUB_OUTPUT
+          echo "Runner successfully started in ${{ steps.parse-regions.outputs.COMBO_2_REGION }}"
         elif [ "${{ steps.start-ec2-runner-3.outcome }}" == "success" ]; then
           echo "label=${{ steps.start-ec2-runner-3.outputs.label }}" >> $GITHUB_OUTPUT
           echo "ec2-instance-id=${{ steps.start-ec2-runner-3.outputs.ec2-instance-id }}" >> $GITHUB_OUTPUT
-          echo "region=${{ steps.setup-attempts.outputs.ATTEMPT_3_REGION }}" >> $GITHUB_OUTPUT
-          echo "Runner successfully started in ${{ steps.setup-attempts.outputs.ATTEMPT_3_REGION }}"
+          echo "region=${{ steps.parse-regions.outputs.COMBO_3_REGION }}" >> $GITHUB_OUTPUT
+          echo "Runner successfully started in ${{ steps.parse-regions.outputs.COMBO_3_REGION }}"
+        elif [ "${{ steps.start-ec2-runner-4.outcome }}" == "success" ]; then
+          echo "label=${{ steps.start-ec2-runner-4.outputs.label }}" >> $GITHUB_OUTPUT
+          echo "ec2-instance-id=${{ steps.start-ec2-runner-4.outputs.ec2-instance-id }}" >> $GITHUB_OUTPUT
+          echo "region=${{ steps.parse-regions.outputs.COMBO_4_REGION }}" >> $GITHUB_OUTPUT
+          echo "Runner successfully started in ${{ steps.parse-regions.outputs.COMBO_4_REGION }}"
+        elif [ "${{ steps.start-ec2-runner-5.outcome }}" == "success" ]; then
+          echo "label=${{ steps.start-ec2-runner-5.outputs.label }}" >> $GITHUB_OUTPUT
+          echo "ec2-instance-id=${{ steps.start-ec2-runner-5.outputs.ec2-instance-id }}" >> $GITHUB_OUTPUT
+          echo "region=${{ steps.parse-regions.outputs.COMBO_5_REGION }}" >> $GITHUB_OUTPUT
+          echo "Runner successfully started in ${{ steps.parse-regions.outputs.COMBO_5_REGION }}"
         else
           echo "All runner attempts failed. Please check AWS capacity availability across regions."
           exit 1
