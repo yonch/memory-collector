@@ -138,10 +138,10 @@ runs:
           SG="COMBO_${i}_SG"
           AMI="COMBO_${i}_AMI"
           
-          echo "Trying combination $i: Region=${{ steps.parse-regions.outputs[REGION] }}, Subnet=${{ steps.parse-regions.outputs[SUBNET] }}"
+          echo "Trying combination $i: Region=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]"), Subnet=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SUBNET\"]")"
           
           # Configure AWS credentials for this region
-          aws configure set region ${{ steps.parse-regions.outputs[REGION] }}
+          aws configure set region $(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]")
           
           # Set up temporary files for output capture
           TEMP_OUTPUT=$(mktemp)
@@ -150,7 +150,7 @@ runs:
           # Try to start a runner in this region/subnet
           aws sts get-caller-identity > /dev/null 2>&1
           if [ $? -ne 0 ]; then
-            echo "AWS credentials configuration failed for region ${{ steps.parse-regions.outputs[REGION] }}"
+            echo "AWS credentials configuration failed for region $(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]")"
             continue
           fi
           
@@ -158,16 +158,18 @@ runs:
           {
             # We'll use an inline script to set the AWS region and call the EC2 runner action
             # Note: This is a placeholder as we can't directly execute another composite action within bash
-            echo "REGION=${{ steps.parse-regions.outputs[REGION] }}" > $TEMP_OUTPUT
-            echo "SUBNET=${{ steps.parse-regions.outputs[SUBNET] }}" >> $TEMP_OUTPUT
-            echo "AMI=${{ steps.parse-regions.outputs[AMI] }}" >> $TEMP_OUTPUT
-            echo "SG=${{ steps.parse-regions.outputs[SG] }}" >> $TEMP_OUTPUT
+            echo "REGION=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]")" > $TEMP_OUTPUT
+            echo "SUBNET=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SUBNET\"]")" >> $TEMP_OUTPUT
+            echo "AMI=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_AMI\"]")" >> $TEMP_OUTPUT
+            echo "SG=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SG\"]")" >> $TEMP_OUTPUT
             
             # Simulate action run result (will be replaced with actual implementation)
             echo "This_combination_will_be_tried_by_the_multi-runner_step"
             
             # Mark this configuration for the multi-runner step
-            echo "CONFIG_${i}=region=${{ steps.parse-regions.outputs[REGION] }},subnet=${{ steps.parse-regions.outputs[SUBNET] }},sg=${{ steps.parse-regions.outputs[SG] }},ami=${{ steps.parse-regions.outputs[AMI] }}" >> $GITHUB_OUTPUT
+            CONFIG_KEY="CONFIG_${i}"
+            CONFIG_VALUE="region=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_REGION\"]"),subnet=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SUBNET\"]"),sg=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_SG\"]"),ami=$(echo "${{ toJSON(steps.parse-regions.outputs) }}" | jq -r ".[\"COMBO_${i}_AMI\"]")"
+            echo "${CONFIG_KEY}=${CONFIG_VALUE}" >> $GITHUB_OUTPUT
           } > $TEMP_OUTPUT 2> $TEMP_ERROR
         done
     
@@ -183,10 +185,12 @@ runs:
         echo "We will try up to $MAX_COMBOS region/subnet combinations"
         
         for i in $(seq 1 $MAX_COMBOS); do
-          CONFIG="CONFIG_${i}"
-          if [[ -n "${{ steps.try-runners.outputs[CONFIG] }}" ]]; then
+          CONFIG_KEY="CONFIG_${i}"
+          CONFIG_VALUE=$(echo "${{ toJSON(steps.try-runners.outputs) }}" | jq -r ".[\"${CONFIG_KEY}\"] // \"\"")
+          
+          if [[ -n "$CONFIG_VALUE" ]]; then
             # Extract the region, subnet, security group, and AMI
-            IFS=',' read -r -a CONFIG_PARTS <<< "${{ steps.try-runners.outputs[CONFIG] }}"
+            IFS=',' read -r -a CONFIG_PARTS <<< "$CONFIG_VALUE"
             for part in "${CONFIG_PARTS[@]}"; do
               if [[ $part =~ ^region=(.*)$ ]]; then
                 echo "ATTEMPT_${i}_REGION=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
