@@ -2,7 +2,7 @@ default:
   replicas: 3 # multiple replicas for most services
 
 opentelemetry-collector:
-  enabled: false
+  enabled: true
 
 opensearch:
   enabled: false
@@ -53,11 +53,11 @@ components:
         memory: 650Mi
 
   currency:
-    useDefault:
-      env: true
-    envOverrides:
-      - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: "" # Disable
+    # useDefault:
+    #   env: true
+    # envOverrides:
+    #   - name: OTEL_EXPORTER_OTLP_ENDPOINT
+    #     value: "" # Disable
     resources:
       limits:
         memory: 200Mi
