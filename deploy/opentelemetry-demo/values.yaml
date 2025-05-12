@@ -104,6 +104,7 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
+    replicas: 9
     
   quote:
     useDefault:
