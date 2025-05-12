@@ -5,6 +5,83 @@ components:
   flagd:
     replicas: 3 # otherwise, flagd only runs on one replica, and will bottleneck some services
 
+  accounting:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  ad:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  cart:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  checkout:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  currency:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  email:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  fraud-detection:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  frontend:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  frontend-proxy:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  image-provider:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  payment:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
   product-catalog:
     useDefault:
       env: true
@@ -12,6 +89,27 @@ components:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
     
+  quote:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  recommendation:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
+  shipping:
+    useDefault:
+      env: true
+    envOverrides:
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
+
   load-generator:
     enabled: false
     replicas: 1 # only one replica for load-generator, it spawns multiple processes
@@ -34,6 +132,8 @@ components:
         value: "16"
       - name: LOCUST_LOCUSTFILE
         value: "/etc/locust/locustfile.py"
+      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+        value: "" # Disable
       
     # Create a volume mount for the CSV files
     mountedEmptyDirs:
