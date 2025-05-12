@@ -1,12 +1,25 @@
 default:
   replicas: 6 # multiple replicas for most services
 
+opentelemetry-collector:
+  enabled: false
+
+opensearch:
+  enabled: false
+
+jaeger:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+grafana:
+  enabled: false
+
 components:
   flagd:
     replicas: 3 # otherwise, flagd only runs on one replica, and will bottleneck some services
 
-  opentelemetry-collector:
-    enabled: false
 
   accounting:
     useDefault:
