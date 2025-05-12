@@ -286,18 +286,18 @@ components:
                     }
                     self.client.get("/api/recommendations", params=params)
 
-                # @task(3)
+                @task(3)
                 def get_ads(self):
                     params = {
                         "contextKeys": [random.choice(categories)],
                     }
                     self.client.get("/api/data/", params=params)
 
-                # @task(3)
+                @task(3)
                 def view_cart(self):
                     self.client.get("/api/cart")
 
-                # @task(2)
+                @task(2)
                 def add_to_cart(self, user=""):
                     if user == "":
                         user = str(uuid.uuid1())
@@ -321,7 +321,7 @@ components:
                     checkout_person["userId"] = user
                     self.client.post("/api/checkout", json=checkout_person)
 
-                # @task(1)
+                @task(1)
                 def checkout_multi(self):
                     # checkout call which adds 2-4 different items to cart before checkout
                     user = str(uuid.uuid1())
@@ -331,7 +331,7 @@ components:
                     checkout_person["userId"] = user
                     self.client.post("/api/checkout", json=checkout_person)
 
-                # @task(5)
+                @task(5)
                 def flood_home(self):
                     for _ in range(0, get_flagd_value("loadGeneratorFloodHomepage")):
                         self.client.get("/")
