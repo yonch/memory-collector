@@ -13,16 +13,18 @@ library(tidyr)
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) < 1) {
-  cat("Usage: Rscript plot_cpu_utilization_simple.R <cpu_metrics_csv> [process_name] [output_file]\n")
+  cat("Usage: Rscript plot_cpu_utilization_simple.R <cpu_metrics_csv> [process_name] [output_file] [top_n_processes]\n")
   cat("  <cpu_metrics_csv>: Path to the CPU metrics CSV file (converted format)\n")
   cat("  [process_name]: Name of the process to analyze (default: \"collector\")\n")
   cat("  [output_file]: Base name for output files (default: \"cpu_utilization\")\n")
+  cat("  [top_n_processes]: Number of top CPU consumers to show individually (default: 15)\n")
   quit(status = 1)
 }
 
 cpu_metrics_file <- args[1]
 process_name <- if (length(args) >= 2) args[2] else "collector"
 output_file <- if (length(args) >= 3) args[3] else "cpu_utilization"
+top_n_processes <- if (length(args) >= 4) as.numeric(args[4]) else 15
 
 # Start timing
 start_time <- Sys.time()
@@ -186,6 +188,82 @@ if (nrow(process_data) > 0 && nrow(non_process_summary) > 0) {
   ggsave(paste0(output_file, "_comparison.pdf"), plot_facet, width = 10, height = 8)
   cat("Saved CPU utilization comparison plot to", paste0(output_file, "_comparison.png"), "and", paste0(output_file, "_comparison.pdf"), "\n")
 }
+
+# Generate Graph C: Stacked bar chart of top CPU consumers
+cat("Generating stacked bar chart of top CPU consumers...\n")
+
+# First, calculate total CPU usage per process over time
+process_totals <- cpu_data %>%
+  # Convert to millicores
+  mutate(total_millicores = cpu_pct * 10) %>%
+  # Group by timestamp and command
+  group_by(elapsed_time, command) %>%
+  # Sum CPU usage for each process at each timestamp
+  summarize(millicores = sum(total_millicores, na.rm = TRUE), .groups = 'drop')
+
+# Identify top N CPU consumers based on average CPU usage
+top_processes <- process_totals %>%
+  group_by(command) %>%
+  summarize(avg_millicores = mean(millicores, na.rm = TRUE), .groups = 'drop') %>%
+  arrange(desc(avg_millicores)) %>%
+  slice_head(n = top_n_processes) %>%
+  pull(command)
+
+cat("Top", top_n_processes, "CPU consumers:\n")
+print(process_totals %>%
+  group_by(command) %>%
+  summarize(avg_millicores = mean(millicores, na.rm = TRUE), .groups = 'drop') %>%
+  arrange(desc(avg_millicores)) %>%
+  slice_head(n = top_n_processes))
+
+# Prepare data for stacked bar plot, grouping non-top processes as "other"
+stacked_data <- process_totals %>%
+  mutate(
+    process_group = ifelse(command %in% top_processes, command, "other")
+  ) %>%
+  group_by(elapsed_time, process_group) %>%
+  summarize(millicores = sum(millicores, na.rm = TRUE), .groups = 'drop')
+
+# Generate colors for the stacked bar plot
+all_colors <- colorRampPalette(
+  c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+    "#FFFF33", "#A65628", "#F781BF", "#999999")
+)(length(unique(stacked_data$process_group)))
+
+names(all_colors) <- unique(stacked_data$process_group)
+
+# If "other" is present, make it gray and place it at the bottom of the stack
+if ("other" %in% names(all_colors)) {
+  all_colors["other"] <- "#CCCCCC"  # Gray for "other"
+  
+  # Reorder factor levels to ensure "other" is at the bottom of the stack
+  process_groups <- setdiff(names(all_colors), "other")
+  stacked_data$process_group <- factor(stacked_data$process_group, 
+                               levels = c(process_groups, "other"))
+}
+
+# Create stacked bar plot
+plot_stacked <- ggplot(stacked_data, aes(x = elapsed_time, y = millicores, fill = process_group)) +
+  geom_col(position = "stack", width = 0.9) +
+  scale_fill_manual(values = all_colors) +
+  labs(
+    title = "CPU Utilization by Process",
+    subtitle = paste("Top", top_n_processes, "CPU consumers with others grouped"),
+    x = "Time (seconds)",
+    y = "CPU Utilization (millicores)",
+    fill = "Process"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+
+# Save stacked bar plot
+ggsave(paste0(output_file, "_stacked.png"), plot_stacked, width = 12, height = 8)
+ggsave(paste0(output_file, "_stacked.pdf"), plot_stacked, width = 12, height = 8)
+cat("Saved stacked CPU utilization plot to", paste0(output_file, "_stacked.png"), "and", paste0(output_file, "_stacked.pdf"), "\n")
 
 total_time <- Sys.time() - start_time
 cat("\nCPU utilization analysis complete in", round(as.numeric(total_time), 2), attr(total_time, "units"), "\n") 
