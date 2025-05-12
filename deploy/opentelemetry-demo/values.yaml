@@ -84,6 +84,7 @@ components:
         value: "" # Disable
 
   frontend-proxy:
+    replicas: 6
     resources:
       limits:
         memory: 650Mi
