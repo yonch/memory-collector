@@ -155,7 +155,12 @@ runs:
         
         # Read the full AZ configs
         AZ_CONFIGS=$(cat /tmp/az_configs.json)
-        echo "availability_zones_config=$AZ_CONFIGS" >> $GITHUB_OUTPUT
+        
+        # Properly escape the multiline JSON for GitHub Actions output
+        # See: https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#multiline-strings
+        echo "availability_zones_config<<EOF" >> $GITHUB_OUTPUT
+        echo "$AZ_CONFIGS" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
         
         # Get the first region for the initial AWS credentials
         FIRST_REGION=$(jq -r '.[0].region' /tmp/az_configs.json)
