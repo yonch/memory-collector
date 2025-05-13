@@ -83,6 +83,9 @@ outputs:
   ec2-instance-id:
     description: 'The ID of the created EC2 instance'
     value: ${{ steps.runner-outputs.outputs.ec2-instance-id }}
+  region:
+    description: 'AWS region where the EC2 instance was created'
+    value: ${{ steps.runner-outputs.outputs.region }}
 
 runs:
   using: 'composite'
@@ -182,7 +185,7 @@ runs:
     # Start EC2 runner with availability-zones-config
     - name: Start EC2 runner
       id: start-ec2-runner
-      uses: yonch/ec2-github-runner@385b5c7e55918be079252eff6e647215fc8f28d6
+      uses: yonch/ec2-github-runner@7a4aa1ca6bf1a5c20e2695db772465e3fced63a2
       with:
         mode: start
         startup-quiet-period-seconds: 10
@@ -214,7 +217,8 @@ runs:
         if [ -n "${{ steps.start-ec2-runner.outputs.ec2-instance-id }}" ]; then
           echo "label=${{ steps.start-ec2-runner.outputs.label }}" >> $GITHUB_OUTPUT
           echo "ec2-instance-id=${{ steps.start-ec2-runner.outputs.ec2-instance-id }}" >> $GITHUB_OUTPUT
-          echo "Runner successfully started"
+          echo "region=${{ steps.start-ec2-runner.outputs.region }}" >> $GITHUB_OUTPUT
+          echo "Runner successfully started in region: ${{ steps.start-ec2-runner.outputs.region }}"
         else
           echo "All runner attempts failed. Please check AWS capacity availability across regions."
           exit 1
