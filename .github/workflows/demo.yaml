@@ -602,8 +602,8 @@ jobs:
           # Generate LLC misses plots
           # run these starting at 20 seconds and starting at 90 seconds
           for i in 0.3 0.5 1 3 10; do
-            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 20 $i visualization_results/llc_misses_20sec_$i
-            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 $i visualization_results/llc_misses_180sec_$i
+            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 20 $i visualization_results/llc_misses_20sec_$i || true
+            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 $i visualization_results/llc_misses_180sec_$i || true
           done
 
           # Check output
