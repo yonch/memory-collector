@@ -77,7 +77,7 @@ components:
         value: "" # Disable
 
   frontend:
-    replicas: 6
+    replicas: 9
     useDefault:
       env: false
     envOverrides:
