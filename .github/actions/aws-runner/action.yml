@@ -191,7 +191,7 @@ runs:
     # Start EC2 runner with availability-zones-config
     - name: Start EC2 runner
       id: start-ec2-runner
-      uses: yonch/ec2-github-runner@7a4aa1ca6bf1a5c20e2695db772465e3fced63a2
+      uses: yonch/ec2-github-runner@feature/multiple-az
       with:
         mode: start
         startup-quiet-period-seconds: 10
