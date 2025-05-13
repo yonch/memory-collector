@@ -77,7 +77,7 @@ components:
         value: "" # Disable
 
   frontend:
-    replicas: 9
+    replicas: 12
     useDefault:
       env: false
     envOverrides:
@@ -154,9 +154,9 @@ components:
       - name: LOCUST_HEADLESS
         value: "true"
       - name: LOCUST_USERS
-        value: "10800"
+        value: "13000"
       - name: LOCUST_SPAWN_RATE
-        value: "108"
+        value: "130"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_PROCESSES
