@@ -303,13 +303,14 @@ jobs:
           echo "CPU metrics file: ${CPU_METRICS_FILE}"
           echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
 
+      #### Main run time
       - name: (metrics) Record system performance with perf
         run: |
           # Create directory for perf data
           mkdir -p /tmp/perf_data
           
-          echo "Starting perf record for 120 seconds at 19Hz frequency..."
-          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 120
+          echo "Starting perf record for 240 seconds at 19Hz frequency..."
+          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 240
           
           # Create directory for perf results
           mkdir -p perf_results
@@ -602,7 +603,7 @@ jobs:
           # run these starting at 20 seconds and starting at 90 seconds
           for i in 0.3 0.5 1 3 10; do
             Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 20 $i visualization_results/llc_misses_20sec_$i
-            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 90 $i visualization_results/llc_misses_90sec_$i
+            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 $i visualization_results/llc_misses_180sec_$i
           done
 
           # Check output

@@ -159,7 +159,7 @@ components:
       - name: LOCUST_USERS
         value: "13000"
       - name: LOCUST_SPAWN_RATE
-        value: "130"
+        value: "65"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_PROCESSES
