@@ -255,6 +255,18 @@ jobs:
           kubectl get pods -l app.kubernetes.io/name=collector
           kubectl logs -l app.kubernetes.io/name=collector -c collector --tail=10
 
+      #### Start load generator
+
+      - name: (workload) Start Load Generator
+        run: |
+          helm upgrade $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml \
+            --set components.load-generator.enabled=true --wait
+
+      - name: (workload) Describe Load Generator Deployment
+        run: |
+          kubectl describe deployment load-generator
+
+
       #### Start PIDs stat collection
 
       - name: (metrics) Start PIDs stat collection
@@ -290,18 +302,6 @@ jobs:
           echo "Memory metrics PID: ${MEMORY_PIDSTAT_PID}"
           echo "CPU metrics file: ${CPU_METRICS_FILE}"
           echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
-
-      #### Start load generator
-
-      - name: (workload) Start Load Generator
-        run: |
-          helm upgrade $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml \
-            --set components.load-generator.enabled=true --wait
-
-      - name: (workload) Describe Load Generator Deployment
-        run: |
-          kubectl describe deployment load-generator
-
 
       - name: (metrics) Record system performance with perf
         run: |
