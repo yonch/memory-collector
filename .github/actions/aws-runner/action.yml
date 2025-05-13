@@ -50,6 +50,10 @@ inputs:
           "security-group-id": "sg-0c0fb801b9d5afb42",
           "subnets": ["subnet-0f218a8f807b24b43", "subnet-03760fcc21de05dcf", "subnet-07f33ad4e85154757", "subnet-06a59c6d0f0ae0acf", "subnet-01411d66f3c3b03ab", "subnet-0aacbbfdb4730c3ae"]
         },
+        "us-east-2": {
+          "security-group-id": "sg-0da5b1b4abff16f01",
+          "subnets": ["subnet-057997a168b11832e", "subnet-04231f222c6778d25", "subnet-085a10d33b29607cd"]
+        },
         "us-west-2": {
           "security-group-id": "sg-065a194f058366e19",
           "subnets": ["subnet-03312d0e183ac6bd2", "subnet-0504fa9cacd9bece7", "subnet-07669de00a10cb45a", "subnet-027770cb161c110b2"]
@@ -67,12 +71,14 @@ inputs:
         "ubuntu-22.04": {
           "us-east-1": "ami-0f9de6e2d2f067fca",
           "us-west-2": "ami-03f8acd418785369b",
-          "eu-west-1": "ami-0f0c3baa60262d5b9"
+          "eu-west-1": "ami-0f0c3baa60262d5b9",
+          "us-east-2": "ami-0c3b809fcf2445b6a"
         },
         "ubuntu-24.04": {
           "us-east-1": "ami-084568db4383264d4",
           "us-west-2": "ami-075686beab831bb7f",
-          "eu-west-1": "ami-0df368112825f8d8f"
+          "eu-west-1": "ami-0df368112825f8d8f",
+          "us-east-2": "ami-04f167a56786e4b09"
         }
       }
 
