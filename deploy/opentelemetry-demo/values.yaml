@@ -154,9 +154,9 @@ components:
       - name: LOCUST_HEADLESS
         value: "true"
       - name: LOCUST_USERS
-        value: "7200"
+        value: "10800"
       - name: LOCUST_SPAWN_RATE
-        value: "72"
+        value: "108"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_PROCESSES
