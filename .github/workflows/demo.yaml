@@ -377,6 +377,11 @@ jobs:
           path: system_metrics/
           retention-days: 28
 
+      - name: (collector) Send SIGUSR1 to Collector
+        run: |
+          kubectl exec -it -n default $(kubectl get pods -l app.kubernetes.io/name=collector -o name | cut -d/ -f2) -- /bin/sh -c "kill -USR1 $(pgrep -f 'collector')"
+          sleep 3
+
       - name: (collector) Uninstall Collector Helm Chart
         run: |
           # see the logs while uninstalling
