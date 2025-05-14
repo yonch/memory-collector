@@ -642,9 +642,9 @@ jobs:
       - name: Generate CPI by LLC Misses Plots
         run: |
           # Generate CPI by LLC misses plots
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 23 75 visualization_results/cpi_by_llc_misses_75
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 23 50 visualization_results/cpi_by_llc_misses_50
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 23 25 visualization_results/cpi_by_llc_misses_25
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_75 23 75 
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_50 23 50
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_25 23 25
 
       - name: Upload Visualization Results
         uses: actions/upload-artifact@v4
