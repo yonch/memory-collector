@@ -309,8 +309,11 @@ jobs:
           # Create directory for perf data
           mkdir -p /tmp/perf_data
           
-          echo "Starting perf record for 240 seconds at 19Hz frequency..."
-          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 240
+          echo "Ramping up load generator without perf record..."
+          sleep 200
+
+          echo "Starting perf record for 40 seconds at 19Hz frequency..."
+          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 40
           
           # Create directory for perf results
           mkdir -p perf_results
