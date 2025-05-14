@@ -233,6 +233,7 @@ jobs:
             --set storage.s3.auth.secretKey="${AWS_SECRET_ACCESS_KEY}" \
             --set resources.limits.cpu=1000m \
             --set resources.requests.cpu=1000m \
+            --set resources.limits.memory=1000Mi \
             --wait
 
       - name: (collector) Wait for Collector Pods to be Ready
