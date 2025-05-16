@@ -718,9 +718,7 @@ jobs:
           echo "Time difference between collector and load generator ready states: ${TIME_DIFF} seconds"
           
           # Generate CPI by LLC misses plots with time window parameters
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_75 23 75 $START_TIME $END_TIME
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_50 23 50 $START_TIME $END_TIME
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_25 23 25 $START_TIME $END_TIME
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_75 23 $START_TIME $END_TIME
 
       - name: Upload Visualization Results
         uses: actions/upload-artifact@v4

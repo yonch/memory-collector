@@ -32,14 +32,13 @@ library(forcats)
 # 2. instruction_threshold: Minimum number of instructions for a sample to be considered (default: 100000)
 # 3. output_file: Base name for output files without extension (default: cpi_by_llc_misses)
 # 4. top_n_processes: Number of top processes to show individually (default: 23)
-# 5. llc_percentile: Percentile threshold for high LLC misses (default: 75)
-# 6. start_time_seconds: Start time in seconds for the analysis window (default: 205)
-# 7. end_time_seconds: End time in seconds for the analysis window (default: 255)
+# 5. start_time_seconds: Start time in seconds for the analysis window (default: 205)
+# 6. end_time_seconds: End time in seconds for the analysis window (default: 255)
 #
 # Example usage:
-# Rscript plot_cpi_by_llc_misses.R my-data.parquet 50000 my-output 15 80 200 300
+# Rscript plot_cpi_by_llc_misses.R my-data.parquet 50000 my-output 15 200 300
 # This would use my-data.parquet, 50k instruction threshold, output to my-output.{png,pdf},
-# show top 15 processes, use 80th percentile LLC threshold, and analyze data from 200-300 seconds.
+# show top 15 processes, and analyze data from 200-300 seconds.
 
 # Parse command line arguments
 args <- commandArgs(trailingOnly = TRUE)
@@ -47,9 +46,8 @@ input_file <- if(length(args) >= 1) args[1] else "collector-parquet.parquet"
 instruction_threshold <- if(length(args) >= 2) as.numeric(args[2]) else 100000  # Default to 100k instructions
 output_file <- if(length(args) >= 3) args[3] else "cpi_by_llc_misses"
 top_n_processes <- if(length(args) >= 4) as.numeric(args[4]) else 23  # Default to showing top 23 processes + "other"
-llc_percentile <- if(length(args) >= 5) as.numeric(args[5]) else 75  # Default to 75th percentile
-start_time_seconds <- if(length(args) >= 6) as.numeric(args[6]) else 205  # Default steady state starts at 205 seconds
-end_time_seconds <- if(length(args) >= 7) as.numeric(args[7]) else 255  # Default steady state ends at 255 seconds
+start_time_seconds <- if(length(args) >= 5) as.numeric(args[5]) else 205  # Default steady state starts at 205 seconds
+end_time_seconds <- if(length(args) >= 6) as.numeric(args[6]) else 255  # Default steady state ends at 255 seconds
 
 # Function to load and process parquet data
 load_and_process_parquet <- function(file_path) {
@@ -74,9 +72,13 @@ load_and_process_parquet <- function(file_path) {
 }
 
 # Function to analyze LLC misses and create the faceted histogram
-create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes, llc_percentile, 
+create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes,
+                                   low_start_percentile, low_end_percentile,
+                                   high_start_percentile, high_end_percentile,
                                    start_time_seconds, end_time_seconds) {
-  message("Analyzing LLC misses and CPI...")
+  message(paste0("Analyzing LLC misses and CPI comparing ",
+                high_start_percentile, "-", high_end_percentile, "% vs ",
+                low_start_percentile, "-", low_end_percentile, "%..."))
   
   # Calculate aggregate LLC misses for each millisecond time slot
   ms_aggregates <- data %>%
@@ -86,19 +88,28 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
       .groups = "drop"
     )
   
-  # Determine the LLC misses threshold at the specified percentile
-  llc_threshold <- quantile(ms_aggregates$total_llc_misses, llc_percentile/100, na.rm = TRUE)
-  message(llc_percentile, "th percentile of LLC misses per millisecond: ", llc_threshold)
+  # Determine the LLC misses thresholds for the given percentiles
+  low_start_threshold <- quantile(ms_aggregates$total_llc_misses, low_start_percentile/100, na.rm = TRUE)
+  low_end_threshold <- quantile(ms_aggregates$total_llc_misses, low_end_percentile/100, na.rm = TRUE)
+  high_start_threshold <- quantile(ms_aggregates$total_llc_misses, high_start_percentile/100, na.rm = TRUE)
+  high_end_threshold <- if(high_end_percentile == 100) Inf else quantile(ms_aggregates$total_llc_misses, high_end_percentile/100, na.rm = TRUE)
+  
+  message("Low LLC miss threshold (", low_start_percentile, "-", low_end_percentile, "%): ", 
+          low_start_threshold, " to ", low_end_threshold)
+  message("High LLC miss threshold (", high_start_percentile, "-", high_end_percentile, "%): ", 
+          high_start_threshold, " to ", high_end_threshold)
 
   # Create category labels for the legend
-  high_label <- paste0("High LLC Misses (>", llc_percentile, "%)")
-  low_label <- paste0("Low LLC Misses (<", llc_percentile, "%)")
+  high_label <- paste0("High LLC Misses (", high_start_percentile, "-", high_end_percentile, "%)")
+  low_label <- paste0("Low LLC Misses (", low_start_percentile, "-", low_end_percentile, "%)")
 
   # Classify time slots as high or low LLC miss periods
   ms_aggregates <- ms_aggregates %>%
-    mutate(llc_category = ifelse(total_llc_misses > llc_threshold, 
-                               high_label, 
-                               low_label))
+    mutate(llc_category = case_when(
+      total_llc_misses >= low_start_threshold & total_llc_misses <= low_end_threshold ~ low_label,
+      total_llc_misses > high_start_threshold & total_llc_misses <= high_end_threshold ~ high_label,
+      TRUE ~ "Other"
+    ))
   
   # Join the LLC category back to the original data
   data_with_llc <- data %>%
@@ -123,6 +134,8 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
                                  "other")) %>%
     # Filter for samples with significant instruction counts
     filter(instructions > instruction_threshold) %>%
+    # Filter out the "Other" category
+    filter(llc_category != "Other") %>%
     # Cap extreme CPI values for better visualization
     mutate(cpi_capped = pmin(cpi, 10))  # Cap at 10 cycles per instruction
   
@@ -131,9 +144,11 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
     group_by(process_group, llc_category) %>%
     summarise(
       sample_count = n(),
-      avg_cpi = mean(cpi, na.rm = TRUE),
+      total_cycles = sum(cycles, na.rm = TRUE),
+      total_instructions = sum(instructions, na.rm = TRUE),
       .groups = "drop"
-    )
+    ) %>%
+    mutate(avg_cpi = total_cycles / pmax(total_instructions, 1))
   
   message("Sample counts and average CPI by process and LLC category:")
   print(process_counts)
@@ -155,9 +170,11 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
     scale_fill_manual(values = c("#E41A1C", "#377EB8")) +
     labs(
       title = "Cycles Per Instruction (CPI) Distribution by Process",
-      subtitle = paste0("Comparing high vs. low LLC miss periods (", 
-                       start_time_seconds, "-", end_time_seconds, "s window, ",
-                       instruction_threshold, " instructions, ", llc_percentile, "% LLC miss percentile)"),
+      subtitle = paste0("Comparing LLC miss percentiles: ", 
+                       high_start_percentile, "-", high_end_percentile, "% vs ", 
+                       low_start_percentile, "-", low_end_percentile, "% ",
+                       "(", start_time_seconds, "-", end_time_seconds, "s window, ",
+                       instruction_threshold, " instructions)"),
       x = "Cycles Per Instruction (CPI)",
       y = "Density",
       fill = "LLC Miss Category"
@@ -170,6 +187,157 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
       plot.title = element_text(face = "bold"),
       axis.title = element_text(face = "bold")
     )
+  
+  return(p)
+}
+
+# Function to create CPI slowdown bar plots comparing high LLC percentiles to low ones
+create_cpi_slowdown_plot <- function(data, instruction_threshold, top_n_processes,
+                                    low_start_percentile, low_end_percentile,
+                                    high_start_percentile, high_end_percentile,
+                                    start_time_seconds, end_time_seconds) {
+  message(paste0("Creating CPI slowdown plot comparing LLC misses ",
+                 high_start_percentile, "-", high_end_percentile, "% vs ",
+                 low_start_percentile, "-", low_end_percentile, "%..."))
+  
+  # Calculate aggregate LLC misses for each millisecond time slot
+  ms_aggregates <- data %>%
+    group_by(ms_slot) %>%
+    summarise(
+      total_llc_misses = sum(llc_misses, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  # Determine the LLC misses thresholds for the given percentiles
+  low_start_threshold <- quantile(ms_aggregates$total_llc_misses, low_start_percentile/100, na.rm = TRUE)
+  low_end_threshold <- quantile(ms_aggregates$total_llc_misses, low_end_percentile/100, na.rm = TRUE)
+  high_start_threshold <- quantile(ms_aggregates$total_llc_misses, high_start_percentile/100, na.rm = TRUE)
+  high_end_threshold <- if(high_end_percentile == 100) Inf else quantile(ms_aggregates$total_llc_misses, high_end_percentile/100, na.rm = TRUE)
+  
+  message("Low LLC miss threshold (", low_start_percentile, "-", low_end_percentile, "%): ", 
+          low_start_threshold, " to ", low_end_threshold)
+  message("High LLC miss threshold (", high_start_percentile, "-", high_end_percentile, "%): ", 
+          high_start_threshold, " to ", high_end_threshold)
+  
+  # Classify time slots into low/high LLC miss categories
+  ms_aggregates <- ms_aggregates %>%
+    mutate(llc_category = case_when(
+      total_llc_misses >= low_start_threshold & total_llc_misses <= low_end_threshold ~ 
+        paste0(low_start_percentile, "-", low_end_percentile, "%"),
+      total_llc_misses > high_start_threshold & total_llc_misses <= high_end_threshold ~ 
+        paste0(high_start_percentile, "-", high_end_percentile, "%"),
+      TRUE ~ "Other"
+    ))
+  
+  # Join the LLC category back to the original data
+  data_with_llc <- data %>%
+    left_join(ms_aggregates, by = "ms_slot")
+  
+  # Identify top processes by total instructions
+  top_processes <- data %>%
+    group_by(process_name) %>%
+    summarise(total_instructions = sum(instructions, na.rm = TRUE)) %>%
+    arrange(desc(total_instructions)) %>%
+    slice_head(n = top_n_processes) %>%
+    pull(process_name)
+  
+  # Filter for significant samples and prepare for analysis
+  plot_data <- data_with_llc %>%
+    # Group all non-top processes as "other"
+    mutate(process_group = ifelse(process_name %in% top_processes, 
+                                 as.character(process_name), 
+                                 "other")) %>%
+    # Filter for samples with significant instruction counts
+    filter(instructions > instruction_threshold) %>%
+    # Keep only low and high LLC categories
+    filter(llc_category != "Other")
+  
+  # Calculate aggregate cycles and instructions for each process and LLC category,
+  # then compute CPI from these aggregates
+  cpi_by_category <- plot_data %>%
+    group_by(process_group, llc_category) %>%
+    summarise(
+      total_cycles = sum(cycles, na.rm = TRUE),
+      total_instructions = sum(instructions, na.rm = TRUE),
+      sample_count = n(),
+      .groups = "drop"
+    ) %>%
+    mutate(aggregate_cpi = total_cycles / pmax(total_instructions, 1))  # Avoid division by zero
+  
+  # Ensure we have data for both categories for each process
+  process_categories <- cpi_by_category %>%
+    group_by(process_group) %>%
+    summarise(category_count = n_distinct(llc_category), .groups = "drop") %>%
+    filter(category_count == 2) %>%
+    pull(process_group)
+  
+  if(length(process_categories) == 0) {
+    stop("No processes have data for both LLC miss categories. Consider adjusting thresholds or using more data.")
+  }
+  
+  # Filter to include only processes with both categories
+  cpi_by_category <- cpi_by_category %>%
+    filter(process_group %in% process_categories)
+  
+  # Reshape the data to calculate slowdown ratios
+  cpi_wide <- cpi_by_category %>%
+    select(process_group, llc_category, aggregate_cpi) %>%
+    pivot_wider(
+      id_cols = process_group,
+      names_from = llc_category,
+      values_from = aggregate_cpi
+    )
+  
+  low_col <- paste0(low_start_percentile, "-", low_end_percentile, "%")
+  high_col <- paste0(high_start_percentile, "-", high_end_percentile, "%")
+  
+  # Calculate slowdown ratio
+  cpi_wide$slowdown_ratio <- cpi_wide[[high_col]] / cpi_wide[[low_col]]
+  
+  # Prepare data for plotting
+  plot_data_ratio <- cpi_wide %>%
+    select(process_group, slowdown_ratio) %>%
+    # Sort by slowdown ratio
+    arrange(desc(slowdown_ratio))
+  
+  # Reorder factor levels based on slowdown ratio for better visualization
+  process_order <- plot_data_ratio$process_group
+  plot_data_ratio$process_group <- factor(plot_data_ratio$process_group, 
+                                         levels = process_order)
+  
+  # Create the bar plot
+  p <- ggplot(plot_data_ratio, aes(x = process_group, y = slowdown_ratio, fill = slowdown_ratio)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = sprintf("%.2fx", slowdown_ratio)), 
+              vjust = -0.5, size = 6) +
+    scale_fill_gradient(low = "#377EB8", high = "#E41A1C") +
+    labs(
+      title = paste0("CPI Slowdown: ", high_start_percentile, "-", high_end_percentile, 
+                   "% vs ", low_start_percentile, "-", low_end_percentile, "% LLC Misses"),
+      subtitle = paste0("Analysis of ", start_time_seconds, "-", end_time_seconds, 
+                       "s window, ", instruction_threshold, " instruction threshold"),
+      x = "Process",
+      y = "CPI Slowdown Factor",
+      fill = "Slowdown"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(face = "bold", size = 24),
+      plot.subtitle = element_text(size = 18),
+      axis.title = element_text(face = "bold", size = 18),
+      axis.text.x = element_text(angle = 60, hjust = 1, size = 16),
+      axis.text.y = element_text(size = 14)
+    )
+  
+  # Print summary statistics
+  message("CPI slowdown statistics:")
+  summary_stats <- summary(plot_data_ratio$slowdown_ratio)
+  print(summary_stats)
+  
+  # Print top slowdowns
+  message("Top 5 processes by CPI slowdown:")
+  print(head(plot_data_ratio, 5))
   
   return(p)
 }
@@ -204,19 +372,67 @@ main <- function() {
                    nrow(perf_data_filtered), nrow(perf_data), 
                    100 * nrow(perf_data_filtered) / nrow(perf_data)))
     
-    message("Creating CPI by LLC misses plot...")
-    cpi_plot <- create_cpi_llc_analysis(perf_data_filtered, instruction_threshold, top_n_processes, llc_percentile, 
-                                         start_time_seconds, end_time_seconds)
+    # Create the CPI distribution plots comparing different LLC miss ranges
+    message("Creating CPI distribution plots...")
     
-    # Save outputs
-    png_filename <- paste0(output_file, ".png")
-    pdf_filename <- paste0(output_file, ".pdf")
+    # 1. Top 5% vs Bottom 95%
+    cpi_plot_5_vs_95 <- create_cpi_llc_analysis(perf_data_filtered, instruction_threshold, 
+                                              top_n_processes, 0, 95, 95, 100, 
+                                              start_time_seconds, end_time_seconds)
     
-    message("Saving output as PNG: ", png_filename)
-    ggsave(png_filename, cpi_plot, width = 15, height = 20, dpi = 300)
+    # 2. Top 5% vs Middle 45-55%
+    cpi_plot_5_vs_mid <- create_cpi_llc_analysis(perf_data_filtered, instruction_threshold, 
+                                               top_n_processes, 45, 55, 95, 100, 
+                                               start_time_seconds, end_time_seconds)
     
-    message("Saving output as PDF: ", pdf_filename)
-    ggsave(pdf_filename, cpi_plot, width = 15, height = 20)
+    # Create the CPI slowdown bar plots
+    # 1. Top 5% vs Bottom 95%
+    slowdown_plot_5_vs_95 <- create_cpi_slowdown_plot(perf_data_filtered, instruction_threshold, 
+                                                     top_n_processes, 0, 95, 95, 100, 
+                                                     start_time_seconds, end_time_seconds)
+    
+    # 2. Top 5% vs Middle 45-55%
+    slowdown_plot_5_vs_mid <- create_cpi_slowdown_plot(perf_data_filtered, instruction_threshold, 
+                                                     top_n_processes, 45, 55, 95, 100, 
+                                                     start_time_seconds, end_time_seconds)
+    
+    # Save outputs for CPI distribution plots
+    cpi_plot_5_vs_95_png <- paste0(output_file, "_dist_top5_vs_bottom95.png")
+    cpi_plot_5_vs_95_pdf <- paste0(output_file, "_dist_top5_vs_bottom95.pdf")
+    
+    message("Saving top 5% vs bottom 95% distribution plot as PNG: ", cpi_plot_5_vs_95_png)
+    ggsave(cpi_plot_5_vs_95_png, cpi_plot_5_vs_95, width = 15, height = 20, dpi = 300)
+    
+    message("Saving top 5% vs bottom 95% distribution plot as PDF: ", cpi_plot_5_vs_95_pdf)
+    ggsave(cpi_plot_5_vs_95_pdf, cpi_plot_5_vs_95, width = 15, height = 20)
+    
+    cpi_plot_5_vs_mid_png <- paste0(output_file, "_dist_top5_vs_mid45-55.png")
+    cpi_plot_5_vs_mid_pdf <- paste0(output_file, "_dist_top5_vs_mid45-55.pdf")
+    
+    message("Saving top 5% vs middle 45-55% distribution plot as PNG: ", cpi_plot_5_vs_mid_png)
+    ggsave(cpi_plot_5_vs_mid_png, cpi_plot_5_vs_mid, width = 15, height = 20, dpi = 300)
+    
+    message("Saving top 5% vs middle 45-55% distribution plot as PDF: ", cpi_plot_5_vs_mid_pdf)
+    ggsave(cpi_plot_5_vs_mid_pdf, cpi_plot_5_vs_mid, width = 15, height = 20)
+    
+    # Save outputs for slowdown plots
+    slowdown_5_vs_95_png <- paste0(output_file, "_slowdown_top5_vs_bottom95.png")
+    slowdown_5_vs_95_pdf <- paste0(output_file, "_slowdown_top5_vs_bottom95.pdf")
+    
+    message("Saving top 5% vs bottom 95% slowdown plot as PNG: ", slowdown_5_vs_95_png)
+    ggsave(slowdown_5_vs_95_png, slowdown_plot_5_vs_95, width = 15, height = 10, dpi = 300)
+    
+    message("Saving top 5% vs bottom 95% slowdown plot as PDF: ", slowdown_5_vs_95_pdf)
+    ggsave(slowdown_5_vs_95_pdf, slowdown_plot_5_vs_95, width = 15, height = 10)
+    
+    slowdown_5_vs_mid_png <- paste0(output_file, "_slowdown_top5_vs_mid45-55.png")
+    slowdown_5_vs_mid_pdf <- paste0(output_file, "_slowdown_top5_vs_mid45-55.pdf")
+    
+    message("Saving top 5% vs middle 45-55% slowdown plot as PNG: ", slowdown_5_vs_mid_png)
+    ggsave(slowdown_5_vs_mid_png, slowdown_plot_5_vs_mid, width = 15, height = 10, dpi = 300)
+    
+    message("Saving top 5% vs middle 45-55% slowdown plot as PDF: ", slowdown_5_vs_mid_pdf)
+    ggsave(slowdown_5_vs_mid_pdf, slowdown_plot_5_vs_mid, width = 15, height = 10)
     
     message("Done!")
   }, error = function(e) {
