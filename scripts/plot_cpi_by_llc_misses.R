@@ -23,6 +23,24 @@ library(dplyr)
 library(tidyr)
 library(forcats)
 
+# Script Description:
+# This script analyzes performance data from a parquet file and creates CPI distribution
+# plots comparing high vs. low LLC miss periods for different processes.
+#
+# Command line arguments:
+# 1. input_file: Path to the input parquet file (default: collector-parquet.parquet)
+# 2. instruction_threshold: Minimum number of instructions for a sample to be considered (default: 100000)
+# 3. output_file: Base name for output files without extension (default: cpi_by_llc_misses)
+# 4. top_n_processes: Number of top processes to show individually (default: 23)
+# 5. llc_percentile: Percentile threshold for high LLC misses (default: 75)
+# 6. start_time_seconds: Start time in seconds for the analysis window (default: 205)
+# 7. end_time_seconds: End time in seconds for the analysis window (default: 255)
+#
+# Example usage:
+# Rscript plot_cpi_by_llc_misses.R my-data.parquet 50000 my-output 15 80 200 300
+# This would use my-data.parquet, 50k instruction threshold, output to my-output.{png,pdf},
+# show top 15 processes, use 80th percentile LLC threshold, and analyze data from 200-300 seconds.
+
 # Parse command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 input_file <- if(length(args) >= 1) args[1] else "collector-parquet.parquet"
@@ -30,6 +48,8 @@ instruction_threshold <- if(length(args) >= 2) as.numeric(args[2]) else 100000  
 output_file <- if(length(args) >= 3) args[3] else "cpi_by_llc_misses"
 top_n_processes <- if(length(args) >= 4) as.numeric(args[4]) else 23  # Default to showing top 23 processes + "other"
 llc_percentile <- if(length(args) >= 5) as.numeric(args[5]) else 75  # Default to 75th percentile
+start_time_seconds <- if(length(args) >= 6) as.numeric(args[6]) else 205  # Default steady state starts at 205 seconds
+end_time_seconds <- if(length(args) >= 7) as.numeric(args[7]) else 255  # Default steady state ends at 255 seconds
 
 # Function to load and process parquet data
 load_and_process_parquet <- function(file_path) {
@@ -47,11 +67,15 @@ load_and_process_parquet <- function(file_path) {
   # Calculate cycles per instruction (CPI) for each sample
   perf_data$cpi <- perf_data$cycles / pmax(perf_data$instructions, 1)  # Avoid division by zero
   
+  # Convert start_time from nanoseconds to seconds for time window filtering
+  perf_data$time_seconds <- perf_data$start_time / 1e9
+  
   return(perf_data)
 }
 
 # Function to analyze LLC misses and create the faceted histogram
-create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes, llc_percentile) {
+create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes, llc_percentile, 
+                                   start_time_seconds, end_time_seconds) {
   message("Analyzing LLC misses and CPI...")
   
   # Calculate aggregate LLC misses for each millisecond time slot
@@ -131,7 +155,8 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
     scale_fill_manual(values = c("#E41A1C", "#377EB8")) +
     labs(
       title = "Cycles Per Instruction (CPI) Distribution by Process",
-      subtitle = paste0("Comparing high vs. low LLC miss periods (threshold: ", 
+      subtitle = paste0("Comparing high vs. low LLC miss periods (", 
+                       start_time_seconds, "-", end_time_seconds, "s window, ",
                        instruction_threshold, " instructions, ", llc_percentile, "% LLC miss percentile)"),
       x = "Cycles Per Instruction (CPI)",
       y = "Count",
@@ -165,8 +190,23 @@ main <- function() {
       stop("Not enough data points in the input file.")
     }
     
+    # Apply time window filtering
+    message(sprintf("Filtering data for time window: %.1f - %.1f seconds", start_time_seconds, end_time_seconds))
+    perf_data_filtered <- perf_data %>%
+      filter(time_seconds >= start_time_seconds & time_seconds <= end_time_seconds)
+    
+    # Check if we still have enough data after time filtering
+    if (nrow(perf_data_filtered) < 10) {
+      stop("Not enough data points after time window filtering. Consider adjusting the time window.")
+    }
+    
+    message(sprintf("Retained %d of %d samples (%.1f%%) after time window filtering", 
+                   nrow(perf_data_filtered), nrow(perf_data), 
+                   100 * nrow(perf_data_filtered) / nrow(perf_data)))
+    
     message("Creating CPI by LLC misses plot...")
-    cpi_plot <- create_cpi_llc_analysis(perf_data, instruction_threshold, top_n_processes, llc_percentile)
+    cpi_plot <- create_cpi_llc_analysis(perf_data_filtered, instruction_threshold, top_n_processes, llc_percentile, 
+                                         start_time_seconds, end_time_seconds)
     
     # Save outputs
     png_filename <- paste0(output_file, ".png")

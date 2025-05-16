@@ -567,6 +567,8 @@ jobs:
     name: Generate Performance Visualizations
     needs: [run-workload]
     runs-on: ubuntu-latest
+    env:
+      STEADY_STATE_MINUTES: ${{ inputs.steady-state-minutes || '1' }}
     container:
       image: rocker/tidyverse:latest
     steps:
@@ -669,10 +671,19 @@ jobs:
 
       - name: Generate CPI by LLC Misses Plots
         run: |
-          # Generate CPI by LLC misses plots
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_75 23 75 
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_50 23 50
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_25 23 25
+          # Calculate the time window based on steady state minutes
+          # Start: Always 205 seconds (5 seconds after 200s mark)
+          # End: End 5 seconds before the steady state ends (200s + STEADY_STATE_MINUTES*60 - 5s)
+          START_TIME=205
+          STEADY_STATE_SECONDS=$((${STEADY_STATE_MINUTES} * 60))
+          END_TIME=$((200 + STEADY_STATE_SECONDS - 5))
+          
+          echo "Using time window: $START_TIME - $END_TIME seconds (steady state: ${STEADY_STATE_MINUTES} min)"
+          
+          # Generate CPI by LLC misses plots with time window parameters
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_75 23 75 $START_TIME $END_TIME
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_50 23 50 $START_TIME $END_TIME
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_25 23 25 $START_TIME $END_TIME
 
       - name: Upload Visualization Results
         uses: actions/upload-artifact@v4
