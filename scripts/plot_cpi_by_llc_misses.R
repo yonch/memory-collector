@@ -150,7 +150,7 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
   
   # Create the faceted histogram plot
   p <- ggplot(plot_data, aes(x = cpi_capped, fill = llc_category)) +
-    geom_histogram(position = "identity", alpha = 0.7, bins = 30) +
+    geom_density(alpha = 0.7, adjust = 1.5) +
     facet_wrap(~ process_group, scales = "free_y", ncol = 3) +
     scale_fill_manual(values = c("#E41A1C", "#377EB8")) +
     labs(
@@ -159,7 +159,7 @@ create_cpi_llc_analysis <- function(data, instruction_threshold, top_n_processes
                        start_time_seconds, "-", end_time_seconds, "s window, ",
                        instruction_threshold, " instructions, ", llc_percentile, "% LLC miss percentile)"),
       x = "Cycles Per Instruction (CPI)",
-      y = "Count",
+      y = "Density",
       fill = "LLC Miss Category"
     ) +
     theme_minimal() +
