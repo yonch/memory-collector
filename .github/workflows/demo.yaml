@@ -713,12 +713,26 @@ jobs:
           START_TIME=$((205 + TIME_DIFF))
           STEADY_STATE_SECONDS=$((${STEADY_STATE_MINUTES} * 60))
           END_TIME=$((200 + STEADY_STATE_SECONDS - 5 + TIME_DIFF))
+
+          # Calculate an alternative end time capped at 180 seconds from start
+          END_TIME_CAPPED=$((START_TIME + 180))
+
+          # Use the earlier of the two end times for the main plot
+          if [ "$END_TIME_CAPPED" -lt "$END_TIME" ]; then
+            echo "Using capped end time (180s from start): $START_TIME - $END_TIME_CAPPED seconds (steady state: ${STEADY_STATE_MINUTES} min)"
+            echo "Time difference between collector and load generator ready states: ${TIME_DIFF} seconds"
+            
+            # Generate an additional plot with the original end time
+            Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_capped 23 $START_TIME $END_TIME_CAPPED
+          else
+            echo "No need to cap the length: using steady state end time"
+          fi
           
           echo "Using time window: $START_TIME - $END_TIME seconds (steady state: ${STEADY_STATE_MINUTES} min)"
           echo "Time difference between collector and load generator ready states: ${TIME_DIFF} seconds"
           
           # Generate CPI by LLC misses plots with time window parameters
-          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_75 23 $START_TIME $END_TIME
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses 23 $START_TIME $END_TIME || true
 
       - name: Upload Visualization Results
         uses: actions/upload-artifact@v4
