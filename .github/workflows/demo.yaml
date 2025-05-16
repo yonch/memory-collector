@@ -42,7 +42,7 @@ jobs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
       region: ${{ steps.start-runner.outputs.region }}
-      timeout-minutes: ${{ steps.calculate-timeout.outputs.timeout }}
+      timeout-minutes: ${{ steps.calculate-timeout.outputs.timeout-minutes }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
         run: |
           STEADY_STATE_MINUTES=${{ inputs.steady-state-minutes || '1' }}
           TIMEOUT_MINUTES=$((15 + STEADY_STATE_MINUTES))
-          echo "timeout=$TIMEOUT_MINUTES" >> $GITHUB_OUTPUT
+          echo "timeout-minutes=$TIMEOUT_MINUTES" >> $GITHUB_OUTPUT
           echo "Calculated timeout: $TIMEOUT_MINUTES minutes"
         
       - name: Start AWS Runner
@@ -69,7 +69,7 @@ jobs:
   run-workload:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: ${{ needs.setup-runner.outputs.timeout-minutes }}
+    timeout-minutes: ${{ fromJSON(needs.setup-runner.outputs.timeout-minutes) }}
     outputs:
       uuid-prefix: ${{ steps.generate-uuid.outputs.uuid }}
     env:
@@ -483,6 +483,7 @@ jobs:
     name: Generate Flamegraphs
     needs: [setup-runner, run-workload]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 10
     env:
       HOME: /root
     steps:
