@@ -27,6 +27,9 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
+    resources:
+      limits:
+        memory: 200Mi
 
   ad:
     useDefault:
@@ -41,6 +44,9 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
+    resources:
+      limits:
+        memory: 650Mi
 
   checkout:
     useDefault:
@@ -70,7 +76,7 @@ components:
         value: "" # Disable
     resources:
       limits:
-        memory: 200Mi
+        memory: 300Mi
 
   fraud-detection:
     useDefault:
@@ -86,6 +92,9 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
+    resources:
+      limits:
+        memory: 500Mi
 
   frontend-proxy:
     useDefault:
@@ -140,6 +149,11 @@ components:
         value: "" # Disable
 
   shipping:
+    resources:
+      limits:
+        memory: 200Mi
+
+  valkey-cart:
     resources:
       limits:
         memory: 200Mi
