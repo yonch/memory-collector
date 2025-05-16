@@ -41,6 +41,10 @@ inputs:
     description: 'IAM role name for the EC2 instance'
     required: false
     default: ''
+  region-priority:
+    description: 'Ordered list of regions to try in priority order'
+    required: false
+    default: '["us-east-2", "us-west-2", "us-east-1", "eu-west-1"]'
   region-configs:
     description: 'Configuration for regions in JSON format with subnets and security groups'
     required: false
@@ -104,24 +108,36 @@ runs:
         echo "Region configs: ${{ inputs.region-configs }}"
         echo "AMI mappings: ${{ inputs.ami-mappings }}"
         echo "Image type: ${{ inputs.image-type }}"
+        echo "Region priority: ${{ inputs.region-priority }}"
         
         # Convert the JSON strings to files for jq processing
         echo '${{ inputs.region-configs }}' > /tmp/region_configs.json
         echo '${{ inputs.ami-mappings }}' > /tmp/ami_mappings.json
+        echo '${{ inputs.region-priority }}' > /tmp/region_priority.json
         
-        # Get all regions
-        REGIONS=$(jq -r 'keys | join(",")' /tmp/region_configs.json)
-        echo "Available regions: $REGIONS"
+        # Get prioritized regions
+        PRIORITY_REGIONS=$(jq -r 'join(",")' /tmp/region_priority.json)
+        echo "Prioritized regions: $PRIORITY_REGIONS"
+        
+        # Get all available regions from region configs
+        AVAILABLE_REGIONS=$(jq -r 'keys | join(",")' /tmp/region_configs.json)
+        echo "Available regions: $AVAILABLE_REGIONS"
         
         # Create an array to hold all AZ configurations
-        echo "Generating availability zone configurations for all regions..."
+        echo "Generating availability zone configurations in priority order..."
         echo "[" > /tmp/az_configs.json
         
         FIRST=true
         
-        # Loop through each region
-        for region in $(jq -r 'keys[]' /tmp/region_configs.json); do
+        # Process regions in priority order
+        for region in $(jq -r '.[]' /tmp/region_priority.json); do
           echo "Processing region: $region"
+          
+          # Check if region exists in region configs
+          if ! jq -e --arg r "$region" '.[$r]' /tmp/region_configs.json > /dev/null; then
+            echo "Warning: Region $region specified in priority list not found in region configs, skipping"
+            continue
+          fi
           
           # Get AMI ID for this region
           AMI_ID=$(jq -r --arg r "$region" --arg it "${{ inputs.image-type }}" '.[$it][$r]' /tmp/ami_mappings.json)
