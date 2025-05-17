@@ -1,14 +1,24 @@
-name: demo
+name: benchmark
 on: 
   workflow_dispatch:  # Manual trigger for testing
     inputs:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'c5.9xlarge,c6i.16xlarge,m7i.12xlarge,c7i.12xlarge'
+        default: 'c5.9xlarge'
+        type: string
+      image-type:
+        description: 'Image type to use (ubuntu-22.04 or ubuntu-24.04)'
+        required: false
+        default: 'ubuntu-22.04'
         type: string
       pidstat-period:
         description: 'Collection frequency for pidstat in seconds'
+        required: false
+        default: '1'
+        type: string
+      steady-state-minutes:
+        description: 'How long to run the steady-state workload in minutes'
         required: false
         default: '1'
         type: string
@@ -31,9 +41,19 @@ jobs:
     outputs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+      region: ${{ steps.start-runner.outputs.region }}
+      timeout-minutes: ${{ steps.calculate-timeout.outputs.timeout-minutes }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        
+      - name: Calculate timeout
+        id: calculate-timeout
+        run: |
+          STEADY_STATE_MINUTES=${{ inputs.steady-state-minutes || '1' }}
+          TIMEOUT_MINUTES=$((15 + STEADY_STATE_MINUTES))
+          echo "timeout-minutes=$TIMEOUT_MINUTES" >> $GITHUB_OUTPUT
+          echo "Calculated timeout: $TIMEOUT_MINUTES minutes"
         
       - name: Start AWS Runner
         id: start-runner
@@ -41,20 +61,18 @@ jobs:
         with:
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           iam-role-name: github-actions-runner          
-          instance-type: ${{ inputs.instance-type || 'c5.9xlarge,c7i.12xlarge,m7i.12xlarge,c6i.16xlarge' }}
-          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
+          instance-type: ${{ inputs.instance-type || 'c5.9xlarge' }}
+          image-type: ${{ inputs.image-type || 'ubuntu-22.04' }}
           volume-size: '40'
 
   run-workload:
     needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ fromJSON(needs.setup-runner.outputs.timeout-minutes) }}
     outputs:
       uuid-prefix: ${{ steps.generate-uuid.outputs.uuid }}
+      time-diff: ${{ steps.calculate-time-diff.outputs.time-diff }}
     env:
       RELEASE_NAME: otel-demo
       COLLECTOR_RELEASE_NAME: collector
@@ -63,6 +81,7 @@ jobs:
       HOME: /root
       KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       PIDSTAT_PERIOD: ${{ inputs.pidstat-period || '1' }}
+      STEADY_STATE_MINUTES: ${{ inputs.steady-state-minutes || '1' }}
     steps:
       - name: Create HOME directory
         run: |
@@ -117,7 +136,18 @@ jobs:
             echo "Still waiting for kube-system pod registration..."
           done
           echo "Kube-system pod(s) registered, waiting for Ready status..."
-          kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=300s
+          for i in {1..5}; do
+            echo "Attempt $i of 5: Waiting for kube-system pods (60s timeout)..."
+            if kubectl wait --namespace kube-system --for=condition=Ready pods --all --timeout=60s; then
+              echo "All kube-system pods are ready!"
+              break
+            elif [ $i -eq 5 ]; then
+              echo "Final attempt failed. Exiting with error."
+              exit 1
+            else
+              echo "Attempt $i failed. Retrying..."
+            fi
+          done
 
       #### Install OpenTelemetry Demo
       - name: (workload) Install OpenTelemetry Demo
@@ -230,13 +260,17 @@ jobs:
             --set storage.s3.auth.secretKey="${AWS_SECRET_ACCESS_KEY}" \
             --set resources.limits.cpu=1000m \
             --set resources.requests.cpu=1000m \
+            --set resources.limits.memory=1000Mi \
             --wait
-
+          
       - name: (collector) Wait for Collector Pods to be Ready
         run: |
           kubectl wait --for=condition=Ready pods --timeout=60s -l app.kubernetes.io/name=collector || WAIT_STATUS=$?
           echo "Wait exit status: $WAIT_STATUS"
-          
+
+          # Record timestamp when collector is fully ready
+          COLLECTOR_START_TIME=$(date +%s)
+
           # Always describe pods, regardless of wait result
           echo "Describing collector pods:"
           kubectl describe pods -l app.kubernetes.io/name=collector
@@ -246,7 +280,10 @@ jobs:
             echo "ERROR: Collector pods are not ready after timeout"
             exit 1
           fi
-
+          
+          # Output the timestamp when collector is fully ready
+          echo "COLLECTOR_START_TIME=${COLLECTOR_START_TIME}" >> $GITHUB_ENV
+          echo "Collector fully ready at timestamp: ${COLLECTOR_START_TIME}"
       - name: (collector) Show Collector Pod Status
         run: |
           kubectl get pods -l app.kubernetes.io/name=collector
@@ -255,9 +292,24 @@ jobs:
       #### Start load generator
 
       - name: (workload) Start Load Generator
+        id: calculate-time-diff
         run: |
           helm upgrade $RELEASE_NAME open-telemetry/opentelemetry-demo -f deploy/opentelemetry-demo/values.yaml \
-            --set components.load-generator.enabled=true --wait
+            --set components.load-generator.enabled=true
+          
+          # Wait for load generator pods to be specifically in Ready state
+          echo "Waiting for load generator pods to be ready..."
+          kubectl wait --for=condition=Ready pods -l app.kubernetes.io/component=load-generator --timeout=60s || true
+          
+          # Record timestamp when load generator is fully ready
+          LOAD_GEN_START_TIME=$(date +%s)
+          
+          # Calculate the time difference between collector and load generator start
+          TIME_DIFF=$((LOAD_GEN_START_TIME - COLLECTOR_START_TIME))
+          echo "time-diff=${TIME_DIFF}" >> $GITHUB_OUTPUT
+          echo "TIME_DIFF=${TIME_DIFF}" >> $GITHUB_ENV
+          echo "Load generator fully ready at timestamp: ${LOAD_GEN_START_TIME}"
+          echo "Time difference between collector and load generator ready: ${TIME_DIFF} seconds"
 
       - name: (workload) Describe Load Generator Deployment
         run: |
@@ -300,13 +352,29 @@ jobs:
           echo "CPU metrics file: ${CPU_METRICS_FILE}"
           echo "Memory metrics file: ${MEMORY_METRICS_FILE}"
 
+      #### Main run time
       - name: (metrics) Record system performance with perf
         run: |
           # Create directory for perf data
           mkdir -p /tmp/perf_data
           
-          echo "Starting perf record for 300 seconds at 19Hz frequency..."
-          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep 300
+          echo "Ramping up load generator without perf record..."
+          sleep 200
+
+          STEADY_STATE_MINUTES=${STEADY_STATE_MINUTES}
+          PERF_RECORD_SECONDS=60
+          
+          # Calculate the sleep duration (all minutes except the last one)
+          if [[ $STEADY_STATE_MINUTES -gt 1 ]]; then
+            SLEEP_MINUTES=$((STEADY_STATE_MINUTES - 1))
+            SLEEP_SECONDS=$((SLEEP_MINUTES * 60))
+            
+            echo "Sleeping for $SLEEP_MINUTES minutes ($SLEEP_SECONDS seconds) before perf recording..."
+            sleep $SLEEP_SECONDS
+          fi
+          
+          echo "Starting perf record for $PERF_RECORD_SECONDS seconds at 19Hz frequency..."
+          perf record -a -g -F 19 --call-graph dwarf -o /tmp/perf_data/perf.data sleep $PERF_RECORD_SECONDS
           
           # Create directory for perf results
           mkdir -p perf_results
@@ -370,6 +438,15 @@ jobs:
           path: system_metrics/
           retention-days: 28
 
+      - name: (collector) Send SIGINT to Collector
+        run: |
+          kubectl exec -n default $(kubectl get pods -l app.kubernetes.io/name=collector -o name | cut -d/ -f2) -- /bin/sh -c "kill -INT 1"
+          sleep 10
+
+      - name: (collector) Print Collector Logs
+        run: |
+          kubectl logs -l app.kubernetes.io/name=collector || true
+
       - name: (collector) Uninstall Collector Helm Chart
         run: |
           # see the logs while uninstalling
@@ -425,11 +502,21 @@ jobs:
           name: collector-parquet-results
           path: /tmp/collector-parquet.parquet
           retention-days: 28
+          
+      - name: (status) Print Events
+        run: | 
+          kubectl get events
+
+      - name: (status) Print Pod Status
+        run: | 
+          kubectl get pods -n default
+
 
   generate-flamegraphs:
     name: Generate Flamegraphs
     needs: [setup-runner, run-workload]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 10
     env:
       HOME: /root
     steps:
@@ -514,6 +601,9 @@ jobs:
     name: Generate Performance Visualizations
     needs: [run-workload]
     runs-on: ubuntu-latest
+    env:
+      STEADY_STATE_MINUTES: ${{ inputs.steady-state-minutes || '1' }}
+      TIME_DIFF: ${{ needs.run-workload.outputs.time-diff || '0' }}
     container:
       image: rocker/tidyverse:latest
     steps:
@@ -523,7 +613,7 @@ jobs:
       - name: Install R Dependencies
         run: |
           # Install only the additional packages needed (tidyverse is already included in base image)
-          R -e "install.packages(c('scales', 'nanoparquet'), repos='https://cloud.r-project.org/')"
+          R -e "install.packages(c('scales', 'nanoparquet', 'gridExtra', 'stringr'), repos='https://cloud.r-project.org/')"
 
       - name: Download System Metrics Artifacts
         uses: actions/download-artifact@v4
@@ -586,13 +676,22 @@ jobs:
 
       - name: Generate LLC Misses Plots
         run: |
-          # Generate LLC misses plots
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 0.3 visualization_results/llc_misses_0.3sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 0.5 visualization_results/llc_misses_0.5sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 180 1 visualization_results/llc_misses_1sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 182 3 visualization_results/llc_misses_3sec
-          Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet 190 10 visualization_results/llc_misses_10sec
+          # The collector is ready TIME_DIFF seconds before the load generator is ready
+          TIME_DIFF=${TIME_DIFF:-0}
           
+          # Calculate adjusted start times relative to when collector is ready
+          START_TIME_1=$((20 + TIME_DIFF))
+          START_TIME_2=$((180 + TIME_DIFF))
+          
+          echo "Using adjusted start times: $START_TIME_1 and $START_TIME_2 seconds after collector is ready"
+          echo "Time difference between collector and load generator ready states: ${TIME_DIFF} seconds"
+          
+          # Generate LLC misses plots with the adjusted start times
+          for i in 0.3 0.5 1 3 10; do
+            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet $START_TIME_1 $i visualization_results/llc_misses_20sec_$i || true
+            Rscript scripts/plot_llc_misses.R collector_data/collector-parquet.parquet $START_TIME_2 $i visualization_results/llc_misses_180sec_$i || true
+          done
+
           # Check output
           ls -la visualization_results/
 
@@ -613,6 +712,38 @@ jobs:
           
           # Check output
           ls -la visualization_results/
+
+      - name: Generate CPI by LLC Misses Plots
+        run: |
+          # Calculate the time window based on steady state minutes and the time difference between
+          # when collector is ready and when load generator is ready
+          TIME_DIFF=${TIME_DIFF:-0}
+          
+          # Start: 200 seconds after load generator is ready (which is 200+TIME_DIFF seconds after collector is ready)
+          # End: End 5 seconds before the steady state ends
+          START_TIME=$((205 + TIME_DIFF))
+          STEADY_STATE_SECONDS=$((${STEADY_STATE_MINUTES} * 60))
+          END_TIME=$((200 + STEADY_STATE_SECONDS - 5 + TIME_DIFF))
+
+          # Calculate an alternative end time capped at 180 seconds from start
+          END_TIME_CAPPED=$((START_TIME + 180))
+
+          # Use the earlier of the two end times for the main plot
+          if [ "$END_TIME_CAPPED" -lt "$END_TIME" ]; then
+            echo "Using capped end time (180s from start): $START_TIME - $END_TIME_CAPPED seconds (steady state: ${STEADY_STATE_MINUTES} min)"
+            echo "Time difference between collector and load generator ready states: ${TIME_DIFF} seconds"
+            
+            # Generate an additional plot with the original end time
+            Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses_capped 23 $START_TIME $END_TIME_CAPPED
+          else
+            echo "No need to cap the length: using steady state end time"
+          fi
+          
+          echo "Using time window: $START_TIME - $END_TIME seconds (steady state: ${STEADY_STATE_MINUTES} min)"
+          echo "Time difference between collector and load generator ready states: ${TIME_DIFF} seconds"
+          
+          # Generate CPI by LLC misses plots with time window parameters
+          Rscript scripts/plot_cpi_by_llc_misses.R collector_data/collector-parquet.parquet 100000 visualization_results/cpi_by_llc_misses 23 $START_TIME $END_TIME || true
 
       - name: Upload Visualization Results
         uses: actions/upload-artifact@v4
@@ -637,4 +768,4 @@ jobs:
           ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }} 
+          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }} 
