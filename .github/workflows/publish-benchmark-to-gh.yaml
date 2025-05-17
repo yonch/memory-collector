@@ -1,4 +1,4 @@
-name: Publish Benchmark Results to GitHub Pages
+name: publish-benchmark-to-gh
 
 on:
   # Only manual trigger
@@ -53,26 +53,42 @@ jobs:
           echo "Last updated: $(date)" > gh-pages/benchmarks/metadata.txt
           echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> gh-pages/benchmarks/metadata.txt
 
-      - name: Copy essential visualization files
+      - name: Copy and rename visualization files
         run: |
-          # CPU utilization plots
-          cp artifacts/visualizations/cpu_utilization_*.png gh-pages/benchmarks/
+          # Create temporary directory for processed files
+          mkdir -p processed_files
+          
+          # CPU utilization - only stacked and comparison
+          cp artifacts/visualizations/cpu_utilization_stacked.png gh-pages/benchmarks/cpu_utilization_stacked.png
+          cp artifacts/visualizations/cpu_utilization_comparison.png gh-pages/benchmarks/cpu_utilization_comparison.png
           
           # Workload performance (latency/request rate)
-          cp artifacts/visualizations/workload_performance.png gh-pages/benchmarks/
+          cp artifacts/visualizations/workload_performance.png gh-pages/benchmarks/workload_performance.png
           
           # Memory utilization
-          cp artifacts/visualizations/memory_utilization.png gh-pages/benchmarks/
+          cp artifacts/visualizations/memory_utilization.png gh-pages/benchmarks/memory_utilization.png
           
-          # Memory bandwidth/CPI analysis
-          cp artifacts/visualizations/cpi_by_llc_misses_*.png gh-pages/benchmarks/
+          # LLC misses - 180 second variant with 0.5 second length
+          cp artifacts/visualizations/llc_misses_180sec_0.5.png gh-pages/benchmarks/llc_misses.png
           
-          # LLC misses plots (selected most important ones)
-          cp artifacts/visualizations/llc_misses_180sec_3.png gh-pages/benchmarks/
+          # CPI by LLC misses - prefer non-capped version, but use capped if necessary
+          # For top5 vs mid45-55 slowdown
+          if [ -f "artifacts/visualizations/cpi_by_llc_misses_slowdown_top5_vs_mid45-55.png" ]; then
+            cp artifacts/visualizations/cpi_by_llc_misses_slowdown_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_slowdown_top5_vs_mid.png
+          else
+            cp artifacts/visualizations/cpi_by_llc_misses_capped_slowdown_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_slowdown_top5_vs_mid.png
+          fi
+          
+          # For top5 vs mid45-55 dist
+          if [ -f "artifacts/visualizations/cpi_by_llc_misses_dist_top5_vs_mid45-55.png" ]; then
+            cp artifacts/visualizations/cpi_by_llc_misses_dist_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_dist_top5_vs_mid.png
+          else
+            cp artifacts/visualizations/cpi_by_llc_misses_capped_dist_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_dist_top5_vs_mid.png
+          fi
 
-      - name: Copy flamegraph files
+      - name: Copy flamegraph file
         run: |
-          cp artifacts/analysis/flamegraph_results/flamegraph.svg gh-pages/benchmarks/
+          cp artifacts/analysis/flamegraph_results/flamegraph.svg gh-pages/benchmarks/flamegraph.svg
 
       - name: Commit and push changes
         run: |
