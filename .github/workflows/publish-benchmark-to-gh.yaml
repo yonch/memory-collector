@@ -1,0 +1,90 @@
+name: Publish Benchmark Results to GitHub Pages
+
+on:
+  # Only manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Required to push to gh-pages branch
+
+jobs:
+  publish:
+    name: Publish Benchmark Results
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Get latest successful benchmark run ID
+        id: get-run-id
+        run: |
+          RUN_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${{ github.repository }}/actions/workflows/benchmark.yaml/runs?status=success&per_page=1" \
+                  | jq -r '.workflow_runs[0].id')
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "Using workflow run ID: $RUN_ID"
+
+      - name: Download visualization artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: performance-visualizations
+          path: artifacts/visualizations
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.run_id }}
+
+      - name: Download performance analysis artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: performance-analysis
+          path: artifacts/analysis
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.run_id }}
+          
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Prepare benchmark directory
+        run: |
+          mkdir -p gh-pages/benchmarks
+          
+          # Create metadata file with timestamp
+          echo "Last updated: $(date)" > gh-pages/benchmarks/metadata.txt
+          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> gh-pages/benchmarks/metadata.txt
+
+      - name: Copy essential visualization files
+        run: |
+          # CPU utilization plots
+          cp artifacts/visualizations/cpu_utilization_*.png gh-pages/benchmarks/
+          
+          # Workload performance (latency/request rate)
+          cp artifacts/visualizations/workload_performance.png gh-pages/benchmarks/
+          
+          # Memory utilization
+          cp artifacts/visualizations/memory_utilization.png gh-pages/benchmarks/
+          
+          # Memory bandwidth/CPI analysis
+          cp artifacts/visualizations/cpi_by_llc_misses_*.png gh-pages/benchmarks/
+          
+          # LLC misses plots (selected most important ones)
+          cp artifacts/visualizations/llc_misses_180sec_3.png gh-pages/benchmarks/
+
+      - name: Copy flamegraph files
+        run: |
+          cp artifacts/analysis/flamegraph_results/flamegraph.svg gh-pages/benchmarks/
+
+      - name: Commit and push changes
+        run: |
+          cd gh-pages
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          git add benchmarks/
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update benchmark results from workflow run ${{ steps.get-run-id.outputs.run_id }}"
+            git push origin gh-pages
+          fi 
