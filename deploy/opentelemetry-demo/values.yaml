@@ -64,9 +64,10 @@ components:
     # envOverrides:
     #   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     #     value: "" # Disable
+    replicas: 5
     resources:
       limits:
-        memory: 400Mi
+        memory: 600Mi
 
   email:
     useDefault:
@@ -74,9 +75,10 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
+    replicas: 6
     resources:
       limits:
-        memory: 300Mi
+        memory: 600Mi
 
   fraud-detection:
     useDefault:
