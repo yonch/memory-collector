@@ -35,6 +35,7 @@ jobs:
     outputs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+      region: ${{ steps.start-runner.outputs.region }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,12 +46,9 @@ jobs:
         with:
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           iam-role-name: github-actions-runner
-          instance-type: ${{ inputs.instance-type || 'm7i.xlarge,c7i.xlarge,r7i.xlarge,m6i.xlarge,m5.xlarge' }}
-          aws-image-id: 'ami-04f167a56786e4b09'  # Ubuntu 24.04 LTS in us-east-2
+          instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          image-type: 'ubuntu-24.04'
           volume-size: '40'
 
   k3s-deployment:
@@ -250,4 +248,4 @@ jobs:
           ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }} 
+          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }} 
