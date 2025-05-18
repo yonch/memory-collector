@@ -1,0 +1,135 @@
+name: publish-benchmark-to-gh
+
+on:
+  # Only manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Required to push to published-benchmarks branch
+
+jobs:
+  publish:
+    name: Publish Benchmark Results
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Create fresh published-benchmarks branch
+        run: |
+          # Create a new orphan branch with no history
+          git checkout --orphan published-benchmarks
+          
+          # Remove everything
+          git rm -rf .
+          
+          # Create benchmark directory structure
+          mkdir -p benchmarks/parquet-data
+          
+          # Add a README
+          echo "# Benchmark Results" > README.md
+          echo "This branch contains benchmark results published from CI." >> README.md
+          echo "Last updated: $(date)" >> README.md
+          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> README.md
+          
+          # Create metadata file with timestamp
+          echo "Last updated: $(date)" > benchmarks/metadata.txt
+          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> benchmarks/metadata.txt
+
+      - name: Get latest successful benchmark run ID
+        id: get-run-id
+        run: |
+          RUN_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${{ github.repository }}/actions/workflows/benchmark.yaml/runs?status=success&per_page=1" \
+                  | jq -r '.workflow_runs[0].id')
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "Using workflow run ID: $RUN_ID"
+
+      - name: Download visualization artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: performance-visualizations
+          path: artifacts/visualizations
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.run_id }}
+
+      - name: Download performance analysis artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: performance-analysis
+          path: artifacts/analysis
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.run_id }}
+          
+      - name: Download parquet analysis artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: parquet-analysis-results
+          path: artifacts/parquet-analysis
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.run_id }}
+
+      - name: Copy visualization files
+        run: |          
+          # CPU utilization - only stacked and comparison
+          cp artifacts/visualizations/cpu_utilization_stacked.png benchmarks/cpu_utilization_stacked.png
+          cp artifacts/visualizations/cpu_utilization_comparison.png benchmarks/cpu_utilization_comparison.png
+          
+          # Workload performance (latency/request rate)
+          cp artifacts/visualizations/workload_performance.png benchmarks/workload_performance.png
+          
+          # Memory utilization
+          cp artifacts/visualizations/memory_utilization.png benchmarks/memory_utilization.png
+          
+          # LLC misses - 180 second variant with 0.5 second length
+          cp artifacts/visualizations/llc_misses_180sec_0.5.png benchmarks/llc_misses.png
+          
+          # CPI by LLC misses - prefer non-capped version, but use capped if necessary
+          # For top5 vs mid45-55 slowdown
+          if [ -f "artifacts/visualizations/cpi_by_llc_misses_slowdown_top5_vs_mid45-55.png" ]; then
+            cp artifacts/visualizations/cpi_by_llc_misses_slowdown_top5_vs_mid45-55.png benchmarks/cpi_slowdown_top5_vs_mid.png
+          else
+            cp artifacts/visualizations/cpi_by_llc_misses_capped_slowdown_top5_vs_mid45-55.png benchmarks/cpi_slowdown_top5_vs_mid.png
+          fi
+          
+          # For top5 vs mid45-55 dist
+          if [ -f "artifacts/visualizations/cpi_by_llc_misses_dist_top5_vs_mid45-55.png" ]; then
+            cp artifacts/visualizations/cpi_by_llc_misses_dist_top5_vs_mid45-55.png benchmarks/cpi_dist_top5_vs_mid.png
+          else
+            cp artifacts/visualizations/cpi_by_llc_misses_capped_dist_top5_vs_mid45-55.png benchmarks/cpi_dist_top5_vs_mid.png
+          fi
+
+      - name: Copy flamegraph file
+        run: |
+          cp artifacts/analysis/flamegraph_results/flamegraph.svg benchmarks/flamegraph.svg
+          
+      - name: Copy parquet analysis files
+        run: |
+          # Schema files
+          cp artifacts/parquet-analysis/schema.txt benchmarks/parquet-data/schema.txt
+          cp artifacts/parquet-analysis/schema-detailed.txt benchmarks/parquet-data/schema-detailed.txt
+          cp artifacts/parquet-analysis/schema.json benchmarks/parquet-data/schema.json
+          
+          # Sample records
+          cp artifacts/parquet-analysis/sample-100.txt benchmarks/parquet-data/sample-100.txt
+          cp artifacts/parquet-analysis/sample-100.json benchmarks/parquet-data/sample-100.json
+          
+          # Head records
+          cp artifacts/parquet-analysis/head-100.txt benchmarks/parquet-data/head-100.txt
+          cp artifacts/parquet-analysis/head-100.json benchmarks/parquet-data/head-100.json
+
+      - name: Commit and force push to published-benchmarks branch
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          git add README.md benchmarks/
+          git commit -m "Update benchmark results from workflow run ${{ steps.get-run-id.outputs.run_id }}"
+          git push -f origin published-benchmarks
+          
+      - name: Trigger documentation workflow
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: benchmark-updated 

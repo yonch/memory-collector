@@ -27,7 +27,7 @@ on:
       - main
     paths:
       - deploy/opentelemetry-demo/values.yaml
-      - .github/workflows/demo.yaml
+      - .github/workflows/benchmark.yaml
 
 permissions:
   id-token: write # Required for requesting the JWT
@@ -750,6 +750,66 @@ jobs:
         with:
           name: performance-visualizations
           path: visualization_results/
+          retention-days: 28
+
+  analyze-parquet:
+    name: Analyze Collector Parquet
+    needs: [run-workload]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download collector parquet artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-parquet-results
+          path: collector-data
+
+      - name: Install pqrs
+        run: |
+          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
+          python3 -m zipfile -e pqrs.zip .
+          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
+          sudo chmod +x /usr/local/bin/pqrs
+          rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
+          pqrs --version
+
+      - name: Analyze parquet file
+        run: |
+          mkdir -p parquet-analysis
+          
+          PARQUET_FILE=$(find collector-data -name "*.parquet" -type f)
+          echo "Found parquet file: $PARQUET_FILE"
+          
+          # Generate simple schema (non-detailed)
+          echo "Generating simple schema..."
+          pqrs schema $PARQUET_FILE > parquet-analysis/schema.txt
+          
+          # Generate detailed schema
+          echo "Generating detailed schema..."
+          pqrs schema --detailed $PARQUET_FILE > parquet-analysis/schema-detailed.txt
+          
+          # Generate sample records (100)
+          echo "Generating 100 sample records..."
+          pqrs sample --records 100 $PARQUET_FILE > parquet-analysis/sample-100.txt
+          
+          # Generate head records (first 100)
+          echo "Generating first 100 records..."
+          pqrs head --records 100 $PARQUET_FILE > parquet-analysis/head-100.txt
+          
+          # Generate JSON versions too
+          echo "Generating JSON formatted outputs..."
+          pqrs schema --json $PARQUET_FILE > parquet-analysis/schema.json
+          pqrs sample --json --records 100 $PARQUET_FILE > parquet-analysis/sample-100.json
+          pqrs head --json --records 100 $PARQUET_FILE > parquet-analysis/head-100.json
+          
+          # List the generated files
+          echo "Generated analysis files:"
+          ls -la parquet-analysis/
+
+      - name: Upload parquet analysis results
+        uses: actions/upload-artifact@v4
+        with:
+          name: parquet-analysis-results
+          path: parquet-analysis/
           retention-days: 28
 
   stop-runner:
