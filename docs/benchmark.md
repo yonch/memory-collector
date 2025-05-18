@@ -10,7 +10,7 @@ All results shown here are automatically published from the most recent successf
 
 ## Workload Performance
 
-![Workload Performance]({{ config.extra.benchmarks_path }}/workload_performance.png)
+![Workload Performance](/benchmarks/workload_performance.png)
 
 This graph shows the overall performance of the test workload during the benchmark run, displaying:
 - Request rate (requests per second)
@@ -24,7 +24,7 @@ The graph helps visualize **any potential impact the collector might have on app
 
 ### CPU Utilization
 
-![CPU Utilization]({{ config.extra.benchmarks_path }}/cpu_utilization_comparison.png)
+![CPU Utilization](/benchmarks/cpu_utilization_comparison.png)
 
 This graph displays two key metrics:
 1. **Collector userspace CPU consumption** in millicores as the experiment progresses
@@ -34,7 +34,7 @@ From these measurements, we can calculate the collector's CPU overhead as a perc
 
 ### Memory Utilization
 
-![Memory Utilization]({{ config.extra.benchmarks_path }}/memory_utilization.png)
+![Memory Utilization](/benchmarks/memory_utilization.png)
 
 This graph shows the memory consumption of the collector over time. The collector processes data in "row groups," compressing measurements into an efficient representation before periodically flushing to storage. **Memory usage typically stabilizes between 300-350MB** during extended runs as the collection and flushing processes reach equilibrium.
 
@@ -42,23 +42,23 @@ This graph shows the memory consumption of the collector over time. The collecto
 
 The benchmark captures eBPF overhead through sampling profiles, which are converted to flame graphs. To analyze the percentage of samples attributed to eBPF processing, look for the `bpf_prog` symbol in the flame graph:
 
-![eBPF Flame Graph]({{ config.extra.benchmarks_path }}/flamegraph.svg)
+![eBPF Flame Graph](/benchmarks/flamegraph.svg)
 
 ## Collected Data Examples
 
 The collector stores measurements in Parquet format with a well-defined schema. Here are links to sample data and schema information:
 
-- [Simple Schema]({{ config.extra.benchmarks_path }}/parquet-data/schema.txt) - Basic schema structure
-- [Sample Records (100)]({{ config.extra.benchmarks_path }}/parquet-data/sample-100.txt) - 100 representative records
-- [First Records (Head)]({{ config.extra.benchmarks_path }}/parquet-data/head-100.txt) - First 100 records from the dataset
-- [Detailed Schema]({{ config.extra.benchmarks_path }}/parquet-data/schema-detailed.txt) - Complete schema with column descriptions (note that this includes column descriptions that are repeated for each row group in the Parquet file)
+- [Simple Schema](/benchmarks/parquet-data/schema.txt) - Basic schema structure
+- [Sample Records (100)](/benchmarks/parquet-data/sample-100.txt) - 100 representative records
+- [First Records (Head)](/benchmarks/parquet-data/head-100.txt) - First 100 records from the dataset
+- [Detailed Schema](/benchmarks/parquet-data/schema-detailed.txt) - Complete schema with column descriptions (note that this includes column descriptions that are repeated for each row group in the Parquet file)
 
 
 ## Data Measured by the Collector
 
 ### LLC Misses Over Time
 
-![LLC Misses by Process]({{ config.extra.benchmarks_path }}/llc_misses.png)
+![LLC Misses by Process](/benchmarks/llc_misses.png)
 
 This graph illustrates Last Level Cache (LLC) misses over a 500ms period, broken down by process. **LLC misses are a key indicator of memory subsystem interference**, helping identify potential noisy neighbors in the system.
 
@@ -66,11 +66,11 @@ This graph illustrates Last Level Cache (LLC) misses over a 500ms period, broken
 
 The benchmark analyzes the relationship between LLC misses and application efficiency by comparing Cycles Per Instruction (CPI) during periods of high cache contention versus normal operation:
 
-![LLC Misses Distribution]({{ config.extra.benchmarks_path }}/cpi_dist_top5_vs_mid.png)
+![LLC Misses Distribution](/benchmarks/cpi_dist_top5_vs_mid.png)
 
 This distribution shows CPI values across different levels of LLC miss activity for each process.
 
-![LLC Misses Slowdown]({{ config.extra.benchmarks_path }}/cpi_slowdown_top5_vs_mid.png)
+![LLC Misses Slowdown](/benchmarks/cpi_slowdown_top5_vs_mid.png)
 
 The slowdown graph quantifies **the performance impact of high LLC miss rates** by showing the ratio between average CPI during high cache miss periods compared to median cache miss periods. Higher values indicate greater performance degradation when cache contention occurs.
 
