@@ -39,6 +39,14 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ steps.get-run-id.outputs.run_id }}
           
+      - name: Download parquet analysis artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: parquet-analysis-results
+          path: artifacts/parquet-analysis
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.get-run-id.outputs.run_id }}
+          
       - name: Checkout gh-pages branch
         uses: actions/checkout@v4
         with:
@@ -48,6 +56,7 @@ jobs:
       - name: Prepare benchmark directory
         run: |
           mkdir -p gh-pages/benchmarks
+          mkdir -p gh-pages/benchmarks/parquet-data
           
           # Create metadata file with timestamp
           echo "Last updated: $(date)" > gh-pages/benchmarks/metadata.txt
@@ -89,6 +98,21 @@ jobs:
       - name: Copy flamegraph file
         run: |
           cp artifacts/analysis/flamegraph_results/flamegraph.svg gh-pages/benchmarks/flamegraph.svg
+          
+      - name: Copy parquet analysis files
+        run: |
+          # Schema files
+          cp artifacts/parquet-analysis/schema.txt gh-pages/benchmarks/parquet-data/schema.txt
+          cp artifacts/parquet-analysis/schema-detailed.txt gh-pages/benchmarks/parquet-data/schema-detailed.txt
+          cp artifacts/parquet-analysis/schema.json gh-pages/benchmarks/parquet-data/schema.json
+          
+          # Sample records
+          cp artifacts/parquet-analysis/sample-100.txt gh-pages/benchmarks/parquet-data/sample-100.txt
+          cp artifacts/parquet-analysis/sample-100.json gh-pages/benchmarks/parquet-data/sample-100.json
+          
+          # Head records
+          cp artifacts/parquet-analysis/head-100.txt gh-pages/benchmarks/parquet-data/head-100.txt
+          cp artifacts/parquet-analysis/head-100.json gh-pages/benchmarks/parquet-data/head-100.json
 
       - name: Commit and push changes
         run: |
