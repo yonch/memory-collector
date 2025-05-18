@@ -1,20 +1,22 @@
+[![Collector](https://github.com/unvariance/collector/actions/workflows/test-ebpf-collector.yaml/badge.svg)](https://github.com/unvariance/collector/actions/workflows/test-ebpf-collector.yaml)
+[![Helm Chart](https://github.com/yonch/memory-collector/actions/workflows/test-helm-chart.yaml/badge.svg)](https://github.com/yonch/memory-collector/actions/workflows/test-helm-chart.yaml)
+[![Benchmark](https://github.com/unvariance/collector/actions/workflows/benchmark.yaml/badge.svg)](https://github.com/unvariance/collector/actions/workflows/benchmark.yaml)
+
+
 # Noisy Neighbor Collector
 
 A Kubernetes-native collector for monitoring noisy neighbor issues, currently focusing on memory subsystem interference between pods. This project is under active development and we welcome contributors to help build this critical observability component.
 
+
+
 ## Overview
 
-The Noisy Neighbor Collector helps SREs identify and quantify performance degradation caused by memory subsystem interference ("noisy neighbors") by collecting metrics about:
-
-- Memory bandwidth utilization
-- Last Level Cache (LLC) usage 
-- CPU performance counters related to memory access
+The Noisy Neighbor Collector helps SREs identify and quantify performance degradation caused by memory subsystem interference ("noisy neighbors").
 
 This data helps operators:
-- **Identify when pods are experiencing memory subsystem interference**
 - **Quantify the performance impact of noisy neighbors**  
 - **Determine which pods are causing interference and which are affected**
-- **Build confidence before deploying memory interference mitigation solutions**
+- **Mitigate interference by isolating high-noise deployments and working with their owners to optimize them**
 
 ## Why This Matters
 
@@ -28,48 +30,75 @@ Collecting noisy neighbor metrics and reducing tail latency delivers two key ben
 
 Common sources of interference include:
 - Garbage collection
-- Video streaming/transcoding
 - Large transactions (e.g. scanning many database records)
 - Analytics workloads
 
-## Acting on Noisy Neighbor Data
 
-The collector's data shows:
 
-- How much time each pod is exposed to noisy neighbors
-- How much time each pod is acting as a noisy neighbor
+## Security and Data Collection
 
-This enables SREs to:
+The collector is designed with security in mind and has a limited scope of data collection:
 
-- Identify problematic pods and work with their owners to optimize them  
-- Make informed decisions about pod scheduling to isolate sensitive workloads
-- Validate the impact of optimizations or isolation on tail latency
+**Only collects CPU profiling data and process metadata:**
+- Performance counters: cycles, instructions, LLC cache misses
+- Process metadata: process name, process ID (pid), cgroup/container ID
 
-In the future, we plan to use this data to automatically mitigate noisy neighbors by throttling offending threads (e.g., garbage collection) using hardware mechanisms like Intel RDT to prevent them from disrupting latency-sensitive workloads.
+**Does not access process internals or user data:**
+- No application-level data is accessed or collected
 
-## Current Capabilities
+You can review our [data schema](https://github.com/unvariance/collector/blob/published-benchmarks/benchmarks/parquet-data/schema.txt) and [sample data files](https://github.com/unvariance/collector/blob/published-benchmarks/benchmarks/parquet-data/sample-100.txt) to see exactly what is collected. These resources demonstrate the limited scope of the collected data.
 
-When running on bare metal with access to Intel RDT:
-- Measures memory bandwidth and cache allocation per process
 
-When access to perf counters is available:
-- Measures cycles, instructions, and LLC cache misses per process  
 
-Other capabilities:
-- Collects measurements at 1ms intervals
-- Writes data to Parquet files for analysis
+## Requirements
+
+- **Kernel version:** Minimum 6.7 (required for timer functionality to pin timers to cores)
+- **Hardware:** Any x86_64 server with perf counter support
+- **Resource utilization:**
+  - Memory: ~300MB per node
+  - CPU: ~1% for eBPF, ~1% userspace
+  - Storage: ~100MB/hour of collected data (varies with node size; there is a quota configuration option to limit the amount of data collected)
+
+See the [benchmark results](https://unvariance.github.io/collector/benchmark) for more details.
+
+
+
+## Installation
+
+### Helm Chart
+
+The easiest way to install the collector is using our Helm chart:
+
+```bash
+helm repo add unvariance https://unvariance.github.io/collector/charts
+helm repo update
+helm install collector unvariance/collector \
+  --set storage.type="s3" \
+  --set storage.prefix="memory-collector-metrics-" \
+  --set storage.s3.bucket="your-bucket-name" \
+  --set storage.s3.region="us-west-2" \
+  --set storage.s3.auth.method="iam" \
+  --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="arn:aws:iam::123456789012:role/S3Access" \
+  --set collector.storageQuota="1000000000"
+```
+
+This example shows how to configure the collector with S3 storage using IAM roles for authentication, with a 1GB quota.
+
+For complete configuration options, see the [Helm chart documentation](charts/collector/README.md).
+
+### Manual Installation
+
+See the [GitHub Actions workflow](.github/workflows/test-ebpf-collector.yaml) for detailed build steps.
+
+
 
 ## Roadmap
 
 We're actively working on:
 
-**Container Metadata**  
+**Container Metadata (PR [#153](https://github.com/unvariance/collector/issues/153)**  
 - Capturing container and pod metadata for processes
 - Exploring Node Resource Interface (NRI) for metadata access
-
-**eBPF Migration** 
-- Eliminating kernel module requirement
-- Pure eBPF implementation for wider compatibility
 
 **Noisy Neighbor Detection**  
 - Identifying noisy neighbors from raw 1ms measurements
@@ -77,31 +106,6 @@ We're actively working on:
   - Which pods are noisy vs. sensitive 
   - % time each pod is noisy or impacted by noise
 - Quantifying cycles wasted due to noise exposure
-
-## Installation
-
-### Helm Chart
-
-[![Publish Helm Chart](https://github.com/unvariance/collector/actions/workflows/publish-helm-chart.yaml/badge.svg)](https://github.com/unvariance/collector/actions/workflows/publish-helm-chart.yaml)
-
-The easiest way to install the collector is using our Helm chart:
-
-```bash
-helm repo add unvariance https://unvariance.github.io/collector/charts
-helm repo update
-helm install collector unvariance/collector
-```
-
-For more information, see the [Helm chart documentation](charts/collector/README.md).
-
-### Manual Installation
-
-Current requirements:
-- Kernel module (eBPF-only in progress) 
-- Minimum kernel version: 5.3 (for eBPF CO-RE) 
-- Tested with kernel 6.8.0 on Ubuntu 22.04, 24.04
-
-See the [GitHub Actions workflow](.github/workflows/test-ebpf-collector.yaml) for build steps.
 
 ## Get Involved 
 
@@ -114,7 +118,21 @@ We welcome contributions! Here's how you can help:
 
 ## Learn More
 
-- Kubecon NA 2024: Love thy (noisy) neighbor [(video)](https://www.youtube.com/watch?v=VsYp_Z1PvOc) [(slides)](https://static.sched.com/hosted_files/kccncna2024/93/Slides_Kubecon%20NA%2724_%20Love%20thy%20%28Noisy%29%20Neighbor.pdf) [(notes)](https://static.sched.com/hosted_files/kccncna2024/50/Transcript_and_Slides__Love_thy_%28Noisy%29_Neighbor.pdf)
+- KubeCon Europe 2025: The Missing Metrics [(video)](https://www.youtube.com/watch?v=nXdGXdxmWNQ) [(slides)](https://static.sched.com/hosted_files/kccnceu2025/9a/The%20Missing%20Metrics%20-%20Measuring%20Memory%20Interference%20in%20Cloud%20Native%20Systems.pdf)
+- KubeCon NA 2024: Love thy (noisy) neighbor [(video)](https://www.youtube.com/watch?v=VsYp_Z1PvOc) [(slides)](https://static.sched.com/hosted_files/kccncna2024/93/Slides_Kubecon%20NA%2724_%20Love%20thy%20%28Noisy%29%20Neighbor.pdf) [(notes)](https://static.sched.com/hosted_files/kccncna2024/50/Transcript_and_Slides__Love_thy_%28Noisy%29_Neighbor.pdf)
+
+
+
+## Benchmark Results
+
+The collector was benchmarked using the OpenTelemetry Demo application.
+
+![1 millisecond resolution LLC misses](https://unvariance.github.io/collector/benchmarks/llc_misses.png)
+
+![Slowdown from LLC misses](https://unvariance.github.io/collector/benchmarks/cpi_slowdown_top5_vs_mid.png)
+
+See the [benchmark results](https://unvariance.github.io/collector/benchmark) for more details.
+
 
 ## Background
 
