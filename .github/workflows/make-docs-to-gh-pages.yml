@@ -6,6 +6,8 @@ on:
     paths:
       - docs/**
       - mkdocs.yml
+  repository_dispatch:
+    types: [benchmark-updated]
 permissions:
   contents: write
 jobs:
@@ -13,6 +15,37 @@ jobs:
     runs-on: ubuntu-latest
     steps: 
       - uses: actions/checkout@v4
+      
+      - name: Check if published-benchmarks branch exists
+        id: check-branch
+        run: |
+          if git ls-remote --exit-code --heads origin published-benchmarks; then
+            echo "benchmarks_branch_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "benchmarks_branch_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Checkout published-benchmarks branch
+        if: steps.check-branch.outputs.benchmarks_branch_exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: published-benchmarks
+          path: published-benchmarks
+          
+      - name: Create benchmark directory in docs
+        if: steps.check-branch.outputs.benchmarks_branch_exists == 'true'
+        run: |
+          mkdir -p docs/benchmarks
+          mkdir -p docs/benchmarks/parquet-data
+          
+          # Copy all the benchmark files to docs folder
+          if [ -d "published-benchmarks/benchmarks" ]; then
+            cp -r published-benchmarks/benchmarks/* docs/benchmarks/
+            echo "Copied benchmark data to docs/benchmarks/"
+          else
+            echo "No benchmark data found in published-benchmarks branch"
+          fi
+      
       - uses: actions/setup-python@v5
         with:
           python-version: 3.x

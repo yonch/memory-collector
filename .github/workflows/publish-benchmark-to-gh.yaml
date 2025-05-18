@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # Required to push to gh-pages branch
+  contents: write  # Required to push to published-benchmarks branch
 
 jobs:
   publish:
@@ -46,85 +46,91 @@ jobs:
           path: artifacts/parquet-analysis
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ steps.get-run-id.outputs.run_id }}
-          
-      - name: Checkout gh-pages branch
+      
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-
-      - name: Prepare benchmark directory
+        
+      - name: Create fresh published-benchmarks branch
         run: |
-          mkdir -p gh-pages/benchmarks
-          mkdir -p gh-pages/benchmarks/parquet-data
+          # Create a new orphan branch with no history
+          git checkout --orphan published-benchmarks
+          
+          # Remove everything
+          git rm -rf .
+          
+          # Create benchmark directory structure
+          mkdir -p benchmarks/parquet-data
+          
+          # Add a README
+          echo "# Benchmark Results" > README.md
+          echo "This branch contains benchmark results published from CI." >> README.md
+          echo "Last updated: $(date)" >> README.md
+          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> README.md
           
           # Create metadata file with timestamp
-          echo "Last updated: $(date)" > gh-pages/benchmarks/metadata.txt
-          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> gh-pages/benchmarks/metadata.txt
+          echo "Last updated: $(date)" > benchmarks/metadata.txt
+          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> benchmarks/metadata.txt
 
-      - name: Copy and rename visualization files
-        run: |
-          # Create temporary directory for processed files
-          mkdir -p processed_files
-          
+      - name: Copy visualization files
+        run: |          
           # CPU utilization - only stacked and comparison
-          cp artifacts/visualizations/cpu_utilization_stacked.png gh-pages/benchmarks/cpu_utilization_stacked.png
-          cp artifacts/visualizations/cpu_utilization_comparison.png gh-pages/benchmarks/cpu_utilization_comparison.png
+          cp artifacts/visualizations/cpu_utilization_stacked.png benchmarks/cpu_utilization_stacked.png
+          cp artifacts/visualizations/cpu_utilization_comparison.png benchmarks/cpu_utilization_comparison.png
           
           # Workload performance (latency/request rate)
-          cp artifacts/visualizations/workload_performance.png gh-pages/benchmarks/workload_performance.png
+          cp artifacts/visualizations/workload_performance.png benchmarks/workload_performance.png
           
           # Memory utilization
-          cp artifacts/visualizations/memory_utilization.png gh-pages/benchmarks/memory_utilization.png
+          cp artifacts/visualizations/memory_utilization.png benchmarks/memory_utilization.png
           
           # LLC misses - 180 second variant with 0.5 second length
-          cp artifacts/visualizations/llc_misses_180sec_0.5.png gh-pages/benchmarks/llc_misses.png
+          cp artifacts/visualizations/llc_misses_180sec_0.5.png benchmarks/llc_misses.png
           
           # CPI by LLC misses - prefer non-capped version, but use capped if necessary
           # For top5 vs mid45-55 slowdown
           if [ -f "artifacts/visualizations/cpi_by_llc_misses_slowdown_top5_vs_mid45-55.png" ]; then
-            cp artifacts/visualizations/cpi_by_llc_misses_slowdown_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_slowdown_top5_vs_mid.png
+            cp artifacts/visualizations/cpi_by_llc_misses_slowdown_top5_vs_mid45-55.png benchmarks/cpi_slowdown_top5_vs_mid.png
           else
-            cp artifacts/visualizations/cpi_by_llc_misses_capped_slowdown_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_slowdown_top5_vs_mid.png
+            cp artifacts/visualizations/cpi_by_llc_misses_capped_slowdown_top5_vs_mid45-55.png benchmarks/cpi_slowdown_top5_vs_mid.png
           fi
           
           # For top5 vs mid45-55 dist
           if [ -f "artifacts/visualizations/cpi_by_llc_misses_dist_top5_vs_mid45-55.png" ]; then
-            cp artifacts/visualizations/cpi_by_llc_misses_dist_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_dist_top5_vs_mid.png
+            cp artifacts/visualizations/cpi_by_llc_misses_dist_top5_vs_mid45-55.png benchmarks/cpi_dist_top5_vs_mid.png
           else
-            cp artifacts/visualizations/cpi_by_llc_misses_capped_dist_top5_vs_mid45-55.png gh-pages/benchmarks/cpi_dist_top5_vs_mid.png
+            cp artifacts/visualizations/cpi_by_llc_misses_capped_dist_top5_vs_mid45-55.png benchmarks/cpi_dist_top5_vs_mid.png
           fi
 
       - name: Copy flamegraph file
         run: |
-          cp artifacts/analysis/flamegraph_results/flamegraph.svg gh-pages/benchmarks/flamegraph.svg
+          cp artifacts/analysis/flamegraph_results/flamegraph.svg benchmarks/flamegraph.svg
           
       - name: Copy parquet analysis files
         run: |
           # Schema files
-          cp artifacts/parquet-analysis/schema.txt gh-pages/benchmarks/parquet-data/schema.txt
-          cp artifacts/parquet-analysis/schema-detailed.txt gh-pages/benchmarks/parquet-data/schema-detailed.txt
-          cp artifacts/parquet-analysis/schema.json gh-pages/benchmarks/parquet-data/schema.json
+          cp artifacts/parquet-analysis/schema.txt benchmarks/parquet-data/schema.txt
+          cp artifacts/parquet-analysis/schema-detailed.txt benchmarks/parquet-data/schema-detailed.txt
+          cp artifacts/parquet-analysis/schema.json benchmarks/parquet-data/schema.json
           
           # Sample records
-          cp artifacts/parquet-analysis/sample-100.txt gh-pages/benchmarks/parquet-data/sample-100.txt
-          cp artifacts/parquet-analysis/sample-100.json gh-pages/benchmarks/parquet-data/sample-100.json
+          cp artifacts/parquet-analysis/sample-100.txt benchmarks/parquet-data/sample-100.txt
+          cp artifacts/parquet-analysis/sample-100.json benchmarks/parquet-data/sample-100.json
           
           # Head records
-          cp artifacts/parquet-analysis/head-100.txt gh-pages/benchmarks/parquet-data/head-100.txt
-          cp artifacts/parquet-analysis/head-100.json gh-pages/benchmarks/parquet-data/head-100.json
+          cp artifacts/parquet-analysis/head-100.txt benchmarks/parquet-data/head-100.txt
+          cp artifacts/parquet-analysis/head-100.json benchmarks/parquet-data/head-100.json
 
-      - name: Commit and push changes
+      - name: Commit and force push to published-benchmarks branch
         run: |
-          cd gh-pages
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
-          git add benchmarks/
+          git add README.md benchmarks/
+          git commit -m "Update benchmark results from workflow run ${{ steps.get-run-id.outputs.run_id }}"
+          git push -f origin published-benchmarks
           
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Update benchmark results from workflow run ${{ steps.get-run-id.outputs.run_id }}"
-            git push origin gh-pages
-          fi 
+      - name: Trigger documentation workflow
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.WORKFLOW_PAT }}
+          event-type: benchmark-updated 
