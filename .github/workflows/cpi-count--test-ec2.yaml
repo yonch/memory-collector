@@ -11,6 +11,7 @@ jobs:
     outputs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+      region: ${{ steps.start-runner.outputs.region }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,14 +22,11 @@ jobs:
         with:
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           # See this Intel VTune documentation that lists the instances that support
           # hardware events:
           # https://www.intel.com/content/www/us/en/developer/articles/technical/intel-vtune-amplifier-functionality-on-aws-instances.html
           instance-type: 'c5.9xlarge'
-          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
+          image-type: 'ubuntu-22.04'
           pre-runner-script: |
             sudo apt update -y && \
             sudo apt install docker git libicu -y
@@ -112,4 +110,4 @@ jobs:
           ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }}

@@ -67,6 +67,7 @@ jobs:
     outputs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+      region: ${{ steps.start-runner.outputs.region }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,11 +78,8 @@ jobs:
         with:
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
-          subnet-id: ${{ secrets.AWS_SUBNET_ID }}
-          security-group-id: ${{ secrets.AWS_SECURITY_GROUP_ID }}
           instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
-          aws-image-id: 'ami-0884d2865dbe9de4b'  # Ubuntu 22.04 LTS in us-east-2
+          image-type: 'ubuntu-22.04'
 
   cancel-on-failure:
     needs: setup-runner
@@ -188,4 +186,4 @@ jobs:
           ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }} 
+          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }} 
