@@ -23,6 +23,7 @@ jobs:
       - name: Check if published-benchmarks branch exists
         id: check-benchmarks-branch
         run: |
+          cd main-repo
           if git ls-remote --exit-code --heads origin published-benchmarks; then
             echo "benchmarks_branch_exists=true" >> $GITHUB_OUTPUT
           else
@@ -32,6 +33,7 @@ jobs:
       - name: Check if published-helm-charts branch exists
         id: check-helm-charts-branch
         run: |
+          cd main-repo
           if git ls-remote --exit-code --heads origin published-helm-charts; then
             echo "helm_charts_branch_exists=true" >> $GITHUB_OUTPUT
           else
