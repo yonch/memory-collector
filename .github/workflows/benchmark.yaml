@@ -27,7 +27,7 @@ on:
       - main
     paths:
       - deploy/opentelemetry-demo/values.yaml
-      - .github/workflows/demo.yaml
+      - .github/workflows/benchmark.yaml
 
 permissions:
   id-token: write # Required for requesting the JWT
