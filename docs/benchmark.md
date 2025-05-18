@@ -18,8 +18,6 @@ This graph shows the overall performance of the test workload during the benchma
 - P95 latency (95th percentile)
 - P99 latency (99th percentile)
 
-The graph helps visualize **any potential impact the collector might have on application performance** as load increases during the benchmark run.
-
 ## Collector Resource Consumption
 
 ### CPU Utilization
@@ -74,10 +72,3 @@ This distribution shows CPI values across different levels of LLC miss activity 
 
 The slowdown graph quantifies **the performance impact of high LLC miss rates** by showing the ratio between average CPI during high cache miss periods compared to median cache miss periods. Higher values indicate greater performance degradation when cache contention occurs.
 
-## Interpreting Results
-
-When evaluating these benchmark results, consider:
-
-1. **Collector overhead** should remain around 1% of total CPU utilization and maintain stable memory usage
-
-The benchmark is designed to show that the Memory Collector can effectively measure memory subsystem interference with minimal performance impact, making it suitable for continuous monitoring in production environments.
