@@ -342,6 +342,85 @@ create_cpi_slowdown_plot <- function(data, instruction_threshold, top_n_processe
   return(p)
 }
 
+# Function to create scatter plot of CPI vs memory bandwidth derived from LLC misses
+create_cpi_vs_bandwidth_plot <- function(data, instruction_threshold, top_n_processes,
+                                        start_time_seconds, end_time_seconds) {
+  message("Creating CPI vs memory bandwidth scatter plot...")
+  
+  # Calculate aggregate LLC misses for each millisecond time slot
+  ms_aggregates <- data %>%
+    group_by(ms_slot) %>%
+    summarise(
+      total_llc_misses = sum(llc_misses, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    # Calculate the aggregate memory bandwidth in GB/s for each ms_slot
+    # Each LLC miss is 64 bytes, and time slots are 1ms
+    # So bandwidth in GB/s = LLC misses * 64 bytes / 1ms * (1000 ms/s) / (10^9 bytes/GB)
+    # Simplified: LLC misses * 64 * 1000 / 10^9 = LLC misses * 64 / 10^6 = LLC misses * 0.000064 GB/s
+    mutate(global_bandwidth_gbps = total_llc_misses * 64 / 1000000)
+  
+  # Calculate the 99.5 percentile to filter out extreme outliers
+  bandwidth_threshold <- quantile(ms_aggregates$global_bandwidth_gbps, 0.995, na.rm = TRUE)
+  message("Filtering out memory bandwidth above ", format(bandwidth_threshold, digits = 4), " GB/s (99.5 percentile)")
+  
+  # Filter out extreme bandwidth outliers
+  ms_aggregates_filtered <- ms_aggregates %>%
+    filter(global_bandwidth_gbps <= bandwidth_threshold)
+  
+  # Join the aggregate bandwidth back to the original data
+  data_with_bandwidth <- data %>%
+    left_join(ms_aggregates_filtered, by = "ms_slot") %>%
+    # Filter for samples with significant instruction counts and remove NAs (those were outliers)
+    filter(instructions > instruction_threshold & !is.na(global_bandwidth_gbps))
+  
+  # Identify top processes by total instructions
+  top_processes <- data %>%
+    group_by(process_name) %>%
+    summarise(total_instructions = sum(instructions, na.rm = TRUE)) %>%
+    arrange(desc(total_instructions)) %>%
+    slice_head(n = top_n_processes) %>%
+    pull(process_name)
+  
+  message("Top ", length(top_processes), " processes by instructions for bandwidth plot:")
+  print(head(top_processes, 10))
+  
+  # Prepare data for plotting
+  plot_data <- data_with_bandwidth %>%
+    # Group all non-top processes as "other"
+    mutate(process_group = ifelse(process_name %in% top_processes, 
+                                 as.character(process_name), 
+                                 "other")) %>%
+    # Cap extreme CPI values for better visualization
+    mutate(cpi_capped = pmin(cpi, 10))  # Cap at 10 cycles per instruction
+  
+  # Reorder factor levels based on total instructions for better visualization
+  process_order <- c(top_processes, "other")
+  plot_data$process_group <- factor(plot_data$process_group, levels = process_order)
+  
+  # Create the faceted scatter plot
+  p <- ggplot(plot_data, aes(x = global_bandwidth_gbps, y = cpi_capped)) +
+    geom_point(alpha = 0.03, size = 0.8, color = "#377EB8") +  # Reduced alpha for better density visualization
+    facet_wrap(~ process_group, scales = "free_y", ncol = 3) +  # Only free y-axis to maintain same x-axis scale
+    labs(
+      title = "CPI vs Global Memory Bandwidth by Process",
+      subtitle = paste0("Analysis of ", start_time_seconds, "-", end_time_seconds, 
+                       "s window, ", instruction_threshold, " instruction threshold, ",
+                       "excluding top 0.5% bandwidth"),
+      x = "Global Memory Bandwidth (GB/s)",
+      y = "Cycles Per Instruction (CPI)"
+    ) +
+    theme_minimal() +
+    theme(
+      strip.background = element_rect(fill = "lightgray"),
+      strip.text = element_text(face = "bold"),
+      plot.title = element_text(face = "bold"),
+      axis.title = element_text(face = "bold")
+    )
+  
+  return(p)
+}
+
 # Main execution
 main <- function() {
   tryCatch({
@@ -396,6 +475,14 @@ main <- function() {
                                                      top_n_processes, 45, 55, 95, 100, 
                                                      start_time_seconds, end_time_seconds)
     
+    # Create the CPI vs bandwidth scatter plot
+    bandwidth_plot <- create_cpi_vs_bandwidth_plot(perf_data_filtered, instruction_threshold, 
+                                                 top_n_processes, start_time_seconds, end_time_seconds)
+    
+    # Add white background for PNG version to improve visibility in dark themes
+    bandwidth_plot_png_version <- bandwidth_plot + 
+      theme(plot.background = element_rect(fill = "white", color = NA))
+    
     # Save outputs for CPI distribution plots
     cpi_plot_5_vs_95_png <- paste0(output_file, "_dist_top5_vs_bottom95.png")
     cpi_plot_5_vs_95_pdf <- paste0(output_file, "_dist_top5_vs_bottom95.pdf")
@@ -433,6 +520,16 @@ main <- function() {
     
     message("Saving top 5% vs middle 45-55% slowdown plot as PDF: ", slowdown_5_vs_mid_pdf)
     ggsave(slowdown_5_vs_mid_pdf, slowdown_plot_5_vs_mid, width = 15, height = 10)
+    
+    # Save outputs for bandwidth plot
+    bandwidth_plot_png <- paste0(output_file, "_cpi_vs_bandwidth.png")
+    bandwidth_plot_pdf <- paste0(output_file, "_cpi_vs_bandwidth.pdf")
+    
+    message("Saving CPI vs bandwidth plot as PNG (with white background): ", bandwidth_plot_png)
+    ggsave(bandwidth_plot_png, bandwidth_plot_png_version, width = 15, height = 20, dpi = 300, bg = "white")
+    
+    message("Saving CPI vs bandwidth plot as PDF: ", bandwidth_plot_pdf)
+    ggsave(bandwidth_plot_pdf, bandwidth_plot, width = 15, height = 20)
     
     message("Done!")
   }, error = function(e) {
