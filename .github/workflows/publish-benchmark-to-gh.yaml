@@ -130,7 +130,6 @@ jobs:
           git push -f origin published-benchmarks
           
       - name: Trigger documentation workflow
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.WORKFLOW_PAT }}
           event-type: benchmark-updated 
