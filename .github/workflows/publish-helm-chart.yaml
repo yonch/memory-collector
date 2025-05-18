@@ -41,23 +41,51 @@ jobs:
           echo "Current chart version: ${CURRENT_VERSION}"
           echo "Major.Minor version: ${MAJOR_MINOR}"
 
-      - name: Checkout gh-pages branch
+      - name: Check if published-helm-charts branch exists
+        id: check-branch
+        run: |
+          git fetch --all
+          if git ls-remote --exit-code --heads origin published-helm-charts; then
+            echo "Branch exists"
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Branch does not exist"
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      # If the branch doesn't exist, check out main into a dedicated directory and create the branch
+      - name: Checkout main to create published-helm-charts
+        if: steps.check-branch.outputs.exists == 'false'
         uses: actions/checkout@v4
         with:
-          ref: gh-pages
-          path: gh-pages
+          path: published-helm-charts-setup
+          ref: main
 
-      - name: Verify gh-pages structure integrity
+      - name: Create published-helm-charts branch if it doesn't exist
+        if: steps.check-branch.outputs.exists == 'false'
         run: |
-          # Check if the gh-pages branch has the mkdocs site structure
-          if [ -f "gh-pages/index.html" ]; then
-            echo "GitHub Pages site appears to be present"
-          else
-            echo "Warning: GitHub Pages site structure may be missing, but we'll continue"
-          fi
-          
-          # Ensure the charts directory exists but doesn't overwrite other content
-          mkdir -p gh-pages/charts
+          cd published-helm-charts-setup
+          # Create a new orphan branch with no history
+          git checkout --orphan published-helm-charts
+          git rm -rf .
+          mkdir -p charts
+          echo "# Helm Charts" > README.md
+          echo "This branch contains Helm charts published from CI." >> README.md
+          echo "Last updated: $(date)" >> README.md
+          git add README.md
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git commit -m "Initialize published-helm-charts branch"
+          git push origin published-helm-charts
+          cd ..
+
+      # Now checkout the published-helm-charts branch (which now definitely exists)
+      - name: Checkout published-helm-charts branch
+        uses: actions/checkout@v4
+        with:
+          ref: published-helm-charts
+          path: published-helm-charts
+          fetch-depth: 1
 
       - name: Check if chart has changed
         id: chart-changes
@@ -66,14 +94,14 @@ jobs:
           LAST_CHART_COMMIT=$(git log -n 1 --pretty=format:%H -- charts/collector/)
           
           # Check if we need to publish a new version
-          if [ -f "gh-pages/charts/index.yaml" ]; then
+          if [ -f "published-helm-charts/charts/index.yaml" ]; then
             if [ "${{ github.event.inputs.force_bump }}" == "true" ]; then
               echo "Force bump enabled, will publish new version"
               echo "has_changes=true" >> $GITHUB_OUTPUT
             else
               # Look for the current chart version in the index.yaml
               CURRENT_VERSION="${{ steps.chart-version.outputs.current_version }}"
-              if grep -q "version: ${CURRENT_VERSION}" gh-pages/charts/index.yaml; then
+              if grep -q "version: ${CURRENT_VERSION}" published-helm-charts/charts/index.yaml; then
                 # Check if chart files have changed since last version
                 CHART_FILES=$(find charts/collector -type f | sort)
                 CHART_HASH=$(cat $CHART_FILES | sha256sum | cut -d' ' -f1)
@@ -97,8 +125,8 @@ jobs:
           MAJOR_MINOR="${{ steps.chart-version.outputs.major_minor }}"
           
           # Check if index.yaml exists and contains our chart
-          if [ -f "gh-pages/charts/index.yaml" ]; then
-            LATEST_PATCH=$(grep -A10 "name: collector" gh-pages/charts/index.yaml | grep "version: ${MAJOR_MINOR}." | head -n1 | sed "s/.*version: ${MAJOR_MINOR}.//" | sed 's/[^0-9].*//')
+          if [ -f "published-helm-charts/charts/index.yaml" ]; then
+            LATEST_PATCH=$(grep -A10 "name: collector" published-helm-charts/charts/index.yaml | grep "version: ${MAJOR_MINOR}." | head -n1 | sed "s/.*version: ${MAJOR_MINOR}.//" | sed 's/[^0-9].*//')
           else
             LATEST_PATCH=-1
           fi
@@ -113,7 +141,7 @@ jobs:
           NEXT_VERSION="${MAJOR_MINOR}.${NEXT_PATCH}"
           
           # Check if the target file already exists (should never happen, but just in case)
-          if [ -f "gh-pages/charts/collector-${NEXT_VERSION}.tgz" ]; then
+          if [ -f "published-helm-charts/charts/collector-${NEXT_VERSION}.tgz" ]; then
             echo "Warning: Chart version ${NEXT_VERSION} already exists, incrementing again"
             NEXT_PATCH=$((NEXT_PATCH + 1))
             NEXT_VERSION="${MAJOR_MINOR}.${NEXT_PATCH}"
@@ -139,28 +167,40 @@ jobs:
           mkdir -p .cr-release-packages
           helm package charts/collector -d .cr-release-packages
 
-      - name: Copy packaged chart to gh-pages
+      - name: Ensure charts directory exists in published branch
         if: steps.chart-changes.outputs.has_changes == 'true'
         run: |
-          cp .cr-release-packages/collector-${{ steps.next-version.outputs.next_version }}.tgz gh-pages/charts/
+          mkdir -p published-helm-charts/charts
+
+      - name: Copy packaged chart to published branch
+        if: steps.chart-changes.outputs.has_changes == 'true'
+        run: |
+          cp .cr-release-packages/collector-${{ steps.next-version.outputs.next_version }}.tgz published-helm-charts/charts/
 
       - name: Generate/Update Helm repository index
         if: steps.chart-changes.outputs.has_changes == 'true'
         run: |
-          cd gh-pages/charts
+          cd published-helm-charts/charts
           if [ -f index.yaml ]; then
             helm repo index --url https://unvariance.github.io/collector/charts --merge index.yaml .
           else
             helm repo index --url https://unvariance.github.io/collector/charts .
           fi
 
-      - name: Commit and push changes to gh-pages branch
+      - name: Commit and push changes to published-helm-charts branch
         if: steps.chart-changes.outputs.has_changes == 'true'
         run: |
-          cd gh-pages
+          cd published-helm-charts
           
-          # Only add/commit changes in the charts directory
-          git add charts/
+          # Update timestamp in README
+          echo "# Helm Charts" > README.md
+          echo "This branch contains Helm charts published from CI." >> README.md
+          echo "Last updated: $(date)" >> README.md
+          echo "Latest chart version: ${{ steps.next-version.outputs.next_version }}" >> README.md
+          
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git add README.md charts/
           
           # Add a detailed commit message
           git commit -m "Publish Helm chart collector-${{ steps.next-version.outputs.next_version }}" \
@@ -168,4 +208,9 @@ jobs:
             -m "Repository: ${{ github.repository }}" \
             -m "Triggered by: ${{ github.actor }}"
           
-          git push origin gh-pages 
+          git push origin HEAD:published-helm-charts
+
+      - name: Trigger documentation workflow
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: helm-charts-updated 
