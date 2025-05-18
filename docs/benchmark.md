@@ -10,7 +10,7 @@ All results shown here are automatically published from the most recent successf
 
 ## Workload Performance
 
-![Workload Performance](/benchmarks/workload_performance.png)
+![Workload Performance](..//benchmarks/workload_performance.png)
 
 This graph shows the overall performance of the test workload during the benchmark run, displaying:
 - Request rate (requests per second)
