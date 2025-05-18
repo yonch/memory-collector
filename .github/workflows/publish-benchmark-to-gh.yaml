@@ -13,6 +13,30 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Create fresh published-benchmarks branch
+        run: |
+          # Create a new orphan branch with no history
+          git checkout --orphan published-benchmarks
+          
+          # Remove everything
+          git rm -rf .
+          
+          # Create benchmark directory structure
+          mkdir -p benchmarks/parquet-data
+          
+          # Add a README
+          echo "# Benchmark Results" > README.md
+          echo "This branch contains benchmark results published from CI." >> README.md
+          echo "Last updated: $(date)" >> README.md
+          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> README.md
+          
+          # Create metadata file with timestamp
+          echo "Last updated: $(date)" > benchmarks/metadata.txt
+          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> benchmarks/metadata.txt
+
       - name: Get latest successful benchmark run ID
         id: get-run-id
         run: |
@@ -46,30 +70,6 @@ jobs:
           path: artifacts/parquet-analysis
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ steps.get-run-id.outputs.run_id }}
-      
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        
-      - name: Create fresh published-benchmarks branch
-        run: |
-          # Create a new orphan branch with no history
-          git checkout --orphan published-benchmarks
-          
-          # Remove everything
-          git rm -rf .
-          
-          # Create benchmark directory structure
-          mkdir -p benchmarks/parquet-data
-          
-          # Add a README
-          echo "# Benchmark Results" > README.md
-          echo "This branch contains benchmark results published from CI." >> README.md
-          echo "Last updated: $(date)" >> README.md
-          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> README.md
-          
-          # Create metadata file with timestamp
-          echo "Last updated: $(date)" > benchmarks/metadata.txt
-          echo "Run ID: ${{ steps.get-run-id.outputs.run_id }}" >> benchmarks/metadata.txt
 
       - name: Copy visualization files
         run: |          
