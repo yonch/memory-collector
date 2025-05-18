@@ -7,40 +7,59 @@ on:
       - docs/**
       - mkdocs.yml
   repository_dispatch:
-    types: [benchmark-updated]
+    types: [benchmark-updated, helm-charts-updated]
 permissions:
   contents: write
 jobs:
   deploy: 
     runs-on: ubuntu-latest
     steps: 
-      - uses: actions/checkout@v4
+      # Checkout main repo
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          path: main-repo
       
       - name: Check if published-benchmarks branch exists
-        id: check-branch
+        id: check-benchmarks-branch
         run: |
           if git ls-remote --exit-code --heads origin published-benchmarks; then
             echo "benchmarks_branch_exists=true" >> $GITHUB_OUTPUT
           else
             echo "benchmarks_branch_exists=false" >> $GITHUB_OUTPUT
           fi
+      
+      - name: Check if published-helm-charts branch exists
+        id: check-helm-charts-branch
+        run: |
+          if git ls-remote --exit-code --heads origin published-helm-charts; then
+            echo "helm_charts_branch_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "helm_charts_branch_exists=false" >> $GITHUB_OUTPUT
+          fi
           
       - name: Checkout published-benchmarks branch
-        if: steps.check-branch.outputs.benchmarks_branch_exists == 'true'
+        if: steps.check-benchmarks-branch.outputs.benchmarks_branch_exists == 'true'
         uses: actions/checkout@v4
         with:
           ref: published-benchmarks
           path: published-benchmarks
+      
+      - name: Checkout published-helm-charts branch
+        if: steps.check-helm-charts-branch.outputs.helm_charts_branch_exists == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: published-helm-charts
+          path: published-helm-charts
           
-      - name: Create benchmark directory in docs
-        if: steps.check-branch.outputs.benchmarks_branch_exists == 'true'
+      - name: Copy benchmark data to docs
+        if: steps.check-benchmarks-branch.outputs.benchmarks_branch_exists == 'true'
         run: |
-          mkdir -p docs/benchmarks
-          mkdir -p docs/benchmarks/parquet-data
+          mkdir -p main-repo/docs/benchmarks
+          mkdir -p main-repo/docs/benchmarks/parquet-data
           
-          # Copy all the benchmark files to docs folder
           if [ -d "published-benchmarks/benchmarks" ]; then
-            cp -r published-benchmarks/benchmarks/* docs/benchmarks/
+            cp -r published-benchmarks/benchmarks/* main-repo/docs/benchmarks/
             echo "Copied benchmark data to docs/benchmarks/"
           else
             echo "No benchmark data found in published-benchmarks branch"
@@ -54,4 +73,59 @@ jobs:
           key: ${{ github.ref }}
           path: .cache
       - run: pip install mkdocs-material
-      - run: mkdocs gh-deploy --force
+      
+      # Build docs locally to a specific directory
+      - name: Build mkdocs site
+        run: |
+          cd main-repo
+          mkdocs build --site-dir ../site-build
+      
+      # Create a completely separate checkout for gh-pages
+      - name: Checkout repo for gh-pages
+        uses: actions/checkout@v4
+        with:
+          path: gh-pages
+          ref: main
+      
+      # Setup the gh-pages directory
+      - name: Setup gh-pages branch
+        run: |
+          cd gh-pages
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git checkout --orphan gh-pages
+          git rm -rf .
+          # Ensure the git directory is empty (except .git)
+          find . -type f -not -path "./.git/*" -delete
+          find . -type d -not -path "./.git" -not -path "./.git/*" -not -path "." -exec rm -rf {} \; 2>/dev/null || true
+      
+      # Copy the built site to the gh-pages directory
+      - name: Copy built site to gh-pages
+        run: |
+          cp -r site-build/* gh-pages/
+      
+      # Copy Helm charts directly into the gh-pages directory
+      - name: Copy Helm charts to gh-pages
+        if: steps.check-helm-charts-branch.outputs.helm_charts_branch_exists == 'true'
+        run: |
+          mkdir -p gh-pages/charts
+          
+          if [ -d "published-helm-charts/charts" ]; then
+            cp -r published-helm-charts/charts/* gh-pages/charts/
+            echo "Copied Helm charts to charts/ directory"
+          else
+            echo "No Helm chart data found in published-helm-charts branch"
+          fi
+          
+      # Commit and push the changes to gh-pages
+      - name: Commit and push to gh-pages
+        run: |
+          cd gh-pages
+          git add .
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update documentation site and resources"
+            git push -f origin gh-pages
+          fi
