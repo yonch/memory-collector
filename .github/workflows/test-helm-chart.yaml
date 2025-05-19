@@ -5,7 +5,7 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'm7i.xlarge,c7i.xlarge,r7i.xlarge,m6i.xlarge,m5.xlarge'
+        default: 'm7i.xlarge'
         type: string
       image-repository:
         description: 'Custom image repository (e.g., ghcr.io/username/repo/collector)'
