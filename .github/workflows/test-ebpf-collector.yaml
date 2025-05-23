@@ -186,7 +186,7 @@ jobs:
             # Check if the behavior matches expectations
             if [ "${{ matrix.should_succeed }}" = "true" ]; then
               # For kernels 6.7+, expect success
-              if [ "$COLLECTOR_EXIT_CODE" -eq 0 ] || [ "$COLLECTOR_EXIT_CODE" -eq 124 ]; then  # 124 is timeout exit code
+              if [ "$COLLECTOR_EXIT_CODE" -eq "0" ] || [ "$COLLECTOR_EXIT_CODE" -eq "124" ]; then  # 124 is timeout exit code
                 echo "✅ SUCCESS: Collector ran successfully on supported kernel"
                 
                 # Verify parquet files were created
@@ -204,7 +204,7 @@ jobs:
               fi
             else
               # For kernels < 6.7, expect failure with kernel error message
-              if [ "$COLLECTOR_EXIT_CODE" -ne 0 ] && [ "$COLLECTOR_EXIT_CODE" -ne 124 ]; then
+              if [ "$COLLECTOR_EXIT_CODE" -ne "0" ] && [ "$COLLECTOR_EXIT_CODE" -ne "124" ]; then
                 echo "✅ EXPECTED: Collector failed on unsupported kernel (exit code: $COLLECTOR_EXIT_CODE)"
                 
                 # Check if the error message mentions kernel 6.7 requirement
