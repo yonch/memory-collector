@@ -129,7 +129,7 @@ jobs:
           images-folder-parent: "/tmp"
           cpu: 2
           mem: 2G
-          cpu-kind: 'host'
+          cpu-kind: 'host,pmu=on'
           lvh-version: "v0.0.23"
           install-dependencies: 'true'
           cmd: |
@@ -176,6 +176,12 @@ jobs:
             echo "========================"
             echo "Collector exit code: $COLLECTOR_EXIT_CODE"
             echo
+            
+            # Handle empty exit code (fallback for safety)
+            if [ -z "$COLLECTOR_EXIT_CODE" ]; then
+              echo "Warning: Exit code is empty, assuming failure"
+              exit 1
+            fi
             
             # Check if the behavior matches expectations
             if [ "${{ matrix.should_succeed }}" = "true" ]; then
