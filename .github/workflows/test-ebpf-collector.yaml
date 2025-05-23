@@ -119,7 +119,7 @@ jobs:
           name: collector-binary
           path: ./artifacts
 
-      - name: Provision LVH VM
+      - name: Provision LVH VM and Test
         uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
         with:
           test-name: collector-kernel-${{ matrix.kernel }}
@@ -146,11 +146,6 @@ jobs:
             ls -la /proc/sys/kernel/perf_event_* || echo "No perf event sysctls found"
             cat /proc/cpuinfo | grep -i "pmu\|perf" || echo "No PMU features in cpuinfo"
 
-      - name: Test Collector on ${{ matrix.description }}
-        uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
-        with:
-          provision: 'false'
-          cmd: |
             uname -a
             cd /host
             
