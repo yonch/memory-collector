@@ -30,6 +30,9 @@ unsafe impl plain::Plain for TaskFreeMsg {}
 unsafe impl plain::Plain for TimerFinishedProcessingMsg {}
 unsafe impl plain::Plain for PerfMeasurementMsg {}
 
+// Re-export important sync timer types
+pub use sync_timer::SyncTimerError;
+
 /// The BPF dispatcher to manage BPF program lifecycle
 pub struct BpfLoader {
     skel: bpf::CollectorSkel<'static>,
@@ -110,6 +113,7 @@ impl BpfLoader {
     /// Initialize and start the sync timer
     pub fn start_sync_timer(&mut self) -> Result<()> {
         sync_timer::initialize_sync_timer(&self.skel.progs.sync_timer_init_collect)
+            .map_err(|e| anyhow::anyhow!("Sync timer initialization failed: {}", e))
     }
 
     /// Attach BPF programs

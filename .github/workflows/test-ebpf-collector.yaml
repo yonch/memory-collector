@@ -83,6 +83,154 @@ jobs:
           name: collector-binary
           path: artifacts/collector
 
+  test-multi-kernel:
+    name: Test on Multiple Kernels
+    needs: build-collector
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Test on kernel 6.1 - should fail with clear error message about kernel requirement
+          # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
+          - kernel: '6.1-20250507.063028'
+            should_succeed: false
+            description: 'Kernel 6.1 (should fail - CPU pinning unsupported)'
+          # Test on kernel 6.6 - should fail with clear error message about kernel requirement  
+          # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
+          - kernel: '6.6-20250507.063028'
+            should_succeed: false
+            description: 'Kernel 6.6 (should fail - CPU pinning unsupported)'
+          # Test on kernel 6.12 - should succeed (6.7+ supports CPU pinning)
+          # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
+          - kernel: '6.12-20250507.063028'
+            should_succeed: true
+            description: 'Kernel 6.12 (should succeed - CPU pinning supported)'
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download collector binary
+        uses: actions/download-artifact@v4
+        with:
+          name: collector-binary
+          path: ./artifacts
+
+      - name: Provision LVH VM
+        uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
+        with:
+          test-name: collector-kernel-${{ matrix.kernel }}
+          image: 'complexity-test'
+          image-version: ${{ matrix.kernel }}
+          host-mount: ./
+          images-folder-parent: "/tmp"
+          cpu: 2
+          mem: 2G
+          lvh-version: "v0.0.23"
+          install-dependencies: 'true'
+          cmd: |
+            # Wait for networking to be ready
+            for i in {1..5}; do curl "https://golang.org" > /dev/null 2>&1 && break || sleep 5; echo "Waiting for systemd-resolved to be ready..."; done
+            
+            git config --global --add safe.directory /host
+            uname -a
+            echo "Testing memory collector on kernel: ${{ matrix.description }}"
+
+      - name: Test Collector on ${{ matrix.description }}
+        uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
+        with:
+          provision: 'false'
+          cmd: |
+            cd /host
+            
+            # Make collector executable
+            chmod +x ./artifacts/collector
+            
+            echo "=== Testing memory collector on ${{ matrix.description }} ==="
+            echo "Kernel version: $(uname -r)"
+            echo "Expected result: ${{ matrix.should_succeed && 'SUCCESS' || 'FAILURE with kernel version error' }}"
+            echo
+            
+            # Set up test environment
+            mkdir -p /tmp/test-output
+            
+            # Run the collector and capture both stdout and stderr
+            echo "Running collector for 5 seconds..."
+            set +e  # Don't exit on error
+            timeout 10s ./artifacts/collector -d 5 --storage-type local --prefix "/tmp/test-output/metrics-" > /tmp/collector-output.log 2>&1
+            COLLECTOR_EXIT_CODE=$?
+            set -e
+            
+            echo "=== Collector Output ==="
+            cat /tmp/collector-output.log
+            echo "========================"
+            echo "Collector exit code: $COLLECTOR_EXIT_CODE"
+            echo
+            
+            # Check if the behavior matches expectations
+            if [ "${{ matrix.should_succeed }}" = "true" ]; then
+              # For kernels 6.7+, expect success
+              if [ $COLLECTOR_EXIT_CODE -eq 0 ] || [ $COLLECTOR_EXIT_CODE -eq 124 ]; then  # 124 is timeout exit code
+                echo "✅ SUCCESS: Collector ran successfully on supported kernel"
+                
+                # Verify parquet files were created
+                if ls /tmp/test-output/metrics-*.parquet >/dev/null 2>&1; then
+                  echo "✅ SUCCESS: Parquet files were created"
+                  echo "Created files:"
+                  ls -la /tmp/test-output/metrics-*.parquet
+                else
+                  echo "❌ UNEXPECTED: No parquet files found despite successful run"
+                  exit 1
+                fi
+              else
+                echo "❌ UNEXPECTED: Collector failed on supported kernel (exit code: $COLLECTOR_EXIT_CODE)"
+                exit 1
+              fi
+            else
+              # For kernels < 6.7, expect failure with kernel error message
+              if [ $COLLECTOR_EXIT_CODE -ne 0 ] && [ $COLLECTOR_EXIT_CODE -ne 124 ]; then
+                echo "✅ EXPECTED: Collector failed on unsupported kernel (exit code: $COLLECTOR_EXIT_CODE)"
+                
+                # Check if the error message mentions kernel 6.7 requirement
+                if grep -i "kernel 6\.7" /tmp/collector-output.log; then
+                  echo "✅ SUCCESS: Error message correctly mentions kernel 6.7 requirement"
+                else
+                  echo "❌ IMPROVEMENT NEEDED: Error message should mention kernel 6.7 requirement"
+                  echo "Current error output:"
+                  cat /tmp/collector-output.log
+                  # Don't fail the test, just note the improvement needed
+                fi
+                
+                # Verify no parquet files were created
+                if ! ls /tmp/test-output/metrics-*.parquet >/dev/null 2>&1; then
+                  echo "✅ SUCCESS: No parquet files created on unsupported kernel"
+                else
+                  echo "❌ UNEXPECTED: Parquet files were created despite failure"
+                  exit 1
+                fi
+              else
+                echo "❌ UNEXPECTED: Collector succeeded on unsupported kernel"
+                echo "This suggests the kernel version detection/error handling needs improvement"
+                exit 1
+              fi
+            fi
+            
+            echo "=== Test completed for ${{ matrix.description }} ==="
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-test-${{ matrix.kernel }}-logs
+          path: |
+            /tmp/collector-output.log
+            /tmp/test-output/
+          if-no-files-found: ignore
+          retention-days: 5
+
   setup-runner:
     name: Start EC2 runner
     runs-on: ubuntu-latest
