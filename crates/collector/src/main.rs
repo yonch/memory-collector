@@ -19,7 +19,7 @@ use uuid::Uuid;
 // Import the bpf crate components
 use bpf::{
     msg_type, BpfLoader, PerfMeasurementMsg, TaskFreeMsg, TaskMetadataMsg,
-    TimerFinishedProcessingMsg,
+    TimerFinishedProcessingMsg, TimerMigrationMsg,
 };
 
 // Import local modules
@@ -193,6 +193,34 @@ impl PerfEventProcessor {
             self.task_collection.flush_removals();
         }
         Ok(())
+    }
+
+    // Handle timer migration detection events
+    fn handle_timer_migration(&mut self, _ring_index: usize, data: &[u8]) -> Result<()> {
+        let event: &TimerMigrationMsg = match plain::from_bytes(data) {
+            Ok(event) => event,
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to parse timer migration event: {:?}",
+                    e
+                ));
+            }
+        };
+
+        // Timer migration detected - this is a critical error that invalidates measurements
+        eprintln!("CRITICAL ERROR: Timer migration detected!");
+        eprintln!(
+            "Expected CPU: {}, Actual CPU: {}",
+            event.expected_cpu, event.actual_cpu
+        );
+        eprintln!("Timer pinning failed - measurements are no longer reliable.");
+        eprintln!("This indicates either:");
+        eprintln!("  1. Kernel version doesn't support BPF timer CPU pinning (requires 6.7+)");
+        eprintln!("  2. Legacy fallback timer migration control failed");
+        eprintln!("This case should never happen, please report this as a bug with the distribution and kernel version.");
+        eprintln!("Exiting to prevent incorrect performance measurements.");
+
+        std::process::exit(1);
     }
 
     // Handle lost events
@@ -374,6 +402,20 @@ fn main() -> Result<()> {
                     .handle_timer_finished_processing(ring_index, data)
                 {
                     eprintln!("Error handling timer finished: {:?}", e);
+                }
+            },
+        );
+
+        // Processor clone for the timer migration callback
+        let processor_clone = processor.clone();
+        dispatcher.subscribe(
+            msg_type::MSG_TYPE_TIMER_MIGRATION_DETECTED as u32,
+            move |ring_index, data| {
+                if let Err(e) = processor_clone
+                    .borrow_mut()
+                    .handle_timer_migration(ring_index, data)
+                {
+                    eprintln!("Error handling timer migration: {:?}", e);
                 }
             },
         );

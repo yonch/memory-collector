@@ -1,7 +1,9 @@
 use anyhow::Result;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use nix::sched::{sched_getaffinity, sched_getcpu, sched_setaffinity, CpuSet};
 use nix::unistd::Pid;
+use std::fs;
+use std::io;
 use thiserror::Error;
 
 // Import the auto-generated enum from BPF skeleton
@@ -66,13 +68,50 @@ pub enum SyncTimerError {
         failed_count: usize,
         total_count: usize,
     },
+
+    #[error("Failed to read kernel.timer_migration sysctl")]
+    SysctlReadFailed(#[source] io::Error),
+
+    #[error("Failed to write kernel.timer_migration sysctl")]
+    SysctlWriteFailed(#[source] io::Error),
+
+    #[error("Failed to parse kernel.timer_migration value: {}", value)]
+    SysctlParseFailed { value: String },
+
+    #[error("Both modern and legacy timer initialization failed")]
+    BothMethodsFailed,
 }
 
-/// Initializes and starts a synchronized timer on all available CPU cores
+const TIMER_MIGRATION_SYSCTL_PATH: &str = "/proc/sys/kernel/timer_migration";
+
+/// Read the current value of kernel.timer_migration sysctl
+fn read_timer_migration_sysctl() -> Result<u8, SyncTimerError> {
+    let content = fs::read_to_string(TIMER_MIGRATION_SYSCTL_PATH)
+        .map_err(SyncTimerError::SysctlReadFailed)?;
+
+    let value = content.trim();
+    value
+        .parse::<u8>()
+        .map_err(|_| SyncTimerError::SysctlParseFailed {
+            value: value.to_string(),
+        })
+}
+
+/// Write a value to kernel.timer_migration sysctl
+fn write_timer_migration_sysctl(value: u8) -> Result<(), SyncTimerError> {
+    fs::write(TIMER_MIGRATION_SYSCTL_PATH, value.to_string())
+        .map_err(SyncTimerError::SysctlWriteFailed)
+}
+
+/// Initializes and starts a synchronized timer on all available CPU cores with fallback support
 ///
-/// This function initializes BPF timers on every available CPU core, ensuring
-/// synchronized timer firing across all cores. It provides detailed error
-/// information when any step of the initialization process fails.
+/// This function attempts to initialize BPF timers using modern CPU pinning first (kernel 6.7+),
+/// and falls back to legacy timer migration control for older kernels (5.15-6.6).
+///
+/// # Fallback Strategy
+///
+/// 1. **Modern Pinning (Kernel 6.7+)**: Attempts to use `BPF_F_TIMER_CPU_PIN` flag
+/// 2. **Legacy Pinning (Kernel 5.15-6.6)**: Temporarily disables timer migration via sysctl
 ///
 /// # Errors
 ///
@@ -81,6 +120,7 @@ pub enum SyncTimerError {
 /// - BPF program execution
 /// - BPF timer setup (init, callback, start)
 /// - BPF map operations
+/// - Sysctl operations for legacy fallback
 ///
 /// # Example
 ///
@@ -94,40 +134,89 @@ pub enum SyncTimerError {
 ///     Ok(()) => info!("Sync timer initialized successfully"),
 ///     Err(e) => {
 ///         error!("Sync timer initialization failed: {}", e);
-///         
-///         // Check if it's specifically a sync timer error with kernel requirements
-///         if let Some(sync_error) = e.downcast_ref::<SyncTimerError>() {
-///             match sync_error {
-///                 SyncTimerError::TimerInitFailed { cpu } => {
-///                     error!("Timer init failed on CPU {}", cpu);
-///                     error!("This may indicate your kernel doesn't support BPF timer CPU pinning.");
-///                     error!("Linux kernel 6.7 or later is required for BPF timer functionality.");
-///                     error!("Current kernel: {}", std::process::Command::new("uname")
-///                         .arg("-r").output().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-///                         .unwrap_or_else(|_| "unknown".to_string()));
-///                 },
-///                 SyncTimerError::TimerStartFailed { cpu } => {
-///                     error!("Timer start failed on CPU {}", cpu);
-///                     error!("BPF timer CPU pinning requires kernel 6.7+");
-///                 },
-///                 SyncTimerError::MultipleFailures { failed_cores, .. } => {
-///                     error!("Timer initialization failed on multiple cores: {:?}", failed_cores);
-///                     error!("This is likely due to insufficient kernel support.");
-///                     error!("Please ensure you're running Linux kernel 6.7 or later.");
-///                 },
-///                 _ => error!("Other sync timer error: {}", sync_error),
-///             }
-///         }
-///         
 ///         std::process::exit(1);
 ///     }
 /// }
 /// ```
 pub fn initialize_sync_timer(
     timer_init_prog: &libbpf_rs::ProgramMut,
+    timer_init_legacy_prog: &libbpf_rs::ProgramMut,
 ) -> Result<(), SyncTimerError> {
-    debug!("Initializing synchronized timer on all cores...");
+    info!("Initializing synchronized timer on all cores...");
 
+    // Try modern pinning first (kernel 6.7+)
+    debug!("Attempting modern timer initialization with CPU pinning...");
+    match initialize_timers_with_mode(timer_init_prog, false) {
+        Ok(()) => {
+            info!("Successfully initialized timers using modern CPU pinning (kernel 6.7+)");
+            return Ok(());
+        }
+        Err(e) => {
+            warn!("Modern timer initialization failed: {}", e);
+            debug!("Falling back to legacy timer migration control...");
+        }
+    }
+
+    // Fall back to legacy method (kernel 5.15-6.6)
+    info!("Attempting legacy timer initialization with migration control...");
+    match initialize_timers_with_mode(timer_init_legacy_prog, true) {
+        Ok(()) => {
+            info!(
+                "Successfully initialized timers using legacy migration control (kernel 5.15-6.6)"
+            );
+            Ok(())
+        }
+        Err(e) => {
+            error!("Legacy timer initialization also failed: {}", e);
+            Err(SyncTimerError::BothMethodsFailed)
+        }
+    }
+}
+
+/// Initialize timers with specified mode (modern or legacy)
+fn initialize_timers_with_mode(
+    timer_init_prog: &libbpf_rs::ProgramMut,
+    use_legacy_mode: bool,
+) -> Result<(), SyncTimerError> {
+    let mut original_migration = None;
+
+    // If using legacy mode, temporarily disable timer migration
+    if use_legacy_mode {
+        let current_migration = read_timer_migration_sysctl()?;
+        debug!(
+            "Current kernel.timer_migration value: {}",
+            current_migration
+        );
+
+        if current_migration != 0 {
+            debug!("Temporarily disabling timer migration for legacy mode...");
+            write_timer_migration_sysctl(0)?;
+            original_migration = Some(current_migration);
+        }
+    }
+
+    // Initialize timers on all cores
+    let result = initialize_timers_on_all_cores(timer_init_prog);
+
+    // Restore original timer migration setting if we changed it
+    if let Some(original_value) = original_migration {
+        debug!(
+            "Restoring original timer migration setting: {}",
+            original_value
+        );
+        if let Err(e) = write_timer_migration_sysctl(original_value) {
+            error!("Failed to restore timer migration setting: {}", e);
+            // Don't fail the entire operation for this
+        }
+    }
+
+    result
+}
+
+/// Core timer initialization logic shared by both modern and legacy methods
+fn initialize_timers_on_all_cores(
+    timer_init_prog: &libbpf_rs::ProgramMut,
+) -> Result<(), SyncTimerError> {
     // Get current thread's CPU affinity to restore it later
     let current_pid = Pid::from_raw(0); // 0 means the current thread
     let original_cpu_set =

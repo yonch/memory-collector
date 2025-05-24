@@ -28,11 +28,24 @@ struct {
     __uint(value_size, sizeof(u32));
 } events SEC(".maps");
 
-// Per-CPU array to track timer firing state
+// Timer firing state tracking
+enum timer_fire_state {
+    TIMER_RESET = 0,
+    TIMER_FIRED = 1,
+    TIMER_MIGRATION_DETECTED = 2,
+};
+
+// Structure to track timer firing state with expected CPU
+struct timer_fire_info {
+    enum timer_fire_state state;
+    __u32 expected_cpu;
+};
+
+// Per-CPU array to track timer firing state and expected CPU
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
     __uint(key_size, sizeof(__u32));
-    __uint(value_size, sizeof(__u8));
+    __uint(value_size, sizeof(struct timer_fire_info));
     __uint(max_entries, 1);
 } timer_fired SEC(".maps");
 
@@ -77,6 +90,8 @@ struct task_metadata_msg task_metadata_msg_ = {0};
 struct task_free_msg task_free_msg_ = {0};
 struct timer_finished_processing_msg timer_finished_processing_msg_ = {0};
 struct perf_measurement_msg perf_measurement_msg_ = {0};
+struct timer_migration_msg timer_migration_msg_ = {0};
+enum timer_fire_state timer_fire_state_ = 0;
 
 // Initialize value for task storage
 static const __u64 TASK_METADATA_INIT = 0;  // 0 = not reported yet
@@ -155,6 +170,23 @@ static __always_inline int send_perf_measurement(void *ctx, __u32 pid, __u64 cyc
     msg.instructions_delta = instructions_delta;
     msg.llc_misses_delta = llc_misses_delta;
     msg.time_delta_ns = time_delta_ns;
+    
+    // Skip the size field (first 4 bytes) when sending
+    return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
+                                ((void*)&msg) + sizeof(__u32), 
+                                sizeof(msg) - sizeof(__u32));
+}
+
+// Send timer migration detection event to userspace
+static __always_inline int send_timer_migration_alert(void *ctx, __u32 expected_cpu, __u32 actual_cpu)
+{
+    struct timer_migration_msg msg = {};
+    
+    msg.header.timestamp = bpf_ktime_get_ns();
+    msg.header.type = MSG_TYPE_TIMER_MIGRATION_DETECTED;
+    // size field is filled by the kernel
+    msg.expected_cpu = expected_cpu;
+    msg.actual_cpu = actual_cpu;
     
     // Skip the size field (first 4 bytes) when sending
     return bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, 
@@ -322,14 +354,23 @@ static __always_inline int send_timer_finished_processing(void *ctx)
                                 sizeof(msg) - sizeof(__u32));
 }
 
-void sync_timer_callback(void)
+void sync_timer_callback(__u32 expected_cpu)
 {
     // Set the timer fired flag for this CPU
     __u32 key = 0;
-    __u8 value = 1;
-    __u32 cpu = bpf_get_smp_processor_id();
+    __u32 actual_cpu = bpf_get_smp_processor_id();
     
-    bpf_map_update_elem(&timer_fired, &key, &value, BPF_ANY);
+    struct timer_fire_info info = {};
+    info.expected_cpu = expected_cpu;
+    
+    // Check if timer fired on the wrong CPU
+    if (actual_cpu != expected_cpu) {
+        info.state = TIMER_MIGRATION_DETECTED;
+    } else {
+        info.state = TIMER_FIRED;
+    }
+    
+    bpf_map_update_elem(&timer_fired, &key, &info, BPF_ANY);
 }
 
 /* HR Timer expire exit tracepoint handler */
@@ -340,16 +381,20 @@ int handle_hrtimer_expire_exit(void *ctx)
     __u32 key = 0;
     
     // Check if our timer fired on this CPU
-    __u8 *fired = bpf_map_lookup_percpu_elem(&timer_fired, &key, cpu);
-    if (!fired || *fired == 0) {
+    struct timer_fire_info *info = bpf_map_lookup_percpu_elem(&timer_fired, &key, cpu);
+    if (!info || info->state == TIMER_RESET) {
         // Not our timer or no timer fired
         return 0;
     }
     
-    // Reset the flag
-    __u8 value = 0;
-    bpf_map_update_elem(&timer_fired, &key, &value, BPF_ANY);
-
+    // Handle timer migration detection
+    if (info->state == TIMER_MIGRATION_DETECTED) {
+        // Send migration alert to userspace
+        send_timer_migration_alert(ctx, info->expected_cpu, cpu);
+        goto reset_and_exit;
+    }
+    
+    // Normal timer processing (no migration detected)
     // Get current task
     struct task_struct *current_task = bpf_get_current_task_btf();
     
@@ -361,6 +406,13 @@ int handle_hrtimer_expire_exit(void *ctx)
     
     // Send the timer processing finished message
     send_timer_finished_processing(ctx);
+    
+reset_and_exit:
+    // Reset the flag
+    struct timer_fire_info reset_info = {};
+    reset_info.state = TIMER_RESET;
+    reset_info.expected_cpu = info->expected_cpu;
+    bpf_map_update_elem(&timer_fired, &key, &reset_info, BPF_ANY);
     
     return 0;
 }

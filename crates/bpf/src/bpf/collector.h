@@ -10,6 +10,7 @@ enum msg_type {
     MSG_TYPE_TASK_FREE = 2,
     MSG_TYPE_TIMER_FINISHED_PROCESSING = 3,
     MSG_TYPE_PERF_MEASUREMENT = 4,
+    MSG_TYPE_TIMER_MIGRATION_DETECTED = 5,
 };
 
 // Sample header structure that matches the one in reader.rs
@@ -47,6 +48,13 @@ struct perf_measurement_msg {
     __u64 instructions_delta;    // Instructions delta
     __u64 llc_misses_delta;      // LLC misses delta
     __u64 time_delta_ns;         // Time delta in nanoseconds
+};
+
+// Structure for timer migration detection messages
+struct timer_migration_msg {
+    struct sample_header header; // Common header
+    __u32 expected_cpu;          // CPU ID the timer was supposed to fire on
+    __u32 actual_cpu;            // CPU ID the timer actually fired on
 };
 
 #endif /* __COLLECTOR_H */ 

@@ -21,6 +21,8 @@ struct sync_timer_state {
     struct bpf_timer timer;
     __u64 last_tick;
     __u64 next_expected;  // Absolute time for next tick
+    __u32 expected_cpu;   // CPU ID this timer should fire on
+    __u64 timer_flags;    // Pre-computed timer flags for bpf_timer_start()
 };
 
 /* Helper function to calculate absolute difference */
@@ -38,15 +40,15 @@ static __always_inline int __sync_timer_shared_callback(
     void *map,
     int *key,
     struct sync_timer_state *state,
-    void (*callback_func)(void)
+    void (*callback_func)(__u32)  // Modified to pass expected CPU ID
 ) {
     __u64 now = bpf_ktime_get_ns();
     __u64 expected_tick = now / NSEC_PER_MSEC;
     __u64 actual_tick = state->last_tick + 1;
     __u64 delta;
 
-    /* Call the provided callback function */
-    callback_func();
+    /* Call the provided callback function with expected CPU ID */
+    callback_func(state->expected_cpu);
 
     /* Check for missed ticks */
     if (expected_tick > actual_tick) {
@@ -62,8 +64,8 @@ static __always_inline int __sync_timer_shared_callback(
     /* Calculate next absolute time for timer */
     state->next_expected = __sync_timer_align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC);
 
-    /* Reschedule timer for next interval using absolute time */
-    bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+    /* Reschedule timer using pre-computed flags */
+    bpf_timer_start(&state->timer, state->next_expected, state->timer_flags);
 
     return 0;
 }
@@ -71,17 +73,23 @@ static __always_inline int __sync_timer_shared_callback(
 /* Shared timer initialization implementation */
 static __always_inline int __sync_timer_shared_init(
     void *timer_states_map,
-    int (*timer_callback)(void *, int *, struct sync_timer_state *)
+    int (*timer_callback)(void *, int *, struct sync_timer_state *),
+    __u8 use_legacy_mode
 ) {
     __u32 cpu = bpf_get_smp_processor_id();
     struct sync_timer_state *state;
     __u64 now;
     int ret;
 
+    /* Pre-compute timer flags based on mode */
+    __u64 timer_flags = use_legacy_mode ? BPF_F_TIMER_ABS : (BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+
     /* Get timer state for this CPU */
     state = bpf_map_lookup_elem(timer_states_map, &cpu);
     if (!state) {
         struct sync_timer_state new_state = {};
+        new_state.expected_cpu = cpu;  // Store the CPU this timer should fire on
+        new_state.timer_flags = timer_flags;
         ret = bpf_map_update_elem(timer_states_map, &cpu, &new_state, BPF_ANY);
         if (ret < 0) {
             return SYNC_TIMER_MAP_UPDATE_FAILED;
@@ -91,6 +99,10 @@ static __always_inline int __sync_timer_shared_init(
             return SYNC_TIMER_MAP_LOOKUP_FAILED;
         }
     }
+
+    /* Store expected CPU and timer flags */
+    state->expected_cpu = cpu;
+    state->timer_flags = timer_flags;
 
     /* Initialize timer */
     now = bpf_ktime_get_ns();
@@ -106,7 +118,8 @@ static __always_inline int __sync_timer_shared_init(
         return SYNC_TIMER_TIMER_SET_CALLBACK_FAILED;
     }
     
-    ret = bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+    /* Start timer using pre-computed flags */
+    ret = bpf_timer_start(&state->timer, state->next_expected, timer_flags);
     if (ret < 0) {
         return SYNC_TIMER_TIMER_START_FAILED;
     }
@@ -131,9 +144,16 @@ static int sync_timer_callback_##timer_name(void *map, int *key, struct sync_tim
     return __sync_timer_shared_callback(map, key, state, callback_func); \
 } \
 \
-/* Timer initialization function */ \
+/* Modern timer initialization function */ \
 SEC("syscall") \
 int sync_timer_init_##timer_name(struct bpf_sock_addr *ctx) \
 { \
-    return __sync_timer_shared_init(&sync_timer_states_##timer_name, sync_timer_callback_##timer_name); \
+    return __sync_timer_shared_init(&sync_timer_states_##timer_name, sync_timer_callback_##timer_name, 0); \
+} \
+\
+/* Legacy fallback timer initialization function */ \
+SEC("syscall") \
+int sync_timer_init_legacy_##timer_name(struct bpf_sock_addr *ctx) \
+{ \
+    return __sync_timer_shared_init(&sync_timer_states_##timer_name, sync_timer_callback_##timer_name, 1); \
 } 

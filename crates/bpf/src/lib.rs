@@ -22,6 +22,7 @@ pub use bpf::types::{
     msg_type, perf_measurement_msg as PerfMeasurementMsg, task_free_msg as TaskFreeMsg,
     task_metadata_msg as TaskMetadataMsg,
     timer_finished_processing_msg as TimerFinishedProcessingMsg,
+    timer_migration_msg as TimerMigrationMsg,
 };
 
 // Implement Plain for message types
@@ -29,6 +30,7 @@ unsafe impl plain::Plain for TaskMetadataMsg {}
 unsafe impl plain::Plain for TaskFreeMsg {}
 unsafe impl plain::Plain for TimerFinishedProcessingMsg {}
 unsafe impl plain::Plain for PerfMeasurementMsg {}
+unsafe impl plain::Plain for TimerMigrationMsg {}
 
 // Re-export important sync timer types
 pub use sync_timer::SyncTimerError;
@@ -112,8 +114,11 @@ impl BpfLoader {
 
     /// Initialize and start the sync timer
     pub fn start_sync_timer(&mut self) -> Result<()> {
-        sync_timer::initialize_sync_timer(&self.skel.progs.sync_timer_init_collect)
-            .map_err(|e| anyhow::anyhow!("Sync timer initialization failed: {}", e))
+        sync_timer::initialize_sync_timer(
+            &self.skel.progs.sync_timer_init_collect,
+            &self.skel.progs.sync_timer_init_legacy_collect,
+        )
+        .map_err(|e| anyhow::anyhow!("Sync timer initialization failed: {}", e))
     }
 
     /// Attach BPF programs
