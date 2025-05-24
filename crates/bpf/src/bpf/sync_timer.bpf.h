@@ -3,6 +3,19 @@
 #define NSEC_PER_MSEC 1000000ULL
 #define CLOCK_MONOTONIC 1
 
+/* Error codes for sync timer initialization */
+enum sync_timer_init_error {
+    SYNC_TIMER_SUCCESS = 0,
+    SYNC_TIMER_MAP_UPDATE_FAILED = 1,
+    SYNC_TIMER_MAP_LOOKUP_FAILED = 2,
+    SYNC_TIMER_TIMER_INIT_FAILED = 3,
+    SYNC_TIMER_TIMER_SET_CALLBACK_FAILED = 4,
+    SYNC_TIMER_TIMER_START_FAILED = 5,
+};
+
+// Dummy instance to make skeleton generation work
+enum sync_timer_init_error sync_timer_init_error_ = 0;
+
 /* Common structures and helper functions */
 struct sync_timer_state {
     struct bpf_timer timer;
@@ -71,22 +84,34 @@ static __always_inline int __sync_timer_shared_init(
         struct sync_timer_state new_state = {};
         ret = bpf_map_update_elem(timer_states_map, &cpu, &new_state, BPF_ANY);
         if (ret < 0) {
-            return ret;
+            return SYNC_TIMER_MAP_UPDATE_FAILED;
         }
         state = bpf_map_lookup_elem(timer_states_map, &cpu);
         if (!state) {
-            return -1;
+            return SYNC_TIMER_MAP_LOOKUP_FAILED;
         }
     }
 
     /* Initialize timer */
     now = bpf_ktime_get_ns();
     state->next_expected = __sync_timer_align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC);
-    bpf_timer_init(&state->timer, timer_states_map, CLOCK_MONOTONIC);
-    bpf_timer_set_callback(&state->timer, timer_callback);
-    bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+    
+    ret = bpf_timer_init(&state->timer, timer_states_map, CLOCK_MONOTONIC);
+    if (ret < 0) {
+        return SYNC_TIMER_TIMER_INIT_FAILED;
+    }
+    
+    ret = bpf_timer_set_callback(&state->timer, timer_callback);
+    if (ret < 0) {
+        return SYNC_TIMER_TIMER_SET_CALLBACK_FAILED;
+    }
+    
+    ret = bpf_timer_start(&state->timer, state->next_expected, BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+    if (ret < 0) {
+        return SYNC_TIMER_TIMER_START_FAILED;
+    }
 
-    return 0;
+    return SYNC_TIMER_SUCCESS;
 }
 
 /* Macro to define a complete sync timer implementation */
