@@ -85,7 +85,7 @@ jobs:
 
   test-multi-kernel:
     name: Test on Multiple Kernels
-    needs: [build-collector, prepare-runner]
+    needs: [build-collector, setup-runner, prepare-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     strategy:
       fail-fast: false
