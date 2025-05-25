@@ -123,7 +123,7 @@ jobs:
         uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
         with:
           test-name: collector-kernel-${{ matrix.kernel }}
-          image: 'base'
+          image: 'complexity-test'
           image-version: ${{ matrix.kernel }}
           host-mount: ./
           images-folder-parent: "/tmp"
@@ -148,6 +148,9 @@ jobs:
             cat /proc/cpuinfo | grep -i "pmu\|perf" || echo "No PMU features in cpuinfo"
             echo "perf_event_paranoid: $(cat /proc/sys/kernel/perf_event_paranoid)"
             echo 0 > /proc/sys/kernel/perf_event_paranoid
+
+            echo mounts:
+            mount
 
             uname -a
             cd /host
