@@ -253,6 +253,7 @@ jobs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
       region: ${{ steps.start-runner.outputs.region }}
+      volume-size: '40'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
