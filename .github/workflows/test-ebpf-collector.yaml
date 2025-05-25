@@ -253,7 +253,6 @@ jobs:
       runner-label: ${{ steps.start-runner.outputs.runner-label }}
       ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
       region: ${{ steps.start-runner.outputs.region }}
-      volume-size: '80'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -265,8 +264,9 @@ jobs:
           github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
           iam-role-name: github-actions-runner
-          instance-type: ${{ inputs.instance-type || 'm7i.xlarge' }}
+          instance-type: ${{ inputs.instance-type || 'c7i.metal-24xl' }}
           image-type: 'ubuntu-24.04'
+          volume-size: '40'
 
   cancel-on-failure:
     needs: setup-runner
