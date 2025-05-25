@@ -5,7 +5,7 @@ on:
       instance-type:
         description: 'EC2 instance type to use'
         required: false
-        default: 'm7i.xlarge'
+        default: 'c7i.metal-24xl'
         type: string
   push:
     branches:
