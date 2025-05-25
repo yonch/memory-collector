@@ -85,7 +85,7 @@ jobs:
 
   test-multi-kernel:
     name: Test on Multiple Kernels
-    needs: [build-collector, setup-runner]
+    needs: [build-collector, prepare-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     strategy:
       fail-fast: false
@@ -332,6 +332,22 @@ jobs:
           sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
           sudo chmod +x /usr/local/bin/pqrs
           rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
+
+      - name: Install Podman and Docker compatibility
+        run: |
+          # Update package list
+          sudo apt-get update
+          
+          # Install Podman
+          sudo apt-get install -y podman podman-docker
+                    
+          # Verify installation
+          podman --version
+          docker --version
+          
+          # Start podman socket for Docker API compatibility
+          sudo systemctl enable --now podman.socket
+          sudo systemctl status podman.socket
       
 
   test-s3-integration:
