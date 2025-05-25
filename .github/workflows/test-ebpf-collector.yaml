@@ -87,12 +87,6 @@ jobs:
     name: Test on Multiple Kernels
     needs: build-collector
     runs-on: ubuntu-latest
-    # TODO: Fix this job - currently has issues with LVH VM provisioning and kernel testing
-    # Need to resolve:
-    # 1. LVH VM setup and networking
-    # 2. Kernel version detection and error handling
-    # 3. Proper error message validation for unsupported kernels
-    if: false  # Temporarily disabled until issues are resolved
     strategy:
       fail-fast: false
       matrix:
@@ -138,6 +132,7 @@ jobs:
           cpu-kind: 'host,pmu=on'
           lvh-version: "v0.0.23"
           install-dependencies: 'true'
+          verbose: 'true'
           cmd: |
             # Wait for networking to be ready
             for i in {1..5}; do curl "https://golang.org" > /dev/null 2>&1 && break || sleep 5; echo "Waiting for systemd-resolved to be ready..."; done
@@ -159,7 +154,7 @@ jobs:
             chmod +x ./artifacts/collector
             
             echo "=== Testing memory collector on ${{ matrix.description }} ==="
-            echo "Kernel version: $(uname -r)"
+            echo "Kernel version: $(uname -a)"
             echo "Expected result: ${{ matrix.should_succeed && 'SUCCESS' || 'FAILURE with kernel version error' }}"
             echo
             
