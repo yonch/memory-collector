@@ -123,7 +123,7 @@ jobs:
         uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
         with:
           test-name: collector-kernel-${{ matrix.kernel }}
-          image: 'complexity-test'
+          image: 'base'
           image-version: ${{ matrix.kernel }}
           host-mount: ./
           images-folder-parent: "/tmp"
