@@ -146,6 +146,7 @@ jobs:
             ls -la /sys/bus/event_source/devices/ || echo "No perf event devices found"
             ls -la /proc/sys/kernel/perf_event_* || echo "No perf event sysctls found"
             cat /proc/cpuinfo | grep -i "pmu\|perf" || echo "No PMU features in cpuinfo"
+            echo "perf_event_paranoid: $(cat /proc/sys/kernel/perf_event_paranoid)"
 
             uname -a
             cd /host
