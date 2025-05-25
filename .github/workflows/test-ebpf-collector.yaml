@@ -85,8 +85,8 @@ jobs:
 
   test-multi-kernel:
     name: Test on Multiple Kernels
-    needs: build-collector
-    runs-on: ubuntu-latest
+    needs: [build-collector, setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
     strategy:
       fail-fast: false
       matrix:
@@ -437,7 +437,7 @@ jobs:
 
   cleanup-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, test-ebpf, test-s3-integration]
+    needs: [setup-runner, test-ebpf, test-s3-integration, test-multi-kernel]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
