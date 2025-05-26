@@ -377,11 +377,10 @@ void sync_timer_callback(__u32 expected_cpu)
 SEC("tracepoint/timer/hrtimer_expire_exit")
 int handle_hrtimer_expire_exit(void *ctx)
 {
-    __u32 cpu = bpf_get_smp_processor_id();
     __u32 key = 0;
     
     // Check if our timer fired on this CPU
-    struct timer_fire_info *info = bpf_map_lookup_percpu_elem(&timer_fired, &key, cpu);
+    struct timer_fire_info *info = bpf_map_lookup_elem(&timer_fired, &key);
     if (!info || info->state == TIMER_RESET) {
         // Not our timer or no timer fired
         return 0;
@@ -390,6 +389,7 @@ int handle_hrtimer_expire_exit(void *ctx)
     // Handle timer migration detection
     if (info->state == TIMER_MIGRATION_DETECTED) {
         // Send migration alert to userspace
+        __u32 cpu = bpf_get_smp_processor_id();
         send_timer_migration_alert(ctx, info->expected_cpu, cpu);
         goto reset_and_exit;
     }
