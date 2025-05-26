@@ -190,7 +190,7 @@ jobs:
             # Run the collector and capture both stdout and stderr
             echo "Running collector for 5 seconds..."
             set +e  # Don't exit on error
-            ./artifacts/collector -d 5 --storage-type local --prefix "/tmp/test-output/metrics-" > /tmp/collector-output.log 2>&1
+            RUST_LOG=debug ./artifacts/collector -d 5 --storage-type local --prefix "/tmp/test-output/metrics-" --verbose > /tmp/collector-output.log 2>&1
             COLLECTOR_EXIT_CODE=$?
             set -e
             
