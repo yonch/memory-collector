@@ -44,13 +44,13 @@ pub enum SyncTimerError {
     #[error("BPF map lookup failed after insertion on core {}", cpu)]
     MapLookupFailed { cpu: usize },
 
-    #[error("BPF timer initialization failed on core {} (may indicate EINVAL: invalid parameters, or EOPNOTSUPP: operation not supported - CPU pinning for BPF timers requires Linux kernel 6.7 or later)", cpu)]
+    #[error("BPF timer initialization failed on core {}", cpu)]
     TimerInitFailed { cpu: usize },
 
-    #[error("BPF timer callback setup failed on core {} (may indicate EINVAL: invalid parameters, or EOPNOTSUPP: operation not supported - BPF timer functionality requires Linux kernel 6.7 or later)", cpu)]
+    #[error("BPF timer callback setup failed on core {}", cpu)]
     TimerSetCallbackFailed { cpu: usize },
 
-    #[error("BPF timer start failed on core {} (may indicate EINVAL: invalid parameters, or EOPNOTSUPP: operation not supported - CPU pinning for BPF timers requires Linux kernel 6.7 or later)", cpu)]
+    #[error("BPF timer start failed on core {}", cpu)]
     TimerStartFailed { cpu: usize },
 
     #[error("Unknown BPF error code {} on core {}", code, cpu)]
@@ -62,7 +62,7 @@ pub enum SyncTimerError {
     #[error("Failed to restore original CPU affinity")]
     AffinityRestoreFailed(#[source] nix::Error),
 
-    #[error("Failed to initialize timer on {} out of {} cores: {:?}. This may indicate hardware/kernel limitations with BPF timers, insufficient permissions, or platform incompatibility. Note: CPU pinning for BPF timers requires Linux kernel 6.7 or later.", failed_count, total_count, failed_cores)]
+    #[error("Failed to initialize timer on {} out of {} cores: {:?}. This may indicate hardware/kernel limitations with BPF timers, insufficient permissions, or platform incompatibility.", failed_count, total_count, failed_cores)]
     MultipleFailures {
         failed_cores: Vec<usize>,
         failed_count: usize,
