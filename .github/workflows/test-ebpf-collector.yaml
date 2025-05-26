@@ -124,8 +124,7 @@ jobs:
           name: collector-binary
           path: ./artifacts
 
-      - name: Provision LVH VM and Test
-        # uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
+      - name: Provision LVH VM
         uses: yonch/little-vm-helper@main
         with:
           test-name: collector-kernel-${{ matrix.kernel }}
@@ -145,7 +144,6 @@ jobs:
             
             git config --global --add safe.directory /host
             uname -a
-            echo "Testing memory collector on kernel: ${{ matrix.description }}"
             
             # Check if perf events are available
             echo "Checking perf event capabilities..."
@@ -168,11 +166,12 @@ jobs:
             echo mounts:
             mount
 
-            echo "Debug: Dollar-question-mark value: $?"
-            COLLECTOR_EXIT_CODE=0
-            echo "Debug: Assigned value: $COLLECTOR_EXIT_CODE"
-            echo "Debug: Assigned value (escaped dollar sign): \$COLLECTOR_EXIT_CODE"
-
+      - name: Test Collector on ${{ matrix.description }}
+        uses: yonch/little-vm-helper@main
+        with:
+          provision: 'false'
+          cmd: |
+            echo "Testing memory collector on kernel: ${{ matrix.description }}"
             uname -a
             cd /host
             
