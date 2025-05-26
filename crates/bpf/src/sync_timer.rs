@@ -279,7 +279,10 @@ fn initialize_timers_on_all_cores(
     // Initialize timer on each core sequentially
     for cpu_id in 0..num_possible_cpus {
         if let Err(e) = initialize_timer_on_core(timer_init_prog, cpu_id, current_pid, mode) {
-            error!("Timer initialization failed on core {}: {}", cpu_id, e);
+            debug!(
+                "Timer initialization failed on core {} with strategy {} (this is one of multiple fallback attempts): {}",
+                cpu_id, mode.description(), e
+            );
             failed_cores.push(cpu_id);
         } else {
             debug!("Timer initialization succeeded on core {}", cpu_id);
