@@ -120,7 +120,8 @@ jobs:
           path: ./artifacts
 
       - name: Provision LVH VM and Test
-        uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
+        # uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
+        uses: yonch/little-vm-helper@main
         with:
           test-name: collector-kernel-${{ matrix.kernel }}
           image: 'complexity-test'
