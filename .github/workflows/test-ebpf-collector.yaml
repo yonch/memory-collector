@@ -255,6 +255,32 @@ jobs:
             
             echo "=== Test completed for ${{ matrix.description }} ==="
 
+      - name: Display parquet file contents
+        if: matrix.should_succeed == true
+        uses: yonch/little-vm-helper@main
+        with:
+          provision: 'false'
+          cmd: |
+            echo "=== Displaying parquet file contents for ${{ matrix.description }} ==="
+            cd /host
+            
+            # Find all parquet files in /tmp/test-output
+            if ls /tmp/test-output/metrics-*.parquet >/dev/null 2>&1; then
+              echo "Found parquet files:"
+              ls -la /tmp/test-output/metrics-*.parquet
+              echo
+              
+              # Display contents of each parquet file using pqrs from the tools directory
+              for parquet_file in /tmp/test-output/metrics-*.parquet; do
+                echo "=== Contents of $(basename $parquet_file) ==="
+                /host/tools/pqrs cat --csv "$parquet_file" || echo "Failed to read parquet file: $parquet_file"
+                echo
+              done
+            else
+              echo "No parquet files found in /tmp/test-output/"
+            fi
+            echo "=== End of parquet file contents ==="
+
       - name: Stop qemu
         if: always()
         run: |
@@ -358,6 +384,14 @@ jobs:
           sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
           sudo chmod +x /usr/local/bin/pqrs
           rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
+
+      - name: Copy pqrs to workspace for guest access
+        run: |
+          # Create a tools directory in the workspace
+          mkdir -p tools
+          # Copy pqrs binary to the workspace so it's accessible in the guest VM
+          cp /usr/local/bin/pqrs tools/
+          chmod +x tools/pqrs
 
       - name: Install Podman and Docker compatibility
         run: |
