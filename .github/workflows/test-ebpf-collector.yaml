@@ -94,13 +94,13 @@ jobs:
           # Test on kernel 6.1 - should fail with clear error message about kernel requirement
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.1-20250507.063028'
-            should_succeed: false
-            description: 'Kernel 6.1 (should fail - CPU pinning unsupported)'
+            should_succeed: true
+            description: 'Kernel 6.1 (should succeed - legacy timer initialization)'
           # Test on kernel 6.6 - should fail with clear error message about kernel requirement  
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.6-20250507.063028'
-            should_succeed: false
-            description: 'Kernel 6.6 (should fail - CPU pinning unsupported)'
+            should_succeed: true
+            description: 'Kernel 6.6 (should succeed - legacy timer initialization)'
           # Test on kernel 6.12 - should succeed (6.7+ supports CPU pinning)
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.12-20250507.063028'
