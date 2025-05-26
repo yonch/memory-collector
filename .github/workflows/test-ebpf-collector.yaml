@@ -123,6 +123,14 @@ jobs:
         with:
           name: collector-binary
           path: ./artifacts
+        
+      - name: Copy pqrs to workspace for guest access
+        run: |
+          # Create a tools directory in the workspace
+          mkdir -p tools
+          # Copy pqrs binary to the workspace so it's accessible in the guest VM
+          cp -f /usr/local/bin/pqrs tools/
+          chmod +x tools/pqrs
 
       - name: Provision LVH VM
         uses: yonch/little-vm-helper@main
@@ -384,14 +392,6 @@ jobs:
           sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
           sudo chmod +x /usr/local/bin/pqrs
           rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
-
-      - name: Copy pqrs to workspace for guest access
-        run: |
-          # Create a tools directory in the workspace
-          mkdir -p tools
-          # Copy pqrs binary to the workspace so it's accessible in the guest VM
-          cp /usr/local/bin/pqrs tools/
-          chmod +x tools/pqrs
 
       - name: Install Podman and Docker compatibility
         run: |
