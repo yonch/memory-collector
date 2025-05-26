@@ -94,18 +94,18 @@ jobs:
           # Test on kernel 6.1 - should fail with clear error message about kernel requirement
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.1-20250507.063028'
-            should_succeed: false
-            description: 'Kernel 6.1 (should fail - does not have absolute timer support)'
+            should_succeed: true
+            description: 'Kernel 6.1 (should succeed - legacy timer mode - relative time supported)'
           # Test on kernel 6.6 - should fail with clear error message about kernel requirement  
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.6-20250507.063028'
             should_succeed: true
-            description: 'Kernel 6.6 (should succeed - legacy timer initialization)'
+            description: 'Kernel 6.6 (should succeed - intermediate timer mode - absolute time supported)'
           # Test on kernel 6.12 - should succeed (6.7+ supports CPU pinning)
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.12-20250507.063028'
             should_succeed: true
-            description: 'Kernel 6.12 (should succeed - CPU pinning supported)'
+            description: 'Kernel 6.12 (should succeed - modern timer mode - CPU pinning + absolute time supported)'
     timeout-minutes: 5
     steps:
       - name: Checkout code

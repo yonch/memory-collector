@@ -3,6 +3,19 @@
 #define NSEC_PER_MSEC 1000000ULL
 #define CLOCK_MONOTONIC 1
 
+/* Define AF_INET constant for BPF context */
+#define AF_INET 2
+
+/* Timer initialization modes */
+enum sync_timer_mode {
+    SYNC_TIMER_MODE_MODERN = 0,      // CPU pinning + absolute time (kernel 6.7+)
+    SYNC_TIMER_MODE_INTERMEDIATE = 1, // Absolute time only (kernel 6.4-6.6)
+    SYNC_TIMER_MODE_LEGACY = 2,      // Relative time only (kernel 5.15-6.3)
+};
+
+// Dummy instance to make skeleton generation work
+enum sync_timer_mode sync_timer_mode_ = 0;
+
 /* Error codes for sync timer initialization */
 enum sync_timer_init_error {
     SYNC_TIMER_SUCCESS = 0,
@@ -23,6 +36,7 @@ struct sync_timer_state {
     __u64 next_expected;  // Absolute time for next tick
     __u32 expected_cpu;   // CPU ID this timer should fire on
     __u64 timer_flags;    // Pre-computed timer flags for bpf_timer_start()
+    __u8 init_mode;       // Initialization mode (0=modern, 1=intermediate, 2=legacy)
 };
 
 /* Helper function to calculate absolute difference */
@@ -33,6 +47,23 @@ static __always_inline __u64 __sync_timer_abs_diff(__u64 a, __u64 b) {
 /* Helper function to align time to next interval */
 static __always_inline __u64 __sync_timer_align_to_interval(__u64 time, __u64 interval) {
     return (time / interval) * interval;
+}
+
+/* Helper function to compute timer start parameter based on flags and expected time */
+static __always_inline __u64 __sync_timer_compute_start_param(__u64 next_expected, __u64 timer_flags) {
+    if (timer_flags & BPF_F_TIMER_ABS) {
+        /* Absolute time mode - return the expected time directly */
+        return next_expected;
+    } else {
+        /* Relative time mode - compute relative offset from current time */
+        __u64 now = bpf_ktime_get_ns();
+        if (next_expected > now) {
+            return next_expected - now;
+        } else {
+            /* If expected time is in the past, schedule for immediate execution */
+            return 1;
+        }
+    }
 }
 
 /* Shared timer callback implementation */
@@ -64,8 +95,9 @@ static __always_inline int __sync_timer_shared_callback(
     /* Calculate next absolute time for timer */
     state->next_expected = __sync_timer_align_to_interval(now + NSEC_PER_MSEC, NSEC_PER_MSEC);
 
-    /* Reschedule timer using pre-computed flags */
-    bpf_timer_start(&state->timer, state->next_expected, state->timer_flags);
+    /* Reschedule timer using computed start parameter */
+    __u64 start_param = __sync_timer_compute_start_param(state->next_expected, state->timer_flags);
+    bpf_timer_start(&state->timer, start_param, state->timer_flags);
 
     return 0;
 }
@@ -74,7 +106,7 @@ static __always_inline int __sync_timer_shared_callback(
 static __always_inline int __sync_timer_shared_init(
     void *timer_states_map,
     int (*timer_callback)(void *, int *, struct sync_timer_state *),
-    __u8 use_legacy_mode
+    __u8 init_mode
 ) {
     __u32 cpu = bpf_get_smp_processor_id();
     struct sync_timer_state *state;
@@ -82,7 +114,19 @@ static __always_inline int __sync_timer_shared_init(
     int ret;
 
     /* Pre-compute timer flags based on mode */
-    __u64 timer_flags = use_legacy_mode ? BPF_F_TIMER_ABS : (BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
+    __u64 timer_flags;
+    switch (init_mode) {
+        case SYNC_TIMER_MODE_MODERN:
+            timer_flags = BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN;
+            break;
+        case SYNC_TIMER_MODE_INTERMEDIATE:
+            timer_flags = BPF_F_TIMER_ABS;
+            break;
+        case SYNC_TIMER_MODE_LEGACY:
+        default:
+            timer_flags = 0;  // No flags for legacy mode
+            break;
+    }
 
     /* Check if timer state already exists for this CPU and remove it to start fresh */
     state = bpf_map_lookup_elem(timer_states_map, &cpu);
@@ -97,6 +141,7 @@ static __always_inline int __sync_timer_shared_init(
     struct sync_timer_state new_state = {};
     new_state.expected_cpu = cpu;  // Store the CPU this timer should fire on
     new_state.timer_flags = timer_flags;
+    new_state.init_mode = init_mode;
     ret = bpf_map_update_elem(timer_states_map, &cpu, &new_state, BPF_ANY);
     if (ret < 0) {
         return SYNC_TIMER_MAP_UPDATE_FAILED;
@@ -122,8 +167,9 @@ static __always_inline int __sync_timer_shared_init(
         return SYNC_TIMER_TIMER_SET_CALLBACK_FAILED;
     }
     
-    /* Start timer using pre-computed flags */
-    ret = bpf_timer_start(&state->timer, state->next_expected, timer_flags);
+    /* Start timer using computed start parameter */
+    __u64 start_param = __sync_timer_compute_start_param(state->next_expected, timer_flags);
+    ret = bpf_timer_start(&state->timer, start_param, timer_flags);
     if (ret < 0) {
         return SYNC_TIMER_TIMER_START_FAILED;
     }
@@ -148,16 +194,15 @@ static int sync_timer_callback_##timer_name(void *map, int *key, struct sync_tim
     return __sync_timer_shared_callback(map, key, state, callback_func); \
 } \
 \
-/* Modern timer initialization function */ \
+/* Unified timer initialization function with mode parameter */ \
 SEC("syscall") \
 int sync_timer_init_##timer_name(struct bpf_sock_addr *ctx) \
 { \
-    return __sync_timer_shared_init(&sync_timer_states_##timer_name, sync_timer_callback_##timer_name, 0); \
-} \
-\
-/* Legacy fallback timer initialization function */ \
-SEC("syscall") \
-int sync_timer_init_legacy_##timer_name(struct bpf_sock_addr *ctx) \
-{ \
-    return __sync_timer_shared_init(&sync_timer_states_##timer_name, sync_timer_callback_##timer_name, 1); \
+    /* Extract mode from context_in if available, default to modern mode */ \
+    __u8 init_mode = SYNC_TIMER_MODE_MODERN; \
+    if (ctx && ctx->user_family == AF_INET) { \
+        /* Use the first byte of user_ip4 as the mode parameter */ \
+        init_mode = (__u8)(ctx->user_ip4 & 0xFF); \
+    } \
+    return __sync_timer_shared_init(&sync_timer_states_##timer_name, sync_timer_callback_##timer_name, init_mode); \
 } 

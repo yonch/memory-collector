@@ -19,8 +19,8 @@ mod test_bpf {
 
 // Re-export the specific types we need
 pub use bpf::types::{
-    msg_type, perf_measurement_msg as PerfMeasurementMsg, task_free_msg as TaskFreeMsg,
-    task_metadata_msg as TaskMetadataMsg,
+    msg_type, perf_measurement_msg as PerfMeasurementMsg, sync_timer_mode,
+    task_free_msg as TaskFreeMsg, task_metadata_msg as TaskMetadataMsg,
     timer_finished_processing_msg as TimerFinishedProcessingMsg,
     timer_migration_msg as TimerMigrationMsg,
 };
@@ -114,11 +114,8 @@ impl BpfLoader {
 
     /// Initialize and start the sync timer
     pub fn start_sync_timer(&mut self) -> Result<()> {
-        sync_timer::initialize_sync_timer(
-            &self.skel.progs.sync_timer_init_collect,
-            &self.skel.progs.sync_timer_init_legacy_collect,
-        )
-        .map_err(|e| anyhow::anyhow!("Sync timer initialization failed: {}", e))
+        sync_timer::initialize_sync_timer(&self.skel.progs.sync_timer_init_collect)
+            .map_err(|e| anyhow::anyhow!("Sync timer initialization failed: {}", e))
     }
 
     /// Attach BPF programs
