@@ -91,21 +91,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Test on kernel 6.1 - should fail with clear error message about kernel requirement
+          # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
+          - kernel: '5.10-20250507.063028'
+            should_succeed: false
+            description: 'Kernel 5.10 (should fail - does not have bpf timer support)'
+          # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
+          - kernel: '5.15-20250507.063028'
+            should_succeed: true
+            description: 'Kernel 5.15 (should succeed - legacy timer mode - relative time supported)'
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.1-20250507.063028'
-            should_succeed: false
-            description: 'Kernel 6.1 (should fail - does not have absolute timer support)'
-          # Test on kernel 6.6 - should fail with clear error message about kernel requirement  
+            should_succeed: true
+            description: 'Kernel 6.1 (should succeed - legacy timer mode - relative time supported)'
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.6-20250507.063028'
             should_succeed: true
-            description: 'Kernel 6.6 (should succeed - legacy timer initialization)'
-          # Test on kernel 6.12 - should succeed (6.7+ supports CPU pinning)
+            description: 'Kernel 6.6 (should succeed - intermediate timer mode - absolute time supported)'
           # renovate: datasource=docker depName=quay.io/lvh-images/complexity-test
           - kernel: '6.12-20250507.063028'
             should_succeed: true
-            description: 'Kernel 6.12 (should succeed - CPU pinning supported)'
+            description: 'Kernel 6.12 (should succeed - modern timer mode - CPU pinning + absolute time supported)'
     timeout-minutes: 5
     steps:
       - name: Checkout code
@@ -118,9 +123,16 @@ jobs:
         with:
           name: collector-binary
           path: ./artifacts
+        
+      - name: Copy pqrs to workspace for guest access
+        run: |
+          # Create a tools directory in the workspace
+          mkdir -p tools
+          # Copy pqrs binary to the workspace so it's accessible in the guest VM
+          cp -f /usr/local/bin/pqrs tools/
+          chmod +x tools/pqrs
 
-      - name: Provision LVH VM and Test
-        # uses: cilium/little-vm-helper@e87948476ca97050b1f149ab2aec379d0de19b84 # v0.0.23
+      - name: Provision LVH VM
         uses: yonch/little-vm-helper@main
         with:
           test-name: collector-kernel-${{ matrix.kernel }}
@@ -140,7 +152,6 @@ jobs:
             
             git config --global --add safe.directory /host
             uname -a
-            echo "Testing memory collector on kernel: ${{ matrix.description }}"
             
             # Check if perf events are available
             echo "Checking perf event capabilities..."
@@ -163,11 +174,12 @@ jobs:
             echo mounts:
             mount
 
-            echo "Debug: Dollar-question-mark value: $?"
-            COLLECTOR_EXIT_CODE=0
-            echo "Debug: Assigned value: $COLLECTOR_EXIT_CODE"
-            echo "Debug: Assigned value (escaped dollar sign): \$COLLECTOR_EXIT_CODE"
-
+      - name: Test Collector on ${{ matrix.description }}
+        uses: yonch/little-vm-helper@main
+        with:
+          provision: 'false'
+          cmd: |
+            echo "Testing memory collector on kernel: ${{ matrix.description }}"
             uname -a
             cd /host
             
@@ -185,7 +197,7 @@ jobs:
             # Run the collector and capture both stdout and stderr
             echo "Running collector for 5 seconds..."
             set +e  # Don't exit on error
-            ./artifacts/collector -d 5 --storage-type local --prefix "/tmp/test-output/metrics-" > /tmp/collector-output.log 2>&1
+            RUST_LOG=debug ./artifacts/collector -d 5 --storage-type local --prefix "/tmp/test-output/metrics-" --verbose > /tmp/collector-output.log 2>&1
             COLLECTOR_EXIT_CODE=$?
             set -e
             
@@ -250,6 +262,32 @@ jobs:
             fi
             
             echo "=== Test completed for ${{ matrix.description }} ==="
+
+      - name: Display parquet file contents
+        if: matrix.should_succeed == true
+        uses: yonch/little-vm-helper@main
+        with:
+          provision: 'false'
+          cmd: |
+            echo "=== Displaying parquet file contents for ${{ matrix.description }} ==="
+            cd /host
+            
+            # Find all parquet files in /tmp/test-output
+            if ls /tmp/test-output/metrics-*.parquet >/dev/null 2>&1; then
+              echo "Found parquet files:"
+              ls -la /tmp/test-output/metrics-*.parquet
+              echo
+              
+              # Display contents of each parquet file using pqrs from the tools directory
+              for parquet_file in /tmp/test-output/metrics-*.parquet; do
+                echo "=== Contents of $(basename $parquet_file) ==="
+                /host/tools/pqrs cat --csv "$parquet_file" || echo "Failed to read parquet file: $parquet_file"
+                echo
+              done
+            else
+              echo "No parquet files found in /tmp/test-output/"
+            fi
+            echo "=== End of parquet file contents ==="
 
       - name: Stop qemu
         if: always()

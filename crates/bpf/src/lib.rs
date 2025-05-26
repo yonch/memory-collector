@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use libbpf_rs::skel::{OpenSkel, Skel, SkelBuilder};
-use libbpf_rs::OpenObject;
+use libbpf_rs::{set_print, OpenObject, PrintLevel};
 use perf_events::{Dispatcher, HardwareCounter, PerfMapReader};
 use std::mem::MaybeUninit;
 use std::time::Duration;
@@ -19,8 +19,8 @@ mod test_bpf {
 
 // Re-export the specific types we need
 pub use bpf::types::{
-    msg_type, perf_measurement_msg as PerfMeasurementMsg, task_free_msg as TaskFreeMsg,
-    task_metadata_msg as TaskMetadataMsg,
+    msg_type, perf_measurement_msg as PerfMeasurementMsg, sync_timer_mode,
+    task_free_msg as TaskFreeMsg, task_metadata_msg as TaskMetadataMsg,
     timer_finished_processing_msg as TimerFinishedProcessingMsg,
     timer_migration_msg as TimerMigrationMsg,
 };
@@ -44,26 +44,32 @@ pub struct BpfLoader {
 
 impl BpfLoader {
     /// Create a new BPF loader with initialized skeleton
-    pub fn new(verbose: bool) -> Result<Self> {
-        // Allow the current process to lock memory for eBPF resources
-        let _ = libbpf_rs::set_print(None);
-
-        // Open BPF program
-        let mut skel_builder = bpf::CollectorSkelBuilder::default();
-        if verbose {
-            skel_builder.obj_builder.debug(true);
+    pub fn new() -> Result<Self> {
+        fn print_to_log(level: PrintLevel, msg: String) {
+            match level {
+                PrintLevel::Debug => log::debug!("{}", msg),
+                PrintLevel::Info => log::info!("{}", msg),
+                PrintLevel::Warn => log::warn!("{}", msg),
+            }
         }
 
-        // Create and leak the storage to give it a 'static lifetime
-        // This is a controlled memory leak, but it's acceptable because:
-        // 1. It happens once per program run
-        // 2. It's needed to make the lifetime mechanics work properly
-        // 3. The memory will be reclaimed when the program exits
-        let obj_ref = Box::leak(Box::new(MaybeUninit::<OpenObject>::uninit()));
+        set_print(Some((PrintLevel::Debug, print_to_log)));
 
-        // Open and load the skeleton with 'static lifetime
-        let open_skel = skel_builder.open(obj_ref)?;
-        let mut skel = open_skel.load()?;
+        // Load BPF program (non-verbose, use the log crate to print errors)
+        let skel_result = Self::load_skel(false);
+
+        if let Err(e) = skel_result {
+            log::error!("Failed to load BPF program: {}", e);
+            log::error!("Reloading with debug flag, for more information");
+
+            // Reload with debug flag (verbose, to always print the error to stderr)
+            let _ = Self::load_skel(true);
+
+            // Return the original error
+            return Err(e);
+        }
+
+        let mut skel = skel_result.expect("checked above that it's not an error");
 
         // Initialize perf event rings for the hardware counters
         if let Err(e) =
@@ -102,6 +108,25 @@ impl BpfLoader {
         })
     }
 
+    fn load_skel(verbose: bool) -> Result<bpf::CollectorSkel<'static>> {
+        let mut skel_builder = bpf::CollectorSkelBuilder::default();
+        if verbose {
+            skel_builder.obj_builder.debug(true);
+        }
+
+        // Create and leak the storage to give it a 'static lifetime
+        // This is a controlled memory leak, but it's acceptable because:
+        // 1. It happens once per program run
+        // 2. It's needed to make the lifetime mechanics work properly
+        // 3. The memory will be reclaimed when the program exits
+        let obj_ref = Box::leak(Box::new(MaybeUninit::<OpenObject>::uninit()));
+
+        let open_skel = skel_builder.open(obj_ref)?;
+        open_skel
+            .load()
+            .with_context(|| "Failed to load BPF program")
+    }
+
     /// Get a reference to the perf events dispatcher
     pub fn dispatcher(&self) -> &Dispatcher {
         &self.dispatcher
@@ -114,11 +139,8 @@ impl BpfLoader {
 
     /// Initialize and start the sync timer
     pub fn start_sync_timer(&mut self) -> Result<()> {
-        sync_timer::initialize_sync_timer(
-            &self.skel.progs.sync_timer_init_collect,
-            &self.skel.progs.sync_timer_init_legacy_collect,
-        )
-        .map_err(|e| anyhow::anyhow!("Sync timer initialization failed: {}", e))
+        sync_timer::initialize_sync_timer(&self.skel.progs.sync_timer_init_collect)
+            .map_err(|e| anyhow::anyhow!("Sync timer initialization failed: {}", e))
     }
 
     /// Attach BPF programs

@@ -305,7 +305,7 @@ fn main() -> Result<()> {
     let object_writer_sender = writer_task.sender();
 
     // Create a BPF loader with the specified verbosity
-    let mut bpf_loader = BpfLoader::new(opts.verbose)?;
+    let mut bpf_loader = BpfLoader::new()?;
 
     // Initialize the sync timer
     bpf_loader.start_sync_timer()?;
