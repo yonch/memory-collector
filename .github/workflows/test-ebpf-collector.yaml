@@ -162,6 +162,10 @@ jobs:
             echo mounts:
             mount
 
+            echo "Debug: Dollar-question-mark value: $?"
+            COLLECTOR_EXIT_CODE=0
+            echo "Debug: Assigned value: $COLLECTOR_EXIT_CODE"
+
             uname -a
             cd /host
             
