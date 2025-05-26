@@ -84,25 +84,29 @@ static __always_inline int __sync_timer_shared_init(
     /* Pre-compute timer flags based on mode */
     __u64 timer_flags = use_legacy_mode ? BPF_F_TIMER_ABS : (BPF_F_TIMER_ABS | BPF_F_TIMER_CPU_PIN);
 
-    /* Get timer state for this CPU */
+    /* Check if timer state already exists for this CPU and remove it to start fresh */
     state = bpf_map_lookup_elem(timer_states_map, &cpu);
-    if (!state) {
-        struct sync_timer_state new_state = {};
-        new_state.expected_cpu = cpu;  // Store the CPU this timer should fire on
-        new_state.timer_flags = timer_flags;
-        ret = bpf_map_update_elem(timer_states_map, &cpu, &new_state, BPF_ANY);
-        if (ret < 0) {
-            return SYNC_TIMER_MAP_UPDATE_FAILED;
-        }
-        state = bpf_map_lookup_elem(timer_states_map, &cpu);
-        if (!state) {
-            return SYNC_TIMER_MAP_LOOKUP_FAILED;
-        }
+    if (state) {
+        /* Cancel any existing timer before removing the state */
+        bpf_timer_cancel(&state->timer);
+        /* Remove existing state to ensure fresh initialization */
+        bpf_map_delete_elem(timer_states_map, &cpu);
     }
 
-    /* Store expected CPU and timer flags */
-    state->expected_cpu = cpu;
-    state->timer_flags = timer_flags;
+    /* Create fresh timer state for this CPU */
+    struct sync_timer_state new_state = {};
+    new_state.expected_cpu = cpu;  // Store the CPU this timer should fire on
+    new_state.timer_flags = timer_flags;
+    ret = bpf_map_update_elem(timer_states_map, &cpu, &new_state, BPF_ANY);
+    if (ret < 0) {
+        return SYNC_TIMER_MAP_UPDATE_FAILED;
+    }
+    
+    /* Get the newly created state */
+    state = bpf_map_lookup_elem(timer_states_map, &cpu);
+    if (!state) {
+        return SYNC_TIMER_MAP_LOOKUP_FAILED;
+    }
 
     /* Initialize timer */
     now = bpf_ktime_get_ns();
