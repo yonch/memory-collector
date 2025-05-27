@@ -33,6 +33,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      short-sha: ${{ steps.get-sha.outputs.SHORT_SHA }}
     
     steps:
       - name: Checkout code
@@ -63,7 +65,8 @@ jobs:
             ghcr.io/${{ github.repository }}/collector:${{ matrix.arch }}-${{ steps.get-sha.outputs.SHORT_SHA }}
           context: .
           file: Dockerfile.collector
-          platforms: ${{ matrix.platform }}
+          provenance: false
+          sbom: false
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/collector:cache-${{ matrix.arch }}
           cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/collector:cache-${{ matrix.arch }},mode=max
 
@@ -76,16 +79,6 @@ jobs:
       packages: write
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Get short SHA
-        id: get-sha
-        run: |
-          SHORT_SHA=$(git rev-parse --short=7 ${{ github.sha }})
-          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
-          echo "Short SHA: $SHORT_SHA"
-      
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -95,12 +88,21 @@ jobs:
       
       - name: Create and push multi-arch manifest
         run: |
-          SHORT_SHA="${{ steps.get-sha.outputs.SHORT_SHA }}"
+          SHORT_SHA="${{ needs.build.outputs.short-sha }}"
           
           # Create the main SHA-based tag that tag-collector-latest expects
           MAIN_TAG="ghcr.io/${{ github.repository }}/collector:main-${SHORT_SHA}"
           
           echo "Creating manifest for $MAIN_TAG"
+          echo "Referencing:"
+          echo "  - ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA}"
+          echo "  - ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA}"
+          
+          # Verify the images exist before creating manifest
+          docker manifest inspect ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA} || exit 1
+          docker manifest inspect ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA} || exit 1
+          
+          # Create and push the manifest
           docker manifest create $MAIN_TAG \
             ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA} \
             ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA}
