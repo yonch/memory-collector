@@ -67,6 +67,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Verify source multi-arch manifest exists
         run: |
           SOURCE_TAG="main-${{ steps.get-sha.outputs.SHORT_SHA }}"
@@ -95,7 +98,7 @@ jobs:
           echo "Architectures in manifest:"
           docker manifest inspect "${SOURCE_IMAGE}" | jq -r '.manifests[] | "\(.platform.architecture)/\(.platform.os)"'
 
-      - name: Create new multi-arch tag using manifest
+      - name: Create new multi-arch tag using buildx imagetools
         run: |
           SOURCE_TAG="main-${{ steps.get-sha.outputs.SHORT_SHA }}"
           TARGET_TAG="${{ inputs.tag }}"
@@ -104,12 +107,9 @@ jobs:
           
           echo "Creating multi-arch tag: ${SOURCE_IMAGE} -> ${TARGET_IMAGE}"
           
-          # Create a new manifest that references the same multi-arch manifest
+          # Use buildx imagetools to create a new tag that references the same multi-arch manifest
           # This preserves all architectures without needing to pull/push the actual image data
-          docker manifest create "${TARGET_IMAGE}" "${SOURCE_IMAGE}"
-          
-          # Push the new manifest
-          docker manifest push "${TARGET_IMAGE}"
+          docker buildx imagetools create --tag "${TARGET_IMAGE}" "${SOURCE_IMAGE}"
           
           echo "Successfully tagged ${TARGET_IMAGE}"
 
