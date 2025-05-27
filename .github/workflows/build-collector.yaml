@@ -3,12 +3,6 @@ run-name: Build collector by @${{ github.actor }}
 
 on:
   workflow_dispatch:
-    inputs:
-      instance-type:
-        description: 'EC2 instance type to use'
-        required: false
-        default: 'c7i.2xlarge'
-        type: string
   push:
     branches:
       - main
@@ -19,73 +13,39 @@ on:
       - '.github/workflows/build-collector.yaml'
 
 permissions:
-  id-token: write # Required for requesting the JWT
-  actions: write # To cancel the workflow if getting the AWS instance fails
+  contents: read
+  packages: write
 
 jobs:
-  setup-runner:
-    name: Start EC2 runner
-    runs-on: ubuntu-latest
-    outputs:
-      runner-label: ${{ steps.start-runner.outputs.runner-label }}
-      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
-      region: ${{ steps.start-runner.outputs.region }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        
-      - name: Start AWS Runner
-        id: start-runner
-        uses: ./.github/actions/aws-runner
-        with:
-          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          iam-role-name: github-actions-runner
-          instance-type: ${{ inputs.instance-type || 'c7i.2xlarge' }}
-          image-type: 'ubuntu-24.04'
-          volume-size: "30"
-
-  cancel-on-failure:
-    needs: setup-runner
-    runs-on: ubuntu-latest
-    if: failure()
-    steps:
-      - name: Cancel workflow
-        uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
-
-  prepare-runner:
-    needs: [setup-runner]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 5
-    steps:
-      - name: Install Docker
-        run: |
-          # Update package list
-          sudo apt-get update
-          
-          # Install Docker
-          sudo apt-get install -y docker.io
-          
-          # Start and enable Docker service
-          sudo systemctl start docker
-          sudo systemctl enable docker
-          
-          # Add current user to docker group
-          sudo usermod -aG docker $USER
-          
-          # Verify installation
-          sudo docker --version
-
   build:
-    needs: [setup-runner, prepare-runner]
-    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+    outputs:
+      short-sha: ${{ steps.get-sha.outputs.SHORT_SHA }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Get short SHA
+        id: get-sha
+        run: |
+          SHORT_SHA=$(git rev-parse --short=7 ${{ github.sha }})
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "Short SHA: $SHORT_SHA"
       
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -94,50 +54,56 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
-      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
-      - name: Docker metadata
-        id: docker-metadata
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/collector
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}.{{patch}}
-            type=raw,value={{branch}}-{{sha}}
-      
-      - name: Build and push
+      - name: Build and push architecture-specific image
         uses: docker/build-push-action@v6
         with:
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.docker-metadata.outputs.tags }}
-          labels: ${{ steps.docker-metadata.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository }}/collector:${{ matrix.arch }}-${{ steps.get-sha.outputs.SHORT_SHA }}
           context: .
           file: Dockerfile.collector
-          platforms: linux/amd64,linux/arm64
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/collector:cache
-          cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/collector:cache,mode=max
+          provenance: false
+          sbom: false
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/collector:cache-${{ matrix.arch }}
+          cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/collector:cache-${{ matrix.arch }},mode=max
 
-  cleanup-runner:
-    name: Stop EC2 runner
-    needs: [setup-runner, build]
+  manifest:
+    needs: build
     runs-on: ubuntu-latest
-    if: always()  # Run even if previous jobs fail
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        
-      - name: Stop AWS Runner
-        uses: ./.github/actions/aws-runner/cleanup
+      - name: Login to GHCR
+        uses: docker/login-action@v3
         with:
-          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
-          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
-          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
-          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }} 
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create and push multi-arch manifest
+        run: |
+          SHORT_SHA="${{ needs.build.outputs.short-sha }}"
+          
+          # Create the main SHA-based tag that tag-collector-latest expects
+          MAIN_TAG="ghcr.io/${{ github.repository }}/collector:main-${SHORT_SHA}"
+          
+          echo "Creating manifest for $MAIN_TAG"
+          echo "Referencing:"
+          echo "  - ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA}"
+          echo "  - ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA}"
+          
+          # Verify the images exist before creating manifest
+          docker manifest inspect ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA} || exit 1
+          docker manifest inspect ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA} || exit 1
+          
+          # Create and push the manifest
+          docker manifest create $MAIN_TAG \
+            ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA} \
+            ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA}
+          docker manifest push $MAIN_TAG 
