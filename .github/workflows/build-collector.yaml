@@ -43,6 +43,7 @@ jobs:
           iam-role-name: github-actions-runner
           instance-type: ${{ inputs.instance-type || 'c7i.2xlarge' }}
           image-type: 'ubuntu-24.04'
+          volume-size: "30"
 
   cancel-on-failure:
     needs: setup-runner
