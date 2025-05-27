@@ -3,6 +3,12 @@ run-name: Build collector by @${{ github.actor }}
 
 on:
   workflow_dispatch:
+    inputs:
+      instance-type:
+        description: 'EC2 instance type to use'
+        required: false
+        default: 'c7i.2xlarge'
+        type: string
   push:
     branches:
       - main
@@ -10,28 +16,91 @@ on:
       - 'crates/**'
       - 'Cargo.toml'
       - 'Dockerfile.collector'
-      - '.github/workflows/ci-collector.yaml'
+      - '.github/workflows/build-collector.yaml'
+
+permissions:
+  id-token: write # Required for requesting the JWT
+  actions: write # To cancel the workflow if getting the AWS instance fails
+
 jobs:
-  build:
+  setup-runner:
+    name: Start EC2 runner
     runs-on: ubuntu-latest
+    outputs:
+      runner-label: ${{ steps.start-runner.outputs.runner-label }}
+      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+      region: ${{ steps.start-runner.outputs.region }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Start AWS Runner
+        id: start-runner
+        uses: ./.github/actions/aws-runner
+        with:
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          iam-role-name: github-actions-runner
+          instance-type: ${{ inputs.instance-type || 'c7i.2xlarge' }}
+          image-type: 'ubuntu-24.04'
+
+  cancel-on-failure:
+    needs: setup-runner
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Cancel workflow
+        uses: andymckay/cancel-action@a955d435292c0d409d104b57d8e78435a93a6ef1
+
+  prepare-runner:
+    needs: [setup-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 5
+    steps:
+      - name: Install Docker
+        run: |
+          # Update package list
+          sudo apt-get update
+          
+          # Install Docker
+          sudo apt-get install -y docker.io
+          
+          # Start and enable Docker service
+          sudo systemctl start docker
+          sudo systemctl enable docker
+          
+          # Add current user to docker group
+          sudo usermod -aG docker $USER
+          
+          # Verify installation
+          sudo docker --version
+
+  build:
+    needs: [setup-runner, prepare-runner]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: all
+      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      
       - name: Docker metadata
         id: docker-metadata
         uses: docker/metadata-action@v5
@@ -41,6 +110,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}.{{patch}}
             type=raw,value={{branch}}-{{sha}}
+      
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -49,7 +119,24 @@ jobs:
           labels: ${{ steps.docker-metadata.outputs.labels }}
           context: .
           file: Dockerfile.collector
-          platforms: linux/amd64
-          # platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/collector:cache
-          cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/collector:cache,mode=max 
+          cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/collector:cache,mode=max
+
+  cleanup-runner:
+    name: Stop EC2 runner
+    needs: [setup-runner, build]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if previous jobs fail
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Stop AWS Runner
+        uses: ./.github/actions/aws-runner/cleanup
+        with:
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }} 
