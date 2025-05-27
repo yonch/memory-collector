@@ -67,15 +67,70 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull existing image
+      - name: Verify source multi-arch manifest exists
         run: |
           SOURCE_TAG="main-${{ steps.get-sha.outputs.SHORT_SHA }}"
-          docker pull "ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG}"
+          SOURCE_IMAGE="ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG}"
+          
+          echo "Verifying multi-arch manifest exists: ${SOURCE_IMAGE}"
+          
+          # Check if the manifest exists and is multi-arch
+          if ! docker manifest inspect "${SOURCE_IMAGE}" > /dev/null 2>&1; then
+            echo "Error: Source manifest ${SOURCE_IMAGE} does not exist"
+            echo "Available tags:"
+            docker run --rm quay.io/skopeo/skopeo list-tags docker://ghcr.io/${{ github.repository }}/collector | head -20
+            exit 1
+          fi
+          
+          # Verify it's multi-arch by checking for multiple manifests
+          MANIFEST_COUNT=$(docker manifest inspect "${SOURCE_IMAGE}" | jq '.manifests | length')
+          echo "Found ${MANIFEST_COUNT} architecture(s) in manifest"
+          
+          if [[ "${MANIFEST_COUNT}" -lt 2 ]]; then
+            echo "Warning: Source manifest only contains ${MANIFEST_COUNT} architecture(s)"
+            echo "Expected multi-architecture manifest with 2+ architectures"
+          fi
+          
+          # Show the architectures
+          echo "Architectures in manifest:"
+          docker manifest inspect "${SOURCE_IMAGE}" | jq -r '.manifests[] | "\(.platform.architecture)/\(.platform.os)"'
 
-      - name: Tag and push as latest
+      - name: Create new multi-arch tag using manifest
         run: |
           SOURCE_TAG="main-${{ steps.get-sha.outputs.SHORT_SHA }}"
           TARGET_TAG="${{ inputs.tag }}"
-          echo "Tagging ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG} as ghcr.io/${{ github.repository }}/collector:${TARGET_TAG}"
-          docker tag "ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG}" "ghcr.io/${{ github.repository }}/collector:${TARGET_TAG}"
-          docker push "ghcr.io/${{ github.repository }}/collector:${TARGET_TAG}" 
+          SOURCE_IMAGE="ghcr.io/${{ github.repository }}/collector:${SOURCE_TAG}"
+          TARGET_IMAGE="ghcr.io/${{ github.repository }}/collector:${TARGET_TAG}"
+          
+          echo "Creating multi-arch tag: ${SOURCE_IMAGE} -> ${TARGET_IMAGE}"
+          
+          # Create a new manifest that references the same multi-arch manifest
+          # This preserves all architectures without needing to pull/push the actual image data
+          docker manifest create "${TARGET_IMAGE}" "${SOURCE_IMAGE}"
+          
+          # Push the new manifest
+          docker manifest push "${TARGET_IMAGE}"
+          
+          echo "Successfully tagged ${TARGET_IMAGE}"
+
+      - name: Verify new tag is multi-arch
+        run: |
+          TARGET_TAG="${{ inputs.tag }}"
+          TARGET_IMAGE="ghcr.io/${{ github.repository }}/collector:${TARGET_TAG}"
+          
+          echo "Verifying new tag is multi-arch: ${TARGET_IMAGE}"
+          
+          # Check the new manifest
+          MANIFEST_COUNT=$(docker manifest inspect "${TARGET_IMAGE}" | jq '.manifests | length')
+          echo "New tag contains ${MANIFEST_COUNT} architecture(s)"
+          
+          # Show the architectures
+          echo "Architectures in new tag:"
+          docker manifest inspect "${TARGET_IMAGE}" | jq -r '.manifests[] | "\(.platform.architecture)/\(.platform.os)"'
+          
+          if [[ "${MANIFEST_COUNT}" -lt 2 ]]; then
+            echo "Error: New tag only contains ${MANIFEST_COUNT} architecture(s)"
+            exit 1
+          fi
+          
+          echo "✅ Successfully created multi-architecture tag: ${TARGET_TAG}" 
