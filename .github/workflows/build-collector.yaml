@@ -65,8 +65,9 @@ jobs:
             ghcr.io/${{ github.repository }}/collector:${{ matrix.arch }}-${{ steps.get-sha.outputs.SHORT_SHA }}
           context: .
           file: Dockerfile.collector
-          provenance: false
-          sbom: false
+          platforms: ${{ matrix.platform }}
+          provenance: true
+          sbom: true
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/collector:cache-${{ matrix.arch }}
           cache-to: type=registry,image-manifest=true,oci-mediatypes=true,ref=ghcr.io/${{ github.repository }}/collector:cache-${{ matrix.arch }},mode=max
 
@@ -85,25 +86,32 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       
-      - name: Create and push multi-arch manifest
+      - name: Create and push multi-arch manifest using buildx imagetools
         run: |
           SHORT_SHA="${{ needs.build.outputs.short-sha }}"
           
           # Create the main SHA-based tag that tag-collector-latest expects
           MAIN_TAG="ghcr.io/${{ github.repository }}/collector:main-${SHORT_SHA}"
+          AMD64_TAG="ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA}"
+          ARM64_TAG="ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA}"
           
-          echo "Creating manifest for $MAIN_TAG"
-          echo "Referencing:"
-          echo "  - ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA}"
-          echo "  - ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA}"
+          echo "Creating multi-arch manifest for $MAIN_TAG"
+          echo "Combining:"
+          echo "  - ${AMD64_TAG}"
+          echo "  - ${ARM64_TAG}"
           
-          # Verify the images exist before creating manifest
-          docker manifest inspect ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA} || exit 1
-          docker manifest inspect ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA} || exit 1
+          # Use buildx imagetools to create multi-arch manifest
+          # This properly handles SBOM/provenance attestations and is more robust
+          docker buildx imagetools create --tag "${MAIN_TAG}" \
+            "${AMD64_TAG}" \
+            "${ARM64_TAG}"
           
-          # Create and push the manifest
-          docker manifest create $MAIN_TAG \
-            ghcr.io/${{ github.repository }}/collector:amd64-${SHORT_SHA} \
-            ghcr.io/${{ github.repository }}/collector:arm64-${SHORT_SHA}
-          docker manifest push $MAIN_TAG 
+          echo "Successfully created multi-arch manifest: ${MAIN_TAG}"
+          
+          # Verify the result
+          echo "Verifying multi-arch manifest:"
+          docker buildx imagetools inspect "${MAIN_TAG}" 
