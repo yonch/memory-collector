@@ -173,9 +173,10 @@ components:
       - name: LOCUST_HEADLESS
         value: "true"
       - name: LOCUST_USERS
-        value: "11000"
+        # value: "11000" # max for 36 cores
+        value: "7200" # max for 36 cores
       - name: LOCUST_SPAWN_RATE
-        value: "55"
+        value: "36" # should be LOCUST_USERS / 200
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_PROCESSES
