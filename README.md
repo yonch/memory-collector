@@ -52,11 +52,11 @@ You can review our [data schema](https://github.com/unvariance/collector/blob/pu
 
 ## Requirements
 
-- **Kernel version:** Minimum 6.7 (required for timer functionality to pin timers to cores)
-- **Hardware:** Any x86_64 server with perf counter support
+- **Kernel version:** Minimum 5.15
+- **Hardware:** Any server with perf counter support (container images forx86_64, arm64)
 - **Resource utilization:**
   - Memory: ~300MB per node
-  - CPU: ~1% for eBPF, ~1% userspace
+  - CPU: ~1% for eBPF, ~0.75% userspace
   - Storage: ~100MB/hour of collected data (varies with node size; there is a quota configuration option to limit the amount of data collected)
 
 See the [benchmark results](https://unvariance.github.io/collector/benchmark) for more details.
