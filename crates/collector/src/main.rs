@@ -208,17 +208,17 @@ impl PerfEventProcessor {
         };
 
         // Timer migration detected - this is a critical error that invalidates measurements
-        error!("CRITICAL ERROR: Timer migration detected!");
         error!(
-            "Expected CPU: {}, Actual CPU: {}",
+            r#"CRITICAL ERROR: Timer migration detected!
+Expected CPU: {}, Actual CPU: {}
+Timer pinning failed - measurements are no longer reliable.
+This indicates either:
+  1. Kernel version doesn't support BPF timer CPU pinning (requires 6.7+)
+  2. Legacy fallback timer migration control failed
+  This case should never happen, please report this as a bug with the distribution and kernel version.
+Exiting to prevent incorrect performance measurements."#,
             event.expected_cpu, event.actual_cpu
         );
-        error!("Timer pinning failed - measurements are no longer reliable.");
-        error!("This indicates either:");
-        error!("  1. Kernel version doesn't support BPF timer CPU pinning (requires 6.7+)");
-        error!("  2. Legacy fallback timer migration control failed");
-        error!("This case should never happen, please report this as a bug with the distribution and kernel version.");
-        error!("Exiting to prevent incorrect performance measurements.");
 
         std::process::exit(1);
     }
