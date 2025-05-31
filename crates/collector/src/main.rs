@@ -478,7 +478,7 @@ fn main() -> Result<()> {
                 _ = sigusr1.recv() => {
                     debug!("Received SIGUSR1, rotating parquet file");
                     if let Err(e) = writer_task.rotate().await {
-                        log::error!("Failed to rotate parquet file: {}", e);
+                        error!("Failed to rotate parquet file: {}", e);
                     }
                     // Continue running, don't break
                 },
@@ -487,10 +487,10 @@ fn main() -> Result<()> {
                 error = &mut bpf_error_rx => {
                     match error {
                         Ok(error_msg) => {
-                            log::error!("{}", error_msg);
+                            error!("{}", error_msg);
                         },
                         Err(_) => {
-                            log::error!("BPF polling channel closed unexpectedly");
+                            error!("BPF polling channel closed unexpectedly");
                         }
                     }
                     break;
@@ -501,11 +501,11 @@ fn main() -> Result<()> {
                     let shutdown_reason = match result {
                         Ok(Ok(_)) => "Writer task returned unexpectedly",
                         Ok(Err(e)) => {
-                            log::error!("Writer task error: {}", e);
+                            error!("Writer task error: {}", e);
                             "Writer task failed with error"
                         },
                         Err(e) => {
-                            log::error!("Writer task panicked: {}", e);
+                            error!("Writer task panicked: {}", e);
                             "Writer task panicked"
                         }
                     };
@@ -523,7 +523,7 @@ fn main() -> Result<()> {
         debug!("Waiting for writer task to complete...");
         let writer_task_result = writer_task.shutdown().await;
         if let Err(e) = writer_task_result {
-            log::error!("Writer task error: {}", e);
+            error!("Writer task error: {}", e);
             return Result::<_>::Err(anyhow::anyhow!("Writer task error: {}", e));
         }
 
@@ -552,7 +552,7 @@ fn main() -> Result<()> {
 
     // Clean up: wait for monitoring task to complete
     if let Err(e) = runtime.block_on(monitoring_handle) {
-        log::error!("Error in monitoring task: {:?}", e);
+        error!("Error in monitoring task: {:?}", e);
     }
 
     info!("Shutdown complete");
