@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::Parser;
 use env_logger;
-use log::info;
+use log::{error, info};
 use object_store::ObjectStore;
 use timeslot::MinTracker;
 use tokio::signal::unix::{signal, SignalKind};
@@ -208,24 +208,24 @@ impl PerfEventProcessor {
         };
 
         // Timer migration detected - this is a critical error that invalidates measurements
-        eprintln!("CRITICAL ERROR: Timer migration detected!");
-        eprintln!(
+        error!("CRITICAL ERROR: Timer migration detected!");
+        error!(
             "Expected CPU: {}, Actual CPU: {}",
             event.expected_cpu, event.actual_cpu
         );
-        eprintln!("Timer pinning failed - measurements are no longer reliable.");
-        eprintln!("This indicates either:");
-        eprintln!("  1. Kernel version doesn't support BPF timer CPU pinning (requires 6.7+)");
-        eprintln!("  2. Legacy fallback timer migration control failed");
-        eprintln!("This case should never happen, please report this as a bug with the distribution and kernel version.");
-        eprintln!("Exiting to prevent incorrect performance measurements.");
+        error!("Timer pinning failed - measurements are no longer reliable.");
+        error!("This indicates either:");
+        error!("  1. Kernel version doesn't support BPF timer CPU pinning (requires 6.7+)");
+        error!("  2. Legacy fallback timer migration control failed");
+        error!("This case should never happen, please report this as a bug with the distribution and kernel version.");
+        error!("Exiting to prevent incorrect performance measurements.");
 
         std::process::exit(1);
     }
 
     // Handle lost events
     fn handle_lost_events(&self, ring_index: usize, _data: &[u8]) {
-        eprintln!("Lost events notification on ring {}", ring_index);
+        error!("Lost events notification on ring {}", ring_index);
     }
 }
 
@@ -333,7 +333,7 @@ fn main() -> Result<()> {
                 if now.duration_since(*last_report).as_secs() >= 1 {
                     // Report accumulated errors
                     if *error_counter.borrow() > 0 {
-                        eprintln!("Error sending timeslots to object writer: {} errors in the last 1 seconds", *error_counter.borrow());
+                        error!("Error sending timeslots to object writer: {} errors in the last 1 seconds", *error_counter.borrow());
                         *error_counter.borrow_mut() = 0;
                     }
                     *last_report = now;
@@ -360,7 +360,7 @@ fn main() -> Result<()> {
                     .borrow_mut()
                     .handle_task_metadata(ring_index, data)
                 {
-                    eprintln!("Error handling task metadata: {:?}", e);
+                    error!("Error handling task metadata: {:?}", e);
                 }
             },
         );
@@ -373,7 +373,7 @@ fn main() -> Result<()> {
                     .borrow_mut()
                     .handle_task_free(ring_index, data)
                 {
-                    eprintln!("Error handling task free: {:?}", e);
+                    error!("Error handling task free: {:?}", e);
                 }
             },
         );
@@ -387,7 +387,7 @@ fn main() -> Result<()> {
                     .borrow_mut()
                     .handle_perf_measurement(ring_index, data)
                 {
-                    eprintln!("Error handling perf measurement: {:?}", e);
+                    error!("Error handling perf measurement: {:?}", e);
                 }
             },
         );
@@ -401,7 +401,7 @@ fn main() -> Result<()> {
                     .borrow_mut()
                     .handle_timer_finished_processing(ring_index, data)
                 {
-                    eprintln!("Error handling timer finished: {:?}", e);
+                    error!("Error handling timer finished: {:?}", e);
                 }
             },
         );
@@ -415,7 +415,7 @@ fn main() -> Result<()> {
                     .borrow_mut()
                     .handle_timer_migration(ring_index, data)
                 {
-                    eprintln!("Error handling timer migration: {:?}", e);
+                    error!("Error handling timer migration: {:?}", e);
                 }
             },
         );
@@ -431,9 +431,7 @@ fn main() -> Result<()> {
     // Attach BPF programs
     bpf_loader.attach()?;
 
-    println!("Successfully started! Tracing and aggregating task performance...");
-    println!("Metrics will be reported at the end of each timeslot.");
-    println!("{}", "-".repeat(60));
+    info!("Successfully started! Tracing and aggregating task performance...");
 
     // Create a channel for BPF error communication and shutdown signaling
     let (bpf_error_tx, mut bpf_error_rx) = oneshot::channel();
