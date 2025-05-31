@@ -6,7 +6,7 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::Parser;
 use env_logger;
-use log::{error, info};
+use log::{debug, error, info};
 use object_store::ObjectStore;
 use timeslot::MinTracker;
 use tokio::signal::unix::{signal, SignalKind};
@@ -233,12 +233,12 @@ Exiting to prevent incorrect performance measurements."#,
 fn create_object_storage(storage_type: &str) -> Result<Arc<dyn ObjectStore>> {
     match storage_type.to_lowercase().as_str() {
         "s3" => {
-            info!("Creating S3 object store from environment variables");
+            debug!("Creating S3 object store from environment variables");
             let s3 = object_store::aws::AmazonS3Builder::from_env().build()?;
             Ok(Arc::new(s3))
         }
         "local" | _ => {
-            info!("Creating local filesystem object store");
+            debug!("Creating local filesystem object store");
             let local = object_store::local::LocalFileSystem::new();
             Ok(Arc::new(local))
         }
@@ -264,7 +264,7 @@ fn main() -> Result<()> {
 
     let opts = Command::parse();
 
-    info!("Starting collector with options: {:?}", opts);
+    debug!("Starting collector with options: {:?}", opts);
 
     // Initialize tokio runtime for async operations
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -290,7 +290,7 @@ fn main() -> Result<()> {
     };
 
     // Create the ParquetWriter with the store and config
-    info!(
+    debug!(
         "Writing metrics to {} storage with prefix: {}",
         &opts.storage_type, &config.storage_prefix
     );
@@ -299,7 +299,7 @@ fn main() -> Result<()> {
     // Create ParquetWriterTask with a buffer of 1000 items
     let mut writer_task = runtime.block_on(async { ParquetWriterTask::new(writer, 1000) });
 
-    info!("Parquet writer task initialized and ready to receive data");
+    debug!("Parquet writer task initialized and ready to receive data");
 
     // Get sender from the writer task
     let object_writer_sender = writer_task.sender();
@@ -458,25 +458,25 @@ fn main() -> Result<()> {
                         std::future::pending::<bool>().await
                     }
                 } => {
-                    info!("Duration timeout reached");
+                    debug!("Duration timeout reached");
                     break;
                 },
 
                 // SIGTERM received
                 _ = sigterm.recv() => {
-                    info!("Received SIGTERM");
+                    debug!("Received SIGTERM");
                     break;
                 },
 
                 // SIGINT received
                 _ = sigint.recv() => {
-                    info!("Received SIGINT");
+                    debug!("Received SIGINT");
                     break;
                 },
 
                 // SIGUSR1 received - trigger file rotation
                 _ = sigusr1.recv() => {
-                    info!("Received SIGUSR1, rotating parquet file");
+                    debug!("Received SIGUSR1, rotating parquet file");
                     if let Err(e) = writer_task.rotate().await {
                         log::error!("Failed to rotate parquet file: {}", e);
                     }
@@ -515,12 +515,12 @@ fn main() -> Result<()> {
             };
         }
 
-        info!("Shutting down...");
+        debug!("Shutting down...");
 
         // Signal the main thread to shutdown BPF polling
         let _ = shutdown_tx.send(());
 
-        info!("Waiting for writer task to complete...");
+        debug!("Waiting for writer task to complete...");
         let writer_task_result = writer_task.shutdown().await;
         if let Err(e) = writer_task_result {
             log::error!("Writer task error: {}", e);
