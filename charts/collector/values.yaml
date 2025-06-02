@@ -26,10 +26,14 @@ securityContext:
   privileged: false
   capabilities:
     add:
-      - "BPF"
-      - "PERFMON"
+      - "BPF"     # Required for loading eBPF programs
+      - "PERFMON" # Required for opening performance monitoring (cycle counter, cache misses, etc.)
+      # SYS_ADMIN is required if kernel.perf_event_paranoid>2. see:
+      #  - https://github.com/falcosecurity/charts/blob/master/charts/falco/values.yaml#L305 
+      #  - https://grafana.com/docs/beyla/latest/setup/kubernetes/#deploy-beyla-unprivileged
+      # To remove this, ensure kernel.perf_event_paranoid is set to 2 or below.
       - "SYS_ADMIN"
-  runAsUser: 0  # Required for eBPF operations
+  runAsUser: 0      # Required for loading eBPF programs and writing to `kernel.timer_migration`
 
 # Collector configuration
 collector:
