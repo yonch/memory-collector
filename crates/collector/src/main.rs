@@ -143,6 +143,7 @@ impl PerfEventProcessor {
             event.cycles_delta,
             event.instructions_delta,
             event.llc_misses_delta,
+            event.cache_references_delta,
             event.time_delta_ns,
         );
 

@@ -197,6 +197,8 @@ pub enum HardwareCounter {
     Instructions,
     /// Last Level Cache misses
     LLCMisses,
+    /// Cache references
+    CacheReferences,
 }
 
 /// Opens a hardware performance counter for each CPU and updates the provided map with the file descriptors.
@@ -254,6 +256,9 @@ pub fn open_perf_counter(
         }
         HardwareCounter::LLCMisses => {
             attr.config = sys::bindings::PERF_COUNT_HW_CACHE_MISSES as u64;
+        }
+        HardwareCounter::CacheReferences => {
+            attr.config = sys::bindings::PERF_COUNT_HW_CACHE_REFERENCES as u64;
         }
     }
 

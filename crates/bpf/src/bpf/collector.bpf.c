@@ -68,11 +68,18 @@ struct {
     __uint(value_size, sizeof(__u32));
 } llc_misses SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(__u32));
+    __uint(value_size, sizeof(__u32));
+} cache_references SEC(".maps");
+
 // Structure to store previous counter values per CPU
 struct prev_counters {
     __u64 cycles;
     __u64 instructions;
     __u64 llc_misses;
+    __u64 cache_references;
     __u64 timestamp;
 };
 
@@ -158,7 +165,7 @@ static __always_inline __u64 compute_delta(__u64 current, __u64 previous) {
 // Send perf measurement event to userspace
 static __always_inline int send_perf_measurement(void *ctx, __u32 pid, __u64 cycles_delta, 
                                                __u64 instructions_delta, __u64 llc_misses_delta,
-                                               __u64 time_delta_ns, __u64 timestamp)
+                                               __u64 cache_references_delta, __u64 time_delta_ns, __u64 timestamp)
 {
     struct perf_measurement_msg msg = {};
     
@@ -169,6 +176,7 @@ static __always_inline int send_perf_measurement(void *ctx, __u32 pid, __u64 cyc
     msg.cycles_delta = cycles_delta;
     msg.instructions_delta = instructions_delta;
     msg.llc_misses_delta = llc_misses_delta;
+    msg.cache_references_delta = cache_references_delta;
     msg.time_delta_ns = time_delta_ns;
     
     // Skip the size field (first 4 bytes) when sending
@@ -247,10 +255,12 @@ static __always_inline int collect_and_send_perf_measurements(void *ctx, struct 
     struct bpf_perf_event_value cycles_val = {};
     struct bpf_perf_event_value instructions_val = {};
     struct bpf_perf_event_value llc_misses_val = {};
+    struct bpf_perf_event_value cache_references_val = {};
     
     __u64 cycles_delta = 0;
     __u64 instructions_delta = 0;
     __u64 llc_misses_delta = 0;
+    __u64 cache_references_delta = 0;
     __u64 now = bpf_ktime_get_ns();
     __u64 time_delta_ns = 0;
     
@@ -272,12 +282,18 @@ static __always_inline int collect_and_send_perf_measurements(void *ctx, struct 
         prev->llc_misses = llc_misses_val.counter;
     }
     
+    err = bpf_perf_event_read_value(&cache_references, BPF_F_CURRENT_CPU, &cache_references_val, sizeof(cache_references_val));
+    if (err == 0) {
+        cache_references_delta = compute_delta(cache_references_val.counter, prev->cache_references);
+        prev->cache_references = cache_references_val.counter;
+    }
+    
     // Compute time delta and update timestamp
     // If prev->timestamp is 0, this is the first event, don't emit it
     if (prev->timestamp != 0) {
         time_delta_ns = compute_delta(now, prev->timestamp);
         send_perf_measurement(ctx, pid, cycles_delta, instructions_delta, 
-                              llc_misses_delta, time_delta_ns, now);
+                              llc_misses_delta, cache_references_delta, time_delta_ns, now);
     }
     prev->timestamp = now;
     

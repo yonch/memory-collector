@@ -91,6 +91,13 @@ impl BpfLoader {
             return Err(anyhow!("Failed to open LLC misses counter: {:?}", e));
         }
 
+        if let Err(e) = perf_events::open_perf_counter(
+            &mut skel.maps.cache_references,
+            HardwareCounter::CacheReferences,
+        ) {
+            return Err(anyhow!("Failed to open cache references counter: {:?}", e));
+        }
+
         // Set up the perf map reader for the events map
         let buffer_pages = 32;
         let watermark_bytes = 0; // Wake up on every event

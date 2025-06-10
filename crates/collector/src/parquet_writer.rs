@@ -25,6 +25,7 @@ pub fn create_parquet_schema() -> SchemaRef {
         Field::new("cycles", DataType::Int64, false),
         Field::new("instructions", DataType::Int64, false),
         Field::new("llc_misses", DataType::Int64, false),
+        Field::new("cache_references", DataType::Int64, false),
         Field::new("duration", DataType::Int64, false),
     ]))
 }
@@ -278,6 +279,7 @@ impl ParquetWriter {
         let mut cycles_builder = Int64Builder::with_capacity(task_count);
         let mut instructions_builder = Int64Builder::with_capacity(task_count);
         let mut llc_misses_builder = Int64Builder::with_capacity(task_count);
+        let mut cache_references_builder = Int64Builder::with_capacity(task_count);
         let mut duration_builder = Int64Builder::with_capacity(task_count);
 
         // Convert timeslot data to arrays
@@ -306,6 +308,7 @@ impl ParquetWriter {
             cycles_builder.append_value(task_data.metrics.cycles as i64);
             instructions_builder.append_value(task_data.metrics.instructions as i64);
             llc_misses_builder.append_value(task_data.metrics.llc_misses as i64);
+            cache_references_builder.append_value(task_data.metrics.cache_references as i64);
             duration_builder.append_value(task_data.metrics.time_ns as i64);
         }
 
@@ -318,6 +321,7 @@ impl ParquetWriter {
             Arc::new(cycles_builder.finish()),
             Arc::new(instructions_builder.finish()),
             Arc::new(llc_misses_builder.finish()),
+            Arc::new(cache_references_builder.finish()),
             Arc::new(duration_builder.finish()),
         ];
 
@@ -407,7 +411,7 @@ mod tests {
         comm[..test_name.len()].copy_from_slice(test_name);
 
         let metadata = Some(TaskMetadata::new(1, comm, 12345));
-        let metrics = Metric::from_deltas(1000, 2000, 30, 100000);
+        let metrics = Metric::from_deltas(1000, 2000, 30, 500, 100000);
 
         // Add task data to timeslot
         timeslot.update(1, metadata, metrics);
@@ -444,6 +448,7 @@ mod tests {
                 1000 * pid as u64,
                 2000 * pid as u64,
                 30 * pid as u64,
+                500 * pid as u64,
                 100000 * pid as u64,
             );
             timeslot.update(pid, metadata, metrics);
