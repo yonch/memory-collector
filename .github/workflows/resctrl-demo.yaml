@@ -1,0 +1,784 @@
+name: Resource Control Demo
+on: 
+  workflow_dispatch:  # Manual trigger for testing
+    inputs:
+      machine-type:
+        description: 'EC2 instance type to use'
+        required: false
+        default: 'm7i.metal-24xl'
+        type: string
+
+
+# Add permissions needed for OIDC authentication
+permissions:
+  id-token: write # Required for requesting the JWT
+
+jobs:
+  setup-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      runner-label: ${{ steps.start-runner.outputs.runner-label }}
+      ec2-instance-id: ${{ steps.start-runner.outputs.ec2-instance-id }}
+      region: ${{ steps.start-runner.outputs.region }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Start AWS Runner
+        id: start-runner
+        uses: ./.github/actions/aws-runner
+        with:
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          instance-type: ${{ inputs.machine-type }}
+          image-type: 'ubuntu-24.04'
+          pre-runner-script: |
+            sudo apt-get update -y && \
+            sudo apt-get install docker git libicu -y
+            sudo systemctl enable docker
+
+  resctrl-demo:
+    needs: setup-runner
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    steps:
+      - name: Install Dependencies
+        run: |
+          echo "=== Installing Dependencies ==="
+          sudo apt-get update
+          sudo apt-get install -y stress-ng trace-cmd bc
+          echo "stress-ng version: $(stress-ng --version)"
+          echo "bc version: $(bc --version | head -1)"
+          echo ""
+
+      - name: System Information
+        run: |
+          echo "=== System Information ==="
+          echo "CPU Model: $(grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)"
+          echo "CPU Count: $(nproc)"
+          echo "Memory: $(free -h | grep Mem)"
+          echo "Kernel: $(uname -r)"
+          echo ""
+
+      - name: Check Hardware RDT Support
+        run: |
+          echo "=== Checking Hardware RDT Support ==="
+          echo "CPU RDT Features:"
+          if ! grep -E "rdt_a|cat_l3|cqm_llc|cqm_occup_llc|cqm_mbm_total|cqm_mbm_local|mba" /proc/cpuinfo | head -5; then
+            echo "WARNING: No RDT features found in /proc/cpuinfo - demo may not work as expected"
+          fi
+          echo ""
+          echo "Kernel resctrl support:"
+          if ! cat /proc/filesystems | grep resctrl; then
+            echo "ERROR: resctrl not found in /proc/filesystems"
+            exit 1
+          fi
+          echo ""
+
+      - name: Mount resctrl Filesystem
+        run: |
+          echo "=== Mounting resctrl Filesystem ==="
+          sudo mkdir -p /sys/fs/resctrl
+          
+          # Try to mount, but don't fail if already mounted
+          if ! mount | grep -q resctrl; then
+            sudo mount -t resctrl resctrl /sys/fs/resctrl
+          else
+            echo "resctrl already mounted"
+          fi
+          
+          echo "Mount verification:"
+          mount | grep resctrl
+          
+          echo "resctrl directory contents:"
+          ls -la /sys/fs/resctrl/
+          echo ""
+
+      - name: Check resctrl Capabilities
+        run: |
+          echo "=== resctrl Hardware Capabilities ==="
+          
+          echo "Available info directories:"
+          ls /sys/fs/resctrl/info/
+          
+          echo "L3 Cache capabilities:"
+          echo "  CLOSIDs: $(cat /sys/fs/resctrl/info/L3/num_closids 2>/dev/null || echo 'N/A')"
+          echo "  Cache mask: $(cat /sys/fs/resctrl/info/L3/cbm_mask 2>/dev/null || echo 'N/A')"
+          
+          echo "L3 Monitoring capabilities:"
+          echo "  RMIDs: $(cat /sys/fs/resctrl/info/L3_MON/num_rmids 2>/dev/null || echo 'N/A')"
+          echo "  Monitoring features: $(cat /sys/fs/resctrl/info/L3_MON/mon_features 2>/dev/null || echo 'N/A')"
+          
+          echo "Memory Bandwidth capabilities:"
+          echo "  MBA CLOSIDs: $(cat /sys/fs/resctrl/info/MB/num_closids 2>/dev/null || echo 'N/A')"
+          echo "  Min bandwidth: $(cat /sys/fs/resctrl/info/MB/min_bandwidth 2>/dev/null || echo 'N/A')%"
+          echo "  Bandwidth granularity: $(cat /sys/fs/resctrl/info/MB/bandwidth_gran 2>/dev/null || echo 'N/A')%"
+          echo ""
+
+      - name: Show Baseline Resource Usage
+        run: |
+          echo "=== Baseline Resource Usage ==="
+          echo "Default group CPU assignment:"
+          cat /sys/fs/resctrl/cpus_list
+          
+          echo "Default group tasks:"
+          wc -l /sys/fs/resctrl/tasks
+          
+          echo "Default schemata:"
+          cat /sys/fs/resctrl/schemata
+          
+          echo "Baseline monitoring (domain 0):"
+          echo "  LLC occupancy: $(cat /sys/fs/resctrl/mon_data/mon_L3_00/llc_occupancy) bytes"
+          echo "  Memory bandwidth total: $(cat /sys/fs/resctrl/mon_data/mon_L3_00/mbm_total_bytes)"
+          echo "  Memory bandwidth local: $(cat /sys/fs/resctrl/mon_data/mon_L3_00/mbm_local_bytes)"
+          echo ""
+
+      - name: Create Resource Control Groups
+        run: |
+          echo "=== Creating Resource Control Groups ==="
+          
+          # Create memory bandwidth stressor group
+          sudo mkdir -p /sys/fs/resctrl/memory_bandwidth_group
+          
+          # Create cache sensitive workload group
+          sudo mkdir -p /sys/fs/resctrl/cache_sensitive_group
+          
+          echo "Created resource groups:"
+          ls /sys/fs/resctrl/ | grep -E "(memory_bandwidth|cache_sensitive)"
+          echo ""
+
+      - name: Configure CPU Assignments
+        run: |
+          echo "=== Configuring CPU Assignments ==="
+          
+          # Get total CPUs and split them into quarters
+          TOTAL_CPUS=$(nproc)
+          QUARTER_CPUS=$((TOTAL_CPUS / 4))
+          
+          echo "Total CPUs: $TOTAL_CPUS"
+          echo "Quarter size: $QUARTER_CPUS CPUs"
+          
+          # Calculate CPU ranges for each quarter
+          Q1_START=0
+          Q1_END=$((QUARTER_CPUS - 1))
+          Q2_START=$QUARTER_CPUS
+          Q2_END=$((2 * QUARTER_CPUS - 1))
+          Q3_START=$((2 * QUARTER_CPUS))
+          Q3_END=$((3 * QUARTER_CPUS - 1))
+          Q4_START=$((3 * QUARTER_CPUS))
+          Q4_END=$((TOTAL_CPUS - 1))
+          
+          echo "CPU quarters:"
+          echo "  Q1: $Q1_START-$Q1_END"
+          echo "  Q2: $Q2_START-$Q2_END" 
+          echo "  Q3: $Q3_START-$Q3_END"
+          echo "  Q4: $Q4_START-$Q4_END"
+          
+          # Memory bandwidth group gets Q1 (first quarter only)
+          # Cache sensitive group gets Q2 (second quarter only)  
+          # Q3 and Q4 remain unassigned for isolation
+          # This ensures one workload per physical core with proper isolation
+          
+          echo "Assigning Q1 ($Q1_START-$Q1_END) to memory bandwidth group"
+          echo "Assigning Q2 ($Q2_START-$Q2_END) to cache sensitive group"
+          echo "Q3 ($Q3_START-$Q3_END) and Q4 ($Q4_START-$Q4_END) left unassigned for isolation"
+          
+          # Create CPU lists for each group (single quarter each)
+          MB_CPU_LIST="${Q1_START}-${Q1_END}"
+          CACHE_CPU_LIST="${Q2_START}-${Q2_END}"
+          
+          # Assign CPUs to groups
+          echo "$MB_CPU_LIST" | sudo tee /sys/fs/resctrl/memory_bandwidth_group/cpus_list >/dev/null
+          echo "$CACHE_CPU_LIST" | sudo tee /sys/fs/resctrl/cache_sensitive_group/cpus_list >/dev/null
+          
+          echo "Final CPU assignments:"
+          echo "  Memory bandwidth group: $(cat /sys/fs/resctrl/memory_bandwidth_group/cpus_list)"
+          echo "  Cache sensitive group: $(cat /sys/fs/resctrl/cache_sensitive_group/cpus_list)"
+          
+          # Display hyperthreading information if available
+          echo ""
+          echo "Hyperthreading topology information:"
+          if [ -f /sys/devices/system/cpu/cpu0/topology/thread_siblings_list ]; then
+            echo "Example physical core 0 hyperthreads: $(cat /sys/devices/system/cpu/cpu0/topology/thread_siblings_list)"
+            if [ -f /sys/devices/system/cpu/cpu1/topology/thread_siblings_list ]; then
+              echo "Example physical core 1 hyperthreads: $(cat /sys/devices/system/cpu/cpu1/topology/thread_siblings_list)"
+            fi
+          else
+            echo "Hyperthreading topology files not available"
+          fi
+          echo ""
+
+      - name: Initial Resource Allocation
+        run: |
+          echo "=== Setting Initial Resource Allocation ==="
+          
+          # Give both groups full resources initially
+          echo "Setting both groups to full resources initially"
+          cat /sys/fs/resctrl/schemata | sudo tee /sys/fs/resctrl/memory_bandwidth_group/schemata >/dev/null
+          cat /sys/fs/resctrl/schemata | sudo tee /sys/fs/resctrl/cache_sensitive_group/schemata >/dev/null
+          
+          echo "Initial resource allocation:"
+          echo "Memory bandwidth group schemata:"
+          cat /sys/fs/resctrl/memory_bandwidth_group/schemata
+          echo "Cache sensitive group schemata:"
+          cat /sys/fs/resctrl/cache_sensitive_group/schemata
+          echo ""
+
+      - name: Create Measurement Script
+        run: |
+          echo "=== Creating Measurement Script ==="
+          
+          cat > /tmp/measure_workloads.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          
+          PHASE="$1"
+          CSV_FILE="$2"
+          
+          echo "Running measurement for phase: $PHASE"
+          
+          # Calculate cache workload parameters for realistic simulation
+          
+          # Use quarter of total system CPUs for cache calculation (like CPU assignment logic)
+          TOTAL_SYSTEM_CPUS=$(nproc)
+          CACHE_CPU_COUNT=$((TOTAL_SYSTEM_CPUS / 4))
+          
+          # Use 1/8 of the quarter (round down)
+          CACHE_THREADS=$((CACHE_CPU_COUNT / 8))
+          if [ "$CACHE_THREADS" -lt "1" ]; then
+            CACHE_THREADS=1  # Ensure at least 1 thread
+          fi
+          
+          # Calculate cache size per thread: (quarter_cpus * 1MB) / num_threads
+          TOTAL_CACHE_SIZE_MB=$((CACHE_CPU_COUNT * 1))  # 1MB per quarter CPU
+          CACHE_SIZE_PER_THREAD_MB=$((TOTAL_CACHE_SIZE_MB / CACHE_THREADS))
+          
+          echo "Cache workload configuration:"
+          echo "  Total system CPUs: $TOTAL_SYSTEM_CPUS"
+          echo "  Quarter of system CPUs: $CACHE_CPU_COUNT (used for cache calculation)"
+          echo "  Cache threads to use: $CACHE_THREADS (1/8 of quarter)"
+          echo "  Total cache footprint: ${TOTAL_CACHE_SIZE_MB}MB"
+          echo "  Cache size per thread: ${CACHE_SIZE_PER_THREAD_MB}MB"
+          echo "  This simulates occasional memory access patterns (less aggressive)"
+          
+          # Start cache sensitive workload with perf counters for 9 seconds
+          # (10s warmup + 5s measurement + 2s buffer = 17s total)
+          CACHE_DURATION_SECONDS=17
+          echo "Starting cache measurement workload for $CACHE_DURATION_SECONDS seconds..."
+          CACHE_CPUS_TASKSET=$(cat /sys/fs/resctrl/cache_sensitive_group/cpus_list)
+          taskset -c "$CACHE_CPUS_TASKSET" stress-ng --cache $CACHE_THREADS --cache-size "${CACHE_SIZE_PER_THREAD_MB}M" --perf --metrics-brief -t ${CACHE_DURATION_SECONDS}s > /tmp/cache_perf_output.txt 2>&1 &
+          CACHE_PID=$!
+          
+          # Assign cache workload to its group
+          echo $CACHE_PID | sudo tee /sys/fs/resctrl/cache_sensitive_group/tasks >/dev/null
+          
+          # Wait for cache workload to warm up (2 seconds)
+          echo "Waiting 10 seconds for cache workload to warm up..."
+          sleep 10
+          
+          # Verify cache workload is still running
+          if ! kill -0 $CACHE_PID 2>/dev/null; then
+            echo "ERROR: Cache workload died during warmup"
+            exit 1
+          fi
+          
+          # Take initial measurements (cache workload is now warmed up and running)
+          echo "Taking initial measurements while cache workload is active..."
+          
+          # Memory bandwidth group measurements
+          MB_LLC_1=$(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/llc_occupancy 2>/dev/null || echo "0")
+          MB_MBM_TOTAL_1=$(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_total_bytes 2>/dev/null || echo "0")
+          MB_MBM_LOCAL_1=$(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_local_bytes 2>/dev/null || echo "0")
+          
+          # Cache sensitive group measurements
+          CACHE_LLC_1=$(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/llc_occupancy 2>/dev/null || echo "0")
+          CACHE_MBM_TOTAL_1=$(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_total_bytes 2>/dev/null || echo "0")
+          CACHE_MBM_LOCAL_1=$(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_local_bytes 2>/dev/null || echo "0")
+          
+          # Wait 5 seconds for measurement interval
+          echo "Measuring for 5 seconds while cache workload continues..."
+          sleep 5
+          
+          # Verify cache workload is still running
+          if ! kill -0 $CACHE_PID 2>/dev/null; then
+            echo "WARNING: Cache workload finished during measurement interval"
+          fi
+          
+          # Take final measurements (cache workload should still be running for 2 more seconds)
+          echo "Taking final measurements while cache workload is still active..."
+          
+          # Memory bandwidth group measurements
+          MB_LLC_2=$(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/llc_occupancy 2>/dev/null || echo "0")
+          MB_MBM_TOTAL_2=$(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_total_bytes 2>/dev/null || echo "0")
+          MB_MBM_LOCAL_2=$(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_local_bytes 2>/dev/null || echo "0")
+          
+          # Cache sensitive group measurements
+          CACHE_LLC_2=$(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/llc_occupancy 2>/dev/null || echo "0")
+          CACHE_MBM_TOTAL_2=$(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_total_bytes 2>/dev/null || echo "0")
+          CACHE_MBM_LOCAL_2=$(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_local_bytes 2>/dev/null || echo "0")
+          
+          # Wait for cache workload to finish
+          wait $CACHE_PID || true
+          
+          # Extract cache performance metrics from stress-ng output
+          # Debug: show the actual output for troubleshooting
+          echo "Debug - stress-ng output:"
+          cat /tmp/cache_perf_output.txt
+          echo "End of stress-ng output"
+          
+          # Parse bogo ops from the metrics line (format: "cache    12345     30.00 ...")
+          CACHE_BOGO_OPS=$(grep -E "^\s*cache\s+" /tmp/cache_perf_output.txt | awk '{print $2}' | head -1 || echo "0")
+          
+          # Parse cache references - try multiple formats
+          # Format 1: "stress-ng: info: [pid]      1,234,567 Cache References"
+          # Format 2: "                 1,234,567 Cache References"
+          CACHE_REFERENCES=$(grep "Cache References" /tmp/cache_perf_output.txt | sed -E 's/.*[[:space:]]+([0-9,]+)[[:space:]]+Cache References.*/\1/' | tr -d ',' | head -1 || echo "0")
+          
+          # Parse cache misses - try multiple formats  
+          CACHE_MISSES=$(grep "Cache Misses" /tmp/cache_perf_output.txt | sed -E 's/.*[[:space:]]+([0-9,]+)[[:space:]]+Cache Misses.*/\1/' | tr -d ',' | head -1 || echo "0")
+          
+          # Alternative parsing if the above doesn't work - extract just the number before "Cache References/Misses"
+          if [[ ! "$CACHE_REFERENCES" =~ ^[0-9]+$ ]]; then
+            CACHE_REFERENCES=$(grep "Cache References" /tmp/cache_perf_output.txt | grep -oE '[0-9,]+[[:space:]]+Cache References' | grep -oE '^[0-9,]+' | tr -d ',' | head -1 || echo "0")
+          fi
+          
+          if [[ ! "$CACHE_MISSES" =~ ^[0-9]+$ ]]; then
+            CACHE_MISSES=$(grep "Cache Misses" /tmp/cache_perf_output.txt | grep -oE '[0-9,]+[[:space:]]+Cache Misses' | grep -oE '^[0-9,]+' | tr -d ',' | head -1 || echo "0")
+          fi
+          
+          echo "Debug - Parsed values:"
+          echo "  CACHE_BOGO_OPS: '$CACHE_BOGO_OPS'"
+          echo "  CACHE_REFERENCES: '$CACHE_REFERENCES'"
+          echo "  CACHE_MISSES: '$CACHE_MISSES'"
+          
+          # Calculate rates (bytes/second)
+          MB_TOTAL_RATE=0
+          MB_LOCAL_RATE=0
+          CACHE_TOTAL_RATE=0
+          CACHE_LOCAL_RATE=0
+          
+          if [ "$MB_MBM_TOTAL_2" -gt "$MB_MBM_TOTAL_1" ]; then
+            MB_TOTAL_RATE=$((MB_MBM_TOTAL_2 - MB_MBM_TOTAL_1))
+            MB_TOTAL_RATE=$((MB_TOTAL_RATE / 5))
+          fi
+          
+          if [ "$MB_MBM_LOCAL_2" -gt "$MB_MBM_LOCAL_1" ]; then
+            MB_LOCAL_RATE=$((MB_MBM_LOCAL_2 - MB_MBM_LOCAL_1))
+            MB_LOCAL_RATE=$((MB_LOCAL_RATE / 5))
+          fi
+          
+          if [ "$CACHE_MBM_TOTAL_2" -gt "$CACHE_MBM_TOTAL_1" ]; then
+            CACHE_TOTAL_RATE=$((CACHE_MBM_TOTAL_2 - CACHE_MBM_TOTAL_1))
+            CACHE_TOTAL_RATE=$((CACHE_TOTAL_RATE / 5))
+          fi
+          
+          if [ "$CACHE_MBM_LOCAL_2" -gt "$CACHE_MBM_LOCAL_1" ]; then
+            CACHE_LOCAL_RATE=$((CACHE_MBM_LOCAL_2 - CACHE_MBM_LOCAL_1))
+            CACHE_LOCAL_RATE=$((CACHE_LOCAL_RATE / 5))
+          fi
+          
+          # Convert cache references and misses to GB/s
+          # Formula: (count * 64 bytes/cacheline) / (17 seconds * 1024^3 bytes/GB)
+          CACHE_LINE_SIZE_BYTES=64
+          BYTES_PER_GB=$((1024 * 1024 * 1024))
+          
+          CACHE_REFERENCES_GBPS="0"
+          CACHE_MISSES_GBPS="0"
+          
+          if [[ "$CACHE_REFERENCES" =~ ^[0-9]+$ ]] && [ "$CACHE_REFERENCES" -gt "0" ]; then
+            # Calculate: (references * 64) / (17 * 1024^3)
+            CACHE_REFERENCES_GBPS=$(echo "scale=3; $CACHE_REFERENCES * $CACHE_LINE_SIZE_BYTES / ($CACHE_DURATION_SECONDS * $BYTES_PER_GB)" | bc -l 2>/dev/null || echo "0")
+          fi
+          
+          if [[ "$CACHE_MISSES" =~ ^[0-9]+$ ]] && [ "$CACHE_MISSES" -gt "0" ]; then
+            # Calculate: (misses * 64) / (17 * 1024^3)
+            CACHE_MISSES_GBPS=$(echo "scale=3; $CACHE_MISSES * $CACHE_LINE_SIZE_BYTES / ($CACHE_DURATION_SECONDS * $BYTES_PER_GB)" | bc -l 2>/dev/null || echo "0")
+          fi
+          
+          # Calculate cache hit rate (validate inputs are numeric first)
+          CACHE_HIT_RATE="0"
+          if [[ "$CACHE_REFERENCES" =~ ^[0-9]+$ ]] && [[ "$CACHE_MISSES" =~ ^[0-9]+$ ]] && [ "$CACHE_REFERENCES" -gt "0" ]; then
+            CACHE_HITS=$((CACHE_REFERENCES - CACHE_MISSES))
+            if [ "$CACHE_HITS" -ge "0" ]; then
+              CACHE_HIT_RATE=$(echo "scale=2; $CACHE_HITS * 100 / $CACHE_REFERENCES" | bc -l 2>/dev/null || echo "0")
+            fi
+          fi
+          
+          # Ensure all values are numeric for CSV output
+          [[ "$CACHE_BOGO_OPS" =~ ^[0-9]+$ ]] || CACHE_BOGO_OPS="0"
+          [[ "$CACHE_REFERENCES" =~ ^[0-9]+$ ]] || CACHE_REFERENCES="0"
+          [[ "$CACHE_MISSES" =~ ^[0-9]+$ ]] || CACHE_MISSES="0"
+          
+          echo "Debug - Cache metrics converted to GB/s:"
+          echo "  Raw cache references: $CACHE_REFERENCES"
+          echo "  Raw cache misses: $CACHE_MISSES"
+          echo "  Cache references: ${CACHE_REFERENCES_GBPS} GB/s"
+          echo "  Cache misses: ${CACHE_MISSES_GBPS} GB/s"
+          
+          # Write to CSV
+          # Format: phase,workload_type,llc_occupancy,memory_bandwidth_total,memory_bandwidth_local,cache_references_gbps,cache_misses_gbps,cache_hit_rate,bogo_ops
+          echo "$PHASE,memory_bandwidth,$MB_LLC_2,$MB_TOTAL_RATE,$MB_LOCAL_RATE,0,0,0,0" >> "$CSV_FILE"
+          echo "$PHASE,cache_sensitive,$CACHE_LLC_2,$CACHE_TOTAL_RATE,$CACHE_LOCAL_RATE,$CACHE_REFERENCES_GBPS,$CACHE_MISSES_GBPS,$CACHE_HIT_RATE,$CACHE_BOGO_OPS" >> "$CSV_FILE"
+          
+          echo "Measurements complete for phase: $PHASE"
+          echo "Memory bandwidth group - LLC: $MB_LLC_2, Total rate: $MB_TOTAL_RATE bytes/s, Local rate: $MB_LOCAL_RATE bytes/s"
+          echo "Cache sensitive group - LLC: $CACHE_LLC_2, Total rate: $CACHE_TOTAL_RATE bytes/s, Local rate: $CACHE_LOCAL_RATE bytes/s"
+          echo "Cache performance - References: ${CACHE_REFERENCES_GBPS} GB/s, Misses: ${CACHE_MISSES_GBPS} GB/s, Hit rate: $CACHE_HIT_RATE%, Bogo ops: $CACHE_BOGO_OPS"
+          EOF
+          
+          chmod +x /tmp/measure_workloads.sh
+          
+          # Initialize CSV file with header
+          echo "phase,workload_type,llc_occupancy,memory_bandwidth_total,memory_bandwidth_local,cache_references_gbps,cache_misses_gbps,cache_hit_rate,bogo_ops" > /tmp/resctrl_measurements.csv
+          
+          echo "Measurement script created"
+
+
+
+      - name: Verify Critical Functionality
+        run: |
+          echo "=== Verifying Critical Functionality ==="
+          
+          # Verify monitoring files exist and are readable for both groups
+          echo "Verifying monitoring capabilities..."
+          test -r /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/llc_occupancy
+          test -r /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_total_bytes
+          test -r /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_local_bytes
+          test -r /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/llc_occupancy
+          test -r /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_total_bytes
+          test -r /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_local_bytes
+          
+          # Verify we can read initial values
+          echo "Initial monitoring values:"
+          echo "Memory bandwidth group:"
+          echo "  LLC: $(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/llc_occupancy)"
+          echo "  Total: $(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_total_bytes)"
+          echo "  Local: $(cat /sys/fs/resctrl/memory_bandwidth_group/mon_data/mon_L3_00/mbm_local_bytes)"
+          echo "Cache sensitive group:"
+          echo "  LLC: $(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/llc_occupancy)"
+          echo "  Total: $(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_total_bytes)"
+          echo "  Local: $(cat /sys/fs/resctrl/cache_sensitive_group/mon_data/mon_L3_00/mbm_local_bytes)"
+          
+          # Verify schemata is readable and writable
+          test -r /sys/fs/resctrl/memory_bandwidth_group/schemata
+          test -w /sys/fs/resctrl/memory_bandwidth_group/schemata
+          test -r /sys/fs/resctrl/cache_sensitive_group/schemata
+          test -w /sys/fs/resctrl/cache_sensitive_group/schemata
+          
+          echo "All critical functionality verified!"
+          echo ""
+
+      - name: Phase 1 - Baseline Cache Performance (No Memory Workload)
+        run: |
+          echo "=== Phase 1: Baseline Cache Performance (No Memory Workload) ==="
+          
+          # Wait for system to stabilize
+          echo "Waiting 5 seconds for system to stabilize..."
+          sleep 5
+          
+          # Run measurement script
+          /tmp/measure_workloads.sh "baseline_cache_only" "/tmp/resctrl_measurements.csv"
+          
+          echo "Phase 1 complete - baseline cache performance measured"
+          echo ""
+
+      - name: Start Memory Bandwidth Workload
+        run: |
+          echo "=== Starting Memory Bandwidth Workload ==="
+          
+          # Get CPU assignments for taskset
+          MB_CPUS=$(cat /sys/fs/resctrl/memory_bandwidth_group/cpus_list)
+          echo "Starting memory bandwidth stress-ng on CPUs: $MB_CPUS"
+          
+          # Calculate number of memory bandwidth stressors based on total system size
+          TOTAL_SYSTEM_CPUS=$(nproc)
+          QUARTER_SYSTEM_CPUS=$((TOTAL_SYSTEM_CPUS / 4))
+          MB_THREAD_COUNT=$((QUARTER_SYSTEM_CPUS / 2))  # Half of quarter = 1/8 of system
+          if [ "$MB_THREAD_COUNT" -lt "1" ]; then
+            MB_THREAD_COUNT=1  # Ensure at least 1 thread
+          fi
+          
+          echo "Memory bandwidth workload configuration:"
+          echo "  Total system CPUs: $TOTAL_SYSTEM_CPUS"
+          echo "  Quarter of system CPUs: $QUARTER_SYSTEM_CPUS"
+          echo "  Memory bandwidth threads: $MB_THREAD_COUNT (half of quarter = 1/8 of system)"
+          
+          # Start long-running memory bandwidth workload (30 minutes)
+          taskset -c "$MB_CPUS" stress-ng --vm $MB_THREAD_COUNT --vm-bytes 75% -t 1800s &
+          MB_STRESS_PID=$!
+          echo "Started memory bandwidth stress-ng with PID: $MB_STRESS_PID"
+          
+          # Save PID for later use
+          echo $MB_STRESS_PID > /tmp/mb_stress_pid
+          
+          # Give it a moment to start
+          sleep 2
+          
+          # Verify stress-ng is running
+          if kill -0 $MB_STRESS_PID 2>/dev/null; then
+            echo "Memory bandwidth stress-ng is running (PID: $MB_STRESS_PID)"
+          else
+            echo "ERROR: Memory bandwidth stress-ng failed to start"
+            exit 1
+          fi
+          
+          # Assign to memory bandwidth group
+          echo $MB_STRESS_PID | sudo tee /sys/fs/resctrl/memory_bandwidth_group/tasks >/dev/null
+          
+          # Also assign any child processes
+          sleep 1
+          pgrep -P $MB_STRESS_PID | while read child_pid; do
+            echo "Assigning child PID $child_pid to memory_bandwidth_group"
+            echo $child_pid | sudo tee /sys/fs/resctrl/memory_bandwidth_group/tasks >/dev/null
+          done
+          
+          echo "Memory bandwidth workload started and assigned to group"
+          echo ""
+
+      - name: Phase 2 - Both Workloads Unthrottled  
+        run: |
+          echo "=== Phase 2: Both Workloads Running Unthrottled ==="
+          
+          # Wait for memory bandwidth workload to ramp up
+          echo "Waiting 10 seconds for memory bandwidth workload to ramp up..."
+          sleep 10
+          
+          # Run measurement script
+          /tmp/measure_workloads.sh "both_unthrottled" "/tmp/resctrl_measurements.csv"
+          
+          echo "Phase 2 complete - both workloads measured unthrottled"
+          echo ""
+
+      - name: Phase 3 - Memory Bandwidth Throttled to 20%
+        run: |
+          set -e
+          echo "=== Phase 3: Memory Bandwidth Throttled to 20% ==="
+          
+          # Throttle memory bandwidth group to 20%
+          echo "Throttling memory bandwidth group to 20% memory bandwidth"
+          
+          ORIGINAL_SCHEMATA=$(cat /sys/fs/resctrl/memory_bandwidth_group/schemata)
+          echo "Original memory bandwidth schemata:"
+          echo "$ORIGINAL_SCHEMATA"
+          
+          # Modify MB line to 20%
+          MODIFIED_SCHEMATA=$(echo "$ORIGINAL_SCHEMATA" | sed 's/MB:0=[[:space:]]*[0-9]*/MB:0=20/')
+          
+          echo "Modified schemata:"
+          echo "$MODIFIED_SCHEMATA"
+          
+          # Apply the modified schemata
+          echo "$MODIFIED_SCHEMATA" | sudo tee /sys/fs/resctrl/memory_bandwidth_group/schemata >/dev/null
+          
+          echo "New memory bandwidth group schemata after throttling:"
+          cat /sys/fs/resctrl/memory_bandwidth_group/schemata
+          
+          # Wait for throttling to take effect
+          echo "Waiting 10 seconds for throttling to take effect..."
+          sleep 10
+          
+          # Run measurement script
+          /tmp/measure_workloads.sh "memory_throttled_20pct" "/tmp/resctrl_measurements.csv"
+          
+          echo "Phase 3 complete - memory bandwidth throttled to 20%"
+          echo ""
+
+      - name: Phase 4 - Memory Throttled + Cache Allocation Restricted
+        run: |
+          set -e
+          echo "=== Phase 4: Memory Throttled + Cache Allocation Restricted ==="
+          
+          # Get the cache mask to calculate first 4 cache ways
+          CACHE_MASK=$(cat /sys/fs/resctrl/info/L3/cbm_mask)
+          echo "Full cache mask: $CACHE_MASK"
+          
+          # Calculate first 4 cache ways (assuming 20-way cache, first 4 ways = 0xf)
+          # For safety, we'll use 0xf which represents the first 4 cache ways
+          RESTRICTED_CACHE_MASK="f"
+          
+          echo "Restricting memory bandwidth group to first 4 cache ways: $RESTRICTED_CACHE_MASK"
+          
+          # Get current schemata and modify L3 line
+          CURRENT_SCHEMATA=$(cat /sys/fs/resctrl/memory_bandwidth_group/schemata)
+          echo "Current memory bandwidth schemata:"
+          echo "$CURRENT_SCHEMATA"
+          
+          # Modify L3 line to restrict cache ways while keeping MB at 20%
+          MODIFIED_SCHEMATA=$(echo "$CURRENT_SCHEMATA" | sed "s/L3:0=[[:space:]]*[0-9a-fA-F]*/L3:0=$RESTRICTED_CACHE_MASK/")
+          
+          echo "Modified schemata with cache restriction:"
+          echo "$MODIFIED_SCHEMATA"
+          
+          # Apply the modified schemata
+          echo "$MODIFIED_SCHEMATA" | sudo tee /sys/fs/resctrl/memory_bandwidth_group/schemata >/dev/null
+          
+          echo "New memory bandwidth group schemata after cache restriction:"
+          cat /sys/fs/resctrl/memory_bandwidth_group/schemata
+          
+          # Wait for cache allocation to take effect
+          echo "Waiting 10 seconds for cache allocation to take effect..."
+          sleep 10
+          
+          # Run measurement script
+          /tmp/measure_workloads.sh "memory_throttled_cache_restricted" "/tmp/resctrl_measurements.csv"
+          
+          echo "Phase 4 complete - memory throttled and cache restricted"
+          echo ""
+
+      - name: Phase 5 - Restore Full Resources
+        run: |
+          set -e
+          echo "=== Phase 5: Restore Full Resources ==="
+          
+          # Restore full resources to both groups
+          echo "Restoring full resources to both groups"
+          
+          DEFAULT_SCHEMATA=$(cat /sys/fs/resctrl/schemata)
+          echo "Default schemata:"
+          echo "$DEFAULT_SCHEMATA"
+          
+          # Apply default schemata to both groups
+          echo "$DEFAULT_SCHEMATA" | sudo tee /sys/fs/resctrl/memory_bandwidth_group/schemata >/dev/null
+          echo "$DEFAULT_SCHEMATA" | sudo tee /sys/fs/resctrl/cache_sensitive_group/schemata >/dev/null
+          
+          echo "Resources restored. Current schemata:"
+          echo "Memory bandwidth group:"
+          cat /sys/fs/resctrl/memory_bandwidth_group/schemata
+          echo "Cache sensitive group:"
+          cat /sys/fs/resctrl/cache_sensitive_group/schemata
+          
+          # Wait for restoration to take effect
+          echo "Waiting 10 seconds for restoration to take effect..."
+          sleep 10
+          
+          # Run final measurement
+          /tmp/measure_workloads.sh "resources_restored" "/tmp/resctrl_measurements.csv"
+          
+          echo "Phase 5 complete - resources restored"
+          echo ""
+
+      - name: Display Results and Summary
+        run: |
+          echo "=== Resource Control Demonstration Results ==="
+          
+          echo "Complete CSV results:"
+          cat /tmp/resctrl_measurements.csv
+          echo ""
+          
+          echo "Results Summary:"
+          echo "1. ✅ Hardware RDT support detection and verification"
+          echo "2. ✅ Two-workload resource control demonstration:"
+          echo "   - Memory bandwidth intensive workload (stress-ng --vm)"
+          echo "   - Cache sensitive workload (stress-ng --cache with perf counters)"
+          echo "3. ✅ Five-phase experiment conducted:"
+          echo "   - Phase 1: Baseline cache performance (no memory workload)"
+          echo "   - Phase 2: Both workloads unthrottled"
+          echo "   - Phase 3: Memory bandwidth throttled to 20%"
+          echo "   - Phase 4: Memory throttled + cache allocation restricted to 4 ways"
+          echo "   - Phase 5: Resources restored to full allocation"
+          echo "4. ✅ Comprehensive measurements collected:"
+          echo "   - LLC occupancy for both workload groups"
+          echo "   - Memory bandwidth rates (total and local)"
+          echo "   - Cache references, cache misses, and hit rates"
+          echo "   - Cache workload throughput (bogo operations)"
+          echo ""
+          echo "Key technologies demonstrated:"
+          echo "- Intel RDT (Resource Director Technology)"
+          echo "- Cache Monitoring Technology (CMT) with RMID allocation"
+          echo "- Memory Bandwidth Monitoring (MBM)"
+          echo "- Memory Bandwidth Allocation (MBA)"
+          echo "- Cache Allocation Technology (CAT)"
+          echo "- Performance counter integration with stress-ng --perf"
+          echo ""
+          
+          # Show some key insights from the data
+          echo "Key Insights from Measurements:"
+          echo "Analyzing cache performance across phases..."
+          
+          # Extract cache hit rates for comparison
+          BASELINE_CACHE_HIT=$(grep "baseline_cache_only,cache_sensitive" /tmp/resctrl_measurements.csv | cut -d, -f8)
+          UNTHROTTLED_CACHE_HIT=$(grep "both_unthrottled,cache_sensitive" /tmp/resctrl_measurements.csv | cut -d, -f8)
+          THROTTLED_CACHE_HIT=$(grep "memory_throttled_20pct,cache_sensitive" /tmp/resctrl_measurements.csv | cut -d, -f8)
+          RESTRICTED_CACHE_HIT=$(grep "memory_throttled_cache_restricted,cache_sensitive" /tmp/resctrl_measurements.csv | cut -d, -f8)
+          RESTORED_CACHE_HIT=$(grep "resources_restored,cache_sensitive" /tmp/resctrl_measurements.csv | cut -d, -f8)
+          
+          echo "Cache hit rates across phases:"
+          echo "  Baseline (cache only): ${BASELINE_CACHE_HIT}%"
+          echo "  Both unthrottled: ${UNTHROTTLED_CACHE_HIT}%"
+          echo "  Memory throttled: ${THROTTLED_CACHE_HIT}%"
+          echo "  Cache restricted: ${RESTRICTED_CACHE_HIT}%"
+          echo "  Resources restored: ${RESTORED_CACHE_HIT}%"
+          echo ""
+          echo "The demonstration is complete!"
+
+      - name: Upload Results as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: resctrl-demo-results
+          path: |
+            /tmp/resctrl_measurements.csv
+            /tmp/cache_perf_output.txt
+          retention-days: 30
+
+      - name: Kill Long-Running Workloads
+        run: |
+          echo "=== Killing Long-Running Workloads ==="
+          
+          # Kill the memory bandwidth stress-ng process
+          MB_STRESS_PID=$(cat /tmp/mb_stress_pid 2>/dev/null || echo "")
+          if [ -n "$MB_STRESS_PID" ] && kill -0 $MB_STRESS_PID 2>/dev/null; then
+            echo "Killing memory bandwidth stress-ng PID: $MB_STRESS_PID"
+            kill $MB_STRESS_PID || echo "Could not kill memory bandwidth stress-ng with TERM signal"
+            sleep 2
+            if kill -0 $MB_STRESS_PID 2>/dev/null; then
+              echo "Process still running, using KILL signal"
+              kill -9 $MB_STRESS_PID || echo "Could not kill memory bandwidth stress-ng with KILL signal"
+            fi
+            echo "Memory bandwidth stress-ng terminated"
+          else
+            echo "Memory bandwidth stress-ng not running or PID not found"
+          fi
+          
+          # Kill any other remaining stress processes
+          pkill stress-ng || echo "No other stress-ng processes found"
+          echo "All workloads terminated"
+          echo ""
+
+      - name: Cleanup
+        run: |
+          echo "=== Cleanup ==="
+          
+          # Remove resource groups (this moves tasks back to default)
+          sudo rmdir /sys/fs/resctrl/memory_bandwidth_group/mon_groups/* 2>/dev/null || true
+          sudo rmdir /sys/fs/resctrl/memory_bandwidth_group 2>/dev/null || echo "Could not remove memory_bandwidth_group"
+          sudo rmdir /sys/fs/resctrl/cache_sensitive_group/mon_groups/* 2>/dev/null || true
+          sudo rmdir /sys/fs/resctrl/cache_sensitive_group 2>/dev/null || echo "Could not remove cache_sensitive_group"
+          
+          # Clean up temp files (keep CSV and results for artifact)
+          rm -f /tmp/mb_stress_pid /tmp/measure_workloads.sh || true
+          
+          echo "Cleanup completed. All processes moved back to default resource group."
+          echo "Results preserved in /tmp/resctrl_measurements.csv for artifact upload"
+          echo "To unmount resctrl: sudo umount /sys/fs/resctrl"
+
+      - name: Power off
+        run: |
+          shutdown --poweroff now
+
+  cleanup-runner:
+    name: Stop EC2 runner
+    needs: [setup-runner, resctrl-demo]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if previous jobs fail
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Stop AWS Runner
+        uses: ./.github/actions/aws-runner/cleanup
+        with:
+          runner-label: ${{ needs.setup-runner.outputs.runner-label }}
+          ec2-instance-id: ${{ needs.setup-runner.outputs.ec2-instance-id }}
+          github-token: ${{ secrets.REPO_ADMIN_TOKEN }}
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ needs.setup-runner.outputs.region || secrets.AWS_REGION }} 
