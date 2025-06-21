@@ -99,6 +99,56 @@ prepare_plot_data <- function(data, n_top_processes = top_n_processes) {
     cache_references = if("cache_references" %in% colnames(data)) sum(data$cache_references, na.rm = TRUE) else 0
   )
   
+  # Add sanity checking and cache hits calculation if cache_references exists
+  if("cache_references" %in% colnames(data)) {
+    # Check for anomalous cases where LLC misses exceed cache references
+    anomalous_cases <- data %>%
+      filter(llc_misses > cache_references) %>%
+      mutate(negative_diff = llc_misses - cache_references)
+    
+    if(nrow(anomalous_cases) > 0) {
+      # Report anomalous cases by process
+      anomaly_summary <- anomalous_cases %>%
+        group_by(process_name) %>%
+        summarise(
+          anomalous_count = n(),
+          total_negative_diff = sum(negative_diff, na.rm = TRUE),
+          .groups = 'drop'
+        ) %>%
+        arrange(desc(total_negative_diff))
+      
+      message("\n=== SANITY CHECK RESULTS ===")
+      message("Found ", nrow(anomalous_cases), " time slots where LLC misses > cache references")
+      message("This represents ", round(nrow(anomalous_cases) / nrow(data) * 100, 2), "% of all measurements")
+      
+      total_negative_reads <- sum(anomaly_summary$total_negative_diff)
+      message("Total negative difference across all anomalous cases: ", total_negative_reads, " cache line reads")
+      message("This is ", round(total_negative_reads / totals_original$llc_misses * 100, 2), "% of total LLC misses")
+      
+      message("\nBreakdown by process:")
+      for(i in 1:nrow(anomaly_summary)) {
+        process <- anomaly_summary$process_name[i]
+        count <- anomaly_summary$anomalous_count[i]
+        diff <- anomaly_summary$total_negative_diff[i]
+        message("  ", process, ": ", count, " anomalous time slots, ", diff, " negative cache line reads")
+      }
+      message("=== END SANITY CHECK ===\n")
+    } else {
+      message("\n=== SANITY CHECK RESULTS ===")
+      message("No anomalous cases found - all cache references >= LLC misses")
+      message("=== END SANITY CHECK ===\n")
+    }
+    
+    # Calculate cache hits = cache references - LLC misses, ensuring non-negative values
+    data$cache_hits <- pmax(0, data$cache_references - data$llc_misses)
+    
+    # Update totals to include cache hits
+    totals_original$cache_hits <- sum(data$cache_hits, na.rm = TRUE)
+    
+    message("Cache hits calculation: ", totals_original$cache_hits, " total cache hits")
+    message("Hit rate: ", round(totals_original$cache_hits / totals_original$cache_references * 100, 2), "%")
+  }
+  
   # Select top processes by total memory usage (LLC misses + cache references)
   top_processes <- data %>%
     group_by(process_name) %>%
@@ -119,11 +169,13 @@ prepare_plot_data <- function(data, n_top_processes = top_n_processes) {
   if("cache_references" %in% colnames(data)) {
     coverage$cache_references <- sum(data$cache_references[data$process_name %in% top_processes], na.rm = TRUE) / 
                                 totals_original$cache_references * 100
+    coverage$cache_hits <- sum(data$cache_hits[data$process_name %in% top_processes], na.rm = TRUE) / 
+                          totals_original$cache_hits * 100
   }
   
   message("Top ", n_top_processes, " processes account for ",
           round(coverage$llc_misses, 2), "% of total LLC misses",
-          if("cache_references" %in% colnames(data)) paste0(" and ", round(coverage$cache_references, 2), "% of total cache references") else "")
+          if("cache_references" %in% colnames(data)) paste0(", ", round(coverage$cache_references, 2), "% of total cache references, and ", round(coverage$cache_hits, 2), "% of total cache hits") else "")
   
   # Filter data for top processes and group the rest as "other"
   plot_data <- data %>%
@@ -138,6 +190,7 @@ prepare_plot_data <- function(data, n_top_processes = top_n_processes) {
       summarise(
         llc_misses = sum(llc_misses, na.rm = TRUE),
         cache_references = sum(cache_references, na.rm = TRUE),
+        cache_hits = sum(cache_hits, na.rm = TRUE),
         .groups = 'drop'
       ) %>%
       ungroup()
@@ -158,19 +211,25 @@ prepare_plot_data <- function(data, n_top_processes = top_n_processes) {
   
   if("cache_references" %in% colnames(ms_data)) {
     totals_after$cache_references = sum(ms_data$cache_references, na.rm = TRUE)
+    totals_after$cache_hits = sum(ms_data$cache_hits, na.rm = TRUE)
   }
   
   llc_diff <- abs(totals_original$llc_misses - totals_after$llc_misses)
   cache_diff <- if("cache_references" %in% colnames(ms_data)) {
     abs(totals_original$cache_references - totals_after$cache_references)
   } else 0
+  hits_diff <- if("cache_hits" %in% colnames(ms_data)) {
+    abs(totals_original$cache_hits - totals_after$cache_hits)
+  } else 0
   
-  if (llc_diff > 0.01 || cache_diff > 0.01) {
+  if (llc_diff > 0.01 || cache_diff > 0.01 || hits_diff > 0.01) {
     warning("Possible data loss in aggregation. LLC misses: Original=", 
             totals_original$llc_misses, ", After=", totals_after$llc_misses,
             if("cache_references" %in% colnames(ms_data)) {
               paste0(". Cache references: Original=", totals_original$cache_references, 
-                     ", After=", totals_after$cache_references)
+                     ", After=", totals_after$cache_references,
+                     ". Cache hits: Original=", totals_original$cache_hits,
+                     ", After=", totals_after$cache_hits)
             } else "")
   } else {
     message("Aggregation validation passed. All data accounted for.")
@@ -204,7 +263,7 @@ prepare_plot_data <- function(data, n_top_processes = top_n_processes) {
   ))
 }
 
-# Function to create the combined memory usage plot with both LLC misses and cache references
+# Function to create the combined memory usage plot with both LLC misses and cache hits
 create_memory_usage_plot <- function(data, plot_data, n_top_processes = top_n_processes) {
   # Get time window info from attributes
   subtitle <- paste0("1-second window at ", start_time_offset, 
@@ -213,7 +272,7 @@ create_memory_usage_plot <- function(data, plot_data, n_top_processes = top_n_pr
   # Convert to long format for faceted plotting
   ms_data_long <- plot_data$ms_data %>%
     pivot_longer(
-      cols = c(llc_misses, cache_references),
+      cols = c(llc_misses, cache_hits),
       names_to = "metric_type",
       values_to = "count"
     ) %>%
@@ -222,7 +281,7 @@ create_memory_usage_plot <- function(data, plot_data, n_top_processes = top_n_pr
       gb_per_second = (bytes / BYTES_PER_GB) * 1000,  # Convert to GB/s (1000 millisecond frames per second)
       metric_label = case_when(
         metric_type == "llc_misses" ~ "LLC Misses",
-        metric_type == "cache_references" ~ "Cache References",
+        metric_type == "cache_hits" ~ "Cache Hits",
         TRUE ~ metric_type
       )
     )
@@ -251,9 +310,9 @@ create_memory_usage_plot <- function(data, plot_data, n_top_processes = top_n_pr
   ms_data_long$process_group <- factor(ms_data_long$process_group, 
                                       levels = levels(plot_data$ms_data$process_group))
   
-  # Order the metric facets with LLC Misses on top, Cache References on bottom
+  # Order the metric facets with LLC Misses on top, Cache Hits on bottom
   ms_data_long$metric_label <- factor(ms_data_long$metric_label, 
-                                      levels = c("LLC Misses", "Cache References"))
+                                      levels = c("LLC Misses", "Cache Hits"))
   
   # Create the faceted stacked area plot
   p <- ggplot(ms_data_long, aes(x = ms_bucket, y = gb_per_second, fill = process_group)) +
@@ -262,7 +321,7 @@ create_memory_usage_plot <- function(data, plot_data, n_top_processes = top_n_pr
     scale_fill_manual(values = plot_data$colors) +
     scale_y_continuous(labels = function(x) sprintf("%.2f", x)) +
     labs(
-      title = "Memory Bandwidth by Process: LLC Misses and Cache References",
+      title = "Memory Bandwidth by Process: LLC Misses and Cache Hits",
       subtitle = subtitle,
       x = "Time (milliseconds)",
       y = "Gigabytes Per Second",
@@ -283,6 +342,213 @@ create_memory_usage_plot <- function(data, plot_data, n_top_processes = top_n_pr
     )
   
   return(p)
+}
+
+# Function to create dual-panel plot: LLC misses on top, CPI scatter on bottom
+create_dual_panel_plot <- function(data, plot_data, n_top_processes = top_n_processes) {
+  # Get time window info from attributes
+  subtitle <- paste0("1-second window at ", start_time_offset, 
+                    " seconds after experiment start (showing top ", n_top_processes, " processes)")
+  
+  # Prepare LLC misses stacked plot data (top panel)
+  llc_data <- plot_data$ms_data %>%
+    mutate(
+      bytes = llc_misses * CACHE_LINE_SIZE,
+      gb_per_second = (bytes / BYTES_PER_GB) * 1000  # Convert to GB/s
+    )
+  
+  # Create top panel: LLC misses stacked area plot
+  top_panel <- ggplot(llc_data, aes(x = ms_bucket, y = gb_per_second, fill = process_group)) +
+    geom_col(position = "stack", width = 1.0, alpha = 0.8) +
+    scale_fill_manual(values = plot_data$colors) +
+    scale_y_continuous(labels = function(x) sprintf("%.2f", x)) +
+    labs(
+      title = "Memory Bandwidth Analysis: LLC Misses and CPI",
+      subtitle = subtitle,
+      x = NULL,  # No x-axis label for top panel
+      y = "LLC Misses (GB/s)",
+      fill = "Process"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "right",
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(face = "bold", size = 12),
+      axis.text = element_text(size = 10),
+      axis.text.x = element_blank(),  # Remove x-axis text for top panel
+      legend.title = element_text(face = "bold", size = 10),
+      legend.text = element_text(size = 8),
+      plot.margin = margin(t = 20, r = 20, b = 0, l = 20, unit = "pt")
+    )
+  
+  # Prepare CPI deviation stacked plot data (bottom panel)
+  # Calculate CPI and median baselines for each process
+  cpi_data <- data %>%
+    filter(process_name %in% levels(plot_data$ms_data$process_group)[levels(plot_data$ms_data$process_group) != "other"]) %>%
+    mutate(
+      ms_bucket = as.integer((relative_time_ns - attr(data, "window_start_s") * NS_PER_SEC) / NS_PER_MS),
+      cpi = ifelse(instructions > 0, cycles / instructions, NA),  # Avoid division by zero
+      process_name = factor(process_name, levels = levels(plot_data$ms_data$process_group))
+    ) %>%
+    filter(!is.na(cpi), cpi > 0, cpi < 10)  # Filter out invalid CPI values
+  
+  # Calculate median CPI for each process across an expanded window (5 seconds before + 5 seconds after)
+  # First, create expanded window boundaries
+  expanded_window_start_ns <- attr(data, "window_start_s") * NS_PER_SEC - 5 * NS_PER_SEC  # 5 seconds before
+  expanded_window_end_ns <- (attr(data, "window_start_s") + window_size) * NS_PER_SEC + 5 * NS_PER_SEC  # 5 seconds after
+  
+  message("Computing baseline CPI using expanded window: ", 
+          expanded_window_start_ns / NS_PER_SEC, " to ", 
+          expanded_window_end_ns / NS_PER_SEC, " seconds")
+  
+  # Get expanded dataset for baseline calculation
+  expanded_baseline_data <- data %>%
+    filter(
+      relative_time_ns >= pmax(0, expanded_window_start_ns),  # Don't go before start of file
+      relative_time_ns <= expanded_window_end_ns,             # Don't go past end of file
+      process_name %in% levels(plot_data$ms_data$process_group)[levels(plot_data$ms_data$process_group) != "other"],
+      instructions > 100000  # Only use high-quality samples with >100k instructions
+    ) %>%
+    mutate(
+      cpi = ifelse(instructions > 0, cycles / instructions, NA),
+      process_name = factor(process_name, levels = levels(plot_data$ms_data$process_group))
+    ) %>%
+    filter(!is.na(cpi), cpi > 0, cpi < 10)  # Filter out invalid CPI values
+  
+  # Calculate median CPI for each process using the expanded, filtered dataset
+  process_medians <- expanded_baseline_data %>%
+    group_by(process_name) %>%
+    summarise(
+      median_cpi = median(cpi, na.rm = TRUE),
+      baseline_samples = n(),
+      .groups = 'drop'
+    )
+  
+  message("Baseline CPI calculation summary:")
+  for (i in 1:nrow(process_medians)) {
+    process <- process_medians$process_name[i]
+    median_val <- process_medians$median_cpi[i]
+    samples <- process_medians$baseline_samples[i]
+    message("  ", process, ": median CPI = ", round(median_val, 3), 
+            " (", samples, " high-quality samples)")
+  }
+  
+  # Join medians back and calculate deviations
+  cpi_deviations <- cpi_data %>%
+    left_join(process_medians, by = "process_name") %>%
+    mutate(
+      cpi_deviation = cpi - median_cpi,
+      deviation_type = ifelse(cpi_deviation >= 0, "positive", "negative"),
+      abs_deviation = abs(cpi_deviation)
+    ) %>%
+    filter(!is.na(cpi_deviation))
+  
+  # Aggregate deviations by millisecond bucket and process
+  deviation_data <- cpi_deviations %>%
+    group_by(ms_bucket, process_name, deviation_type) %>%
+    summarise(total_deviation = sum(cpi_deviation, na.rm = TRUE), .groups = 'drop') %>%
+    ungroup()
+  
+  message("CPI deviation summary:")
+  summary_stats <- deviation_data %>%
+    group_by(deviation_type) %>%
+    summarise(
+      mean_deviation = mean(abs(total_deviation), na.rm = TRUE),
+      max_deviation = max(abs(total_deviation), na.rm = TRUE),
+      .groups = 'drop'
+    )
+  for (i in 1:nrow(summary_stats)) {
+    message("  ", summary_stats$deviation_type[i], " deviations - Mean: ", 
+            round(summary_stats$mean_deviation[i], 3), ", Max: ", 
+            round(summary_stats$max_deviation[i], 3))
+  }
+  
+     # Create middle panel: CPI deviation stacked plot centered at zero
+   middle_panel <- ggplot(deviation_data, aes(x = ms_bucket, y = total_deviation, fill = process_name)) +
+     geom_col(position = "stack", width = 1.0, alpha = 0.8) +
+     geom_hline(yintercept = 0, color = "black", size = 0.5) +  # Zero reference line
+     scale_fill_manual(values = plot_data$colors[names(plot_data$colors) %in% unique(deviation_data$process_name)]) +
+     scale_y_continuous(labels = function(x) sprintf("%.3f", x)) +
+     labs(
+       x = NULL,  # No x-axis label for middle panel
+       y = "CPI Deviation from Median",
+       fill = "Process"
+     ) +
+     theme_minimal() +
+     theme(
+       legend.position = "none",  # Legend already shown in top panel
+       panel.grid.minor = element_blank(),
+       panel.grid.major.x = element_blank(),
+       axis.title = element_text(face = "bold", size = 12),
+       axis.text = element_text(size = 10),
+       axis.text.x = element_blank(),  # Remove x-axis text for middle panel
+       plot.margin = margin(t = 0, r = 20, b = 0, l = 20, unit = "pt")
+     )
+   
+   # Prepare cycle deviation data (bottom panel)
+   # Calculate expected cycles using median CPI and compare to actual cycles
+   cycle_deviations <- cpi_data %>%
+     left_join(process_medians, by = "process_name") %>%
+     mutate(
+       expected_cycles = instructions * median_cpi,
+       cycle_deviation = cycles - expected_cycles
+     ) %>%
+     filter(!is.na(cycle_deviation))
+   
+   # Aggregate cycle deviations by millisecond bucket and process
+   cycle_deviation_data <- cycle_deviations %>%
+     group_by(ms_bucket, process_name) %>%
+     summarise(total_cycle_deviation = sum(cycle_deviation, na.rm = TRUE), .groups = 'drop') %>%
+     ungroup()
+   
+   message("Cycle deviation summary:")
+   cycle_summary_stats <- cycle_deviation_data %>%
+     mutate(deviation_type = ifelse(total_cycle_deviation >= 0, "positive", "negative")) %>%
+     group_by(deviation_type) %>%
+     summarise(
+       mean_deviation = mean(abs(total_cycle_deviation), na.rm = TRUE),
+       max_deviation = max(abs(total_cycle_deviation), na.rm = TRUE),
+       .groups = 'drop'
+     )
+   for (i in 1:nrow(cycle_summary_stats)) {
+     message("  ", cycle_summary_stats$deviation_type[i], " cycle deviations - Mean: ", 
+             format(cycle_summary_stats$mean_deviation[i], scientific = TRUE, digits = 3), 
+             ", Max: ", format(cycle_summary_stats$max_deviation[i], scientific = TRUE, digits = 3))
+   }
+   
+   # Create bottom panel: Cycle deviation stacked plot centered at zero
+   bottom_panel <- ggplot(cycle_deviation_data, aes(x = ms_bucket, y = total_cycle_deviation, fill = process_name)) +
+     geom_col(position = "stack", width = 1.0, alpha = 0.8) +
+     geom_hline(yintercept = 0, color = "black", size = 0.5) +  # Zero reference line
+     scale_fill_manual(values = plot_data$colors[names(plot_data$colors) %in% unique(cycle_deviation_data$process_name)]) +
+     scale_y_continuous(labels = function(x) format(x, scientific = TRUE, digits = 2)) +
+     labs(
+       x = "Time (milliseconds)",
+       y = "Cycle Deviation from Expected",
+       fill = "Process"
+     ) +
+     theme_minimal() +
+     theme(
+       legend.position = "none",  # Legend already shown in top panel
+       panel.grid.minor = element_blank(),
+       panel.grid.major.x = element_blank(),
+       axis.title = element_text(face = "bold", size = 12),
+       axis.text = element_text(size = 10),
+       plot.margin = margin(t = 0, r = 20, b = 20, l = 20, unit = "pt")
+     )
+  
+  # Combine panels using patchwork or grid
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    install.packages("patchwork", repos = "https://cloud.r-project.org/")
+  }
+  library(patchwork)
+  
+     combined_plot <- top_panel / middle_panel / bottom_panel + 
+     plot_layout(heights = c(1, 1, 1))  # Equal height for all three panels
+  
+  return(combined_plot)
 }
 
 # Function to create the LLC misses plot (for backward compatibility)
@@ -371,8 +637,22 @@ main <- function() {
       
       message("Saving combined plot as PDF: ", combined_pdf_filename)
       ggsave(combined_pdf_filename, memory_plot, width = 16, height = 9)
+      
+      message("Creating dual-panel plot (LLC misses + CPI)...")
+      dual_panel_plot <- create_dual_panel_plot(window_data, plot_data, top_n_processes)
+      
+      # Save dual-panel plot
+      dual_png_filename <- paste0(output_file, "_dual_panel.png")
+      dual_pdf_filename <- paste0(output_file, "_dual_panel.pdf")
+      
+      message("Saving dual-panel plot as PNG: ", dual_png_filename)
+      # Use taller aspect ratio to accommodate three panels
+      ggsave(dual_png_filename, dual_panel_plot, width = 16, height = 18, dpi = 300)
+      
+      message("Saving dual-panel plot as PDF: ", dual_pdf_filename)
+      ggsave(dual_pdf_filename, dual_panel_plot, width = 16, height = 18)
     } else {
-      message("Warning: cache_references column not found in data. Skipping combined plot.")
+      message("Warning: cache_references column not found in data. Skipping combined and dual-panel plots.")
     }
     
     message("Creating LLC misses plot...")
