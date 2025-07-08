@@ -1,8 +1,41 @@
 default:
-  replicas: 3 # multiple replicas for most services
+  keda:
+    enabled: true
+    maxReplicas: 80
+    targetCPUMillicores: 200
+    advanced:
+      horizontalPodAutoscalerConfig:
+        behavior:
+          scaleDown:
+            selectPolicy: Disabled # disable scale down as the benchmark only increases load
+
+keda:
+  install:
+    enabled: false
 
 opentelemetry-collector:
   enabled: true
+  replicaCount: 3
+  # Mount volume for internal metrics export
+  extraVolumes:
+    - name: internal-metrics
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: internal-metrics
+      mountPath: /tmp/internal-metrics
+  # config:
+  #   service:
+  #     telemetry:
+  #       metrics:
+  #         level: detailed
+  #         readers:
+  #           - periodic:
+  #               interval: 10000
+  #               timeout: 5000
+  #               exporter:
+  #                 file:
+  #                   path: /tmp/internal-metrics/otel-collector-internal-metrics.jsonl
+  #                   format: json
 
 opensearch:
   enabled: false
@@ -11,15 +44,18 @@ jaeger:
   enabled: false
 
 prometheus:
-  enabled: false
+  enabled: true
 
 grafana:
   enabled: false
 
 components:
   flagd:
-    replicas: 3 # otherwise, flagd only runs on one replica, and will bottleneck some services
-
+    keda:
+      minReplicas: 3
+    resources:
+      limits:
+        memory: 275Mi
 
   accounting:
     useDefault:
@@ -64,7 +100,8 @@ components:
     # envOverrides:
     #   - name: OTEL_EXPORTER_OTLP_ENDPOINT
     #     value: "" # Disable
-    replicas: 5
+    keda:
+      minReplicas: 3
     resources:
       limits:
         memory: 600Mi
@@ -75,7 +112,8 @@ components:
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
-    replicas: 6
+    keda:
+      minReplicas: 3
     resources:
       limits:
         memory: 600Mi
@@ -88,7 +126,8 @@ components:
         value: "" # Disable
 
   frontend:
-    replicas: 15
+    keda:
+      minReplicas: 5
     useDefault:
       env: false
     envOverrides:
@@ -101,7 +140,8 @@ components:
   frontend-proxy:
     useDefault:
       env: false
-    replicas: 6
+    keda:
+      minReplicas: 3
     resources:
       limits:
         memory: 650Mi
@@ -144,6 +184,8 @@ components:
   recommendation:
     useDefault:
       env: false
+    keda:
+      minReplicas: 5
     envOverrides:
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: "" # Disable
@@ -151,9 +193,11 @@ components:
         value: "" # Disable
 
   shipping:
+    keda:
+      minReplicas: 3
     resources:
       limits:
-        memory: 200Mi
+        memory: 800Mi
 
   valkey-cart:
     resources:
@@ -163,6 +207,9 @@ components:
   load-generator:
     enabled: false
     replicas: 1 # only one replica for load-generator, it spawns multiple processes
+    resources:
+      limits:
+        memory: 5000Mi
     useDefault:
       env: false
     envOverrides:
@@ -173,13 +220,13 @@ components:
       - name: LOCUST_HEADLESS
         value: "true"
       - name: LOCUST_USERS
-        value: "11000"
+        value: "18400"
       - name: LOCUST_SPAWN_RATE
-        value: "55"
+        value: "92"
       - name: LOCUST_BROWSER_TRAFFIC_ENABLED
         value: "false"
       - name: LOCUST_PROCESSES
-        value: "16"
+        value: "32"
       - name: LOCUST_LOCUSTFILE
         value: "/etc/locust/locustfile.py"
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
