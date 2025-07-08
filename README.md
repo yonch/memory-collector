@@ -53,7 +53,9 @@ You can review our [data schema](https://github.com/unvariance/collector/blob/pu
 ## Requirements
 
 - **Kernel version:** Minimum 5.15
-- **Hardware:** Any server with perf counter support (container images forx86_64, arm64)
+- **Hardware:** Any server with perf counter support (container images are published for x86_64, arm64)
+  - for Intel on AWS, an instance that supports "Hardware" from [this list](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-vtune-amplifier-functionality-on-aws-instances.html)
+  - for Intel on GCP: instance that supports "Basic Hardware" from [this list](https://www.intel.com/content/www/us/en/developer/articles/technical/vtune-profiler-functionality-on-google-cloud.html)
 - **Resource utilization:**
   - Memory: ~300MB per node
   - CPU: ~1% for eBPF, ~0.75% userspace
