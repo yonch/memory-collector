@@ -25,9 +25,13 @@ parquet = { workspace = true }
 object_store = { workspace = true }
 url = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 uuid = { workspace = true }
 hostname = { workspace = true }
 futures = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+
+[dev-dependencies]
+testing_logger = "0.1"

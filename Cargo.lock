@@ -498,9 +498,11 @@ dependencies = [
  "parquet",
  "perf_events",
  "plain",
+ "testing_logger",
  "time",
  "timeslot",
  "tokio",
+ "tokio-util",
  "url",
  "uuid",
  "vmlinux",
@@ -3314,6 +3316,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "testing_logger"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d92b727cb45d33ae956f7f46b966b25f1bc712092aeef9dba5ac798fc89f720"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3521,6 +3532,8 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
+ "hashbrown 0.15.3",
  "pin-project-lite",
  "slab",
  "tokio",
