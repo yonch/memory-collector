@@ -104,21 +104,16 @@ jobs:
         run: | 
           kubectl get all -n kube-system
 
-  helm-chart-deployment:
-    needs: [setup-runner, k3s-deployment]
+  install-prerequisites:
+    needs: [setup-runner]
     runs-on: ${{ needs.setup-runner.outputs.runner-label }}
-    timeout-minutes: 15
+    timeout-minutes: 5
     env:
-      RELEASE_NAME: collector
-      S3_BUCKET: "unvariance-collector-test-irsa"  # Same bucket used in IAM role testing
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
       HOME: /root
-      IMAGE_REPOSITORY: ${{ inputs.image-repository || 'ghcr.io/unvariance/collector/collector' }}
-      IMAGE_TAG: ${{ inputs.image-tag || 'latest' }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Create HOME directory
+        run: |
+          mkdir -p $HOME
 
       - name: Install Helm
         run: |
@@ -133,6 +128,26 @@ jobs:
           echo ls: `ls -l /usr/local/bin/aws` || true
           chmod +x /usr/local/bin/aws || true
           echo version: `/usr/local/bin/aws --version` || true
+
+  helm-chart-deployment:
+    needs: [setup-runner, k3s-deployment, install-prerequisites]
+    runs-on: ${{ needs.setup-runner.outputs.runner-label }}
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        trace-mode: [false, true]
+    env:
+      RELEASE_NAME: collector-${{ matrix.trace-mode == true && 'trace' || 'aggregated' }}
+      S3_BUCKET: "unvariance-collector-test-irsa"  # Same bucket used in IAM role testing
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+      HOME: /root
+      IMAGE_REPOSITORY: ${{ inputs.image-repository || 'ghcr.io/unvariance/collector/collector' }}
+      IMAGE_TAG: ${{ inputs.image-tag || 'latest' }}
+      TRACE_MODE: ${{ matrix.trace-mode }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Generate UUID Prefix
         id: generate-uuid
@@ -153,6 +168,7 @@ jobs:
             
           collector:
             verbose: true
+            trace: ${TRACE_MODE}
           
           storage:
             type: "s3"
@@ -228,13 +244,117 @@ jobs:
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         with:
-          name: helm-chart-test-results
+          name: helm-chart-test-results-${{ matrix.trace-mode == true && 'trace' || 'aggregated' }}
           path: /tmp/test-parquet.parquet
           if-no-files-found: warn
 
+  verify-artifacts:
+    name: Verify Parquet Artifacts
+    needs: [helm-chart-deployment]
+    runs-on: ubuntu-latest
+    if: always()  # Run even if helm-chart-deployment fails
+    strategy:
+      matrix:
+        trace-mode: [false, true]
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: helm-chart-test-results-${{ matrix.trace-mode == true && 'trace' || 'aggregated' }}
+          path: parquet-data
+
+      - name: Install pqrs
+        run: |
+          curl -L -o pqrs.zip https://github.com/manojkarthick/pqrs/releases/download/v0.3.2/pqrs-0.3.2-x86_64-unknown-linux-gnu.zip
+          python3 -m zipfile -e pqrs.zip .
+          sudo mv pqrs-0.3.2-x86_64-unknown-linux-gnu/bin/pqrs /usr/local/bin/
+          sudo chmod +x /usr/local/bin/pqrs
+          rm -rf pqrs.zip pqrs-0.3.2-x86_64-unknown-linux-gnu
+          pqrs --version
+
+      - name: Verify Parquet File Schema and Contents
+        run: |
+          echo "Verifying Parquet files for ${{ matrix.trace-mode == true && 'trace' || 'aggregated' }} mode..."
+          
+          # Find the parquet file
+          PARQUET_FILE=$(find parquet-data -name "*.parquet" -type f | head -n 1)
+          
+          if [ -z "$PARQUET_FILE" ]; then
+            echo "ERROR: No parquet file found in artifacts"
+            exit 1
+          fi
+          
+          echo "Found parquet file: $PARQUET_FILE"
+          
+          # Check file size
+          FILE_SIZE=$(stat -c %s "$PARQUET_FILE")
+          echo "File size: ${FILE_SIZE} bytes"
+          
+          if [ "$FILE_SIZE" -eq 0 ]; then
+            echo "ERROR: Parquet file is empty"
+            exit 1
+          fi
+          
+          # Generate and examine schema
+          echo "Generating schema..."
+          pqrs schema "$PARQUET_FILE" > schema.txt
+          cat schema.txt
+          
+          # Define field lists for different modes
+          if [ "${{ matrix.trace-mode }}" = "true" ]; then
+            echo "Setting up trace mode field verification..."
+            REQUIRED_FIELDS=("pid" "timestamp" "cpu_id" "is_context_switch" "cgroup_id" "cache_references" "cycles" "instructions" "llc_misses")
+          else
+            echo "Setting up aggregated mode field verification..."
+            REQUIRED_FIELDS=("pid" "start_time" "cgroup_id" "cache_references" "cycles" "instructions" "llc_misses")
+          fi
+          
+          # Verify all required fields are present in schema
+          echo "Verifying required fields in schema..."
+          for field in "${REQUIRED_FIELDS[@]}"; do
+            if ! grep -q "$field" schema.txt; then
+              echo "ERROR: Required field '$field' not found in schema"
+              exit 1
+            else
+              echo "✓ Found required field: $field"
+            fi
+          done
+          
+          # Sample records and verify content using JSON output
+          echo "Sampling records with JSON output..."
+          pqrs sample --records 100 --json "$PARQUET_FILE" > sample.json
+          
+          # Verify field values - check that each field has at least 2 different values
+          echo "Verifying field values have sufficient diversity..."
+          
+          # Define fields that should only warn (VM might not support these performance counters)
+          WARN_ONLY_FIELDS=("cache_references" "llc_misses")
+          
+          for field in "${REQUIRED_FIELDS[@]}"; do
+            echo "Checking field: $field"
+            
+            # Extract all values for this field and count unique values
+            UNIQUE_VALUES=$(jq -r ".${field} // null" sample.json | sort -u | wc -l)
+            echo "  Unique values in $field: $UNIQUE_VALUES"
+            
+            if [ "$UNIQUE_VALUES" -lt 2 ]; then
+              # Check if this field should only warn (performance counters that might not be supported on VM)
+              if [[ " ${WARN_ONLY_FIELDS[*]} " =~ " ${field} " ]]; then
+                echo "  WARNING: Field '$field' has less than 2 different values ($UNIQUE_VALUES) - this might indicate VM doesn't support this performance counter"
+              else
+                echo "  ERROR: Field '$field' has less than 2 different values ($UNIQUE_VALUES)"
+                exit 1
+              fi
+            else
+              echo "  ✓ Field '$field' has sufficient diversity"
+            fi
+          done
+          
+          echo "Parquet file verification completed successfully for ${{ matrix.trace-mode == true && 'trace' || 'aggregated' }} mode"
+
   stop-runner:
     name: Stop EC2 runner
-    needs: [setup-runner, k3s-deployment, helm-chart-deployment]
+    needs: [setup-runner, k3s-deployment, install-prerequisites, helm-chart-deployment]
     runs-on: ubuntu-latest
     if: always()  # Run even if previous jobs fail
     steps:
